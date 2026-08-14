@@ -6,6 +6,17 @@ reading one.
 
 Copyright 2026 David Anaya. Apache-2.0.
 
+**Not on PyPI yet.** No release has been tagged, so the two commands below are
+what installation will look like and not what it does today. Until then, install
+from this repository:
+
+```bash
+pip install 'git+https://github.com/catincloud-labs/dagster-dex'
+pip install 'dagster-dex[dex] @ git+https://github.com/catincloud-labs/dagster-dex'
+```
+
+After the first release:
+
 ```bash
 pip install dagster-dex          # the core: no orchestrator, no engine
 pip install 'dagster-dex[dex]'   # with the dex-core boundary
