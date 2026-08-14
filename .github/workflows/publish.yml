@@ -1,0 +1,151 @@
+name: publish
+
+# The release path for this package.
+#
+# NOTHING HERE PUBLISHES UNTIL A TAG IS PUSHED, AND NO TAG HAS BEEN.
+# The workflow exists so that publishing is a decision rather than a project. The
+# package has never been released. If the PyPI Trusted Publisher below is not yet
+# configured, a tag pushed today fails at the publish step having already built
+# and tested cleanly. That is the intended failure: it cannot publish by accident,
+# and it cannot silently half-publish.
+#
+# TO ACTUALLY PUBLISH (all four, in order):
+#   1. Rehearse against TestPyPI with a pending publisher there first. The OIDC
+#      path has never executed, and the real namespace is not the place to learn
+#      it is misconfigured.
+#   2. Create a PyPI *pending* publisher -- the project does not exist yet, so an
+#      ordinary Trusted Publisher cannot be attached to it. Project `dagster-dex`,
+#      owner `catincloud-labs`, repo `dagster-dex`, workflow `publish.yml`,
+#      environment `pypi`. This also claims the name.
+#   3. Create the `pypi` GitHub environment, with a required reviewer and
+#      deployment restricted to the tag pattern below.
+#   4. Tag, and push the tag:
+#        git tag v0.1.0 && git push origin v0.1.0
+#
+# STEP 4 NEEDS NO VERSION BUMP FOR THE FIRST RELEASE. `version` in
+# pyproject.toml is already `0.1.0`, it agrees with `__init__.__version__`, and
+# nothing has been published under it, so the match gate below passes as-is.
+# Bumping first would publish `0.1.1` and burn `0.1.0` for no reason. Bump only
+# for a SECOND release.
+#
+# The tag is a bare `v*` because this repository holds exactly one
+# distribution. It was namespaced (`dagster-dex-project-v*`) in the monorepo this
+# came from, where a bare tag would have collided with everything else in the tree.
+# That reason does not travel.
+
+on:
+  push:
+    tags: ["v*"]
+  # Build-only on every PR. This is the half that earns its keep before any
+  # release: it proves the distribution still BUILDS, which the `tests` job in
+  # `checks.yml` does not -- that one installs editable, and an editable install
+  # can succeed against packaging metadata that cannot produce a valid sdist.
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # The same steps `checks.yml` runs, and for the same reasons -- step 1 is a
+      # CONTROL proving the engine coupling is one file, not a speed split.
+      # Repeated here rather than depended on, because a release gate that trusts
+      # another workflow's green is trusting a run that may have been for a
+      # different commit.
+      - name: Core runs with no engine installed (control)
+        run: |
+          uv run --no-project --with-editable . \
+            --with pytest==8.4.1 \
+            python -m pytest tests \
+            --ignore=tests/test_dex_bridge.py \
+            --ignore=tests/test_upstream_contract.py
+
+      - name: Boundary + upstream contract against the real engine
+        env:
+          DEX_UPSTREAM_CONTRACT_REQUIRED: "1"
+        run: |
+          uv run --no-project --with-editable . \
+            --with pytest==8.4.1 --with exmergo-dex-core==1.6.4 --with sqlglot==30.13.0 \
+            python -m pytest tests
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      # A built sdist is not a working one. This installs the ARTIFACT rather than
+      # the source tree, which is the only thing that catches a
+      # `[tool.setuptools.packages.find]` that misses a module, a missing `LICENSE`
+      # in the sdist, or a `py.typed` marker that never made it into the wheel --
+      # all of which pass every test above, because every test above runs against
+      # the working directory.
+      - name: The built wheel imports, declares its entry point, and ships py.typed
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          uv run --no-project --with "./${WHEEL}" python -c "
+          import importlib.metadata as md
+          import importlib.resources as res
+          import dagster_dex as p
+          eps = md.entry_points(group='exmergo_dex_core.projects')
+          names = {e.name: e.value for e in eps}
+          assert 'dagster' in names, f'entry point missing from the built wheel: {names}'
+          assert res.files('dagster_dex').joinpath('py.typed').is_file(), \
+              'Typing :: Typed is claimed but py.typed is not in the wheel'
+          print('version :', md.version('dagster-dex'))
+          print('entry   :', names['dagster'])
+          print('exports :', len(p.__all__), 'names')
+          "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dagster-dex-dist
+          path: dist/
+
+  publish:
+    # Tag only. A PR reaches `build` and stops there.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      # Job-level permissions REPLACE the top-level block rather than merging
+      # with it, so `contents: read` has to be restated or checkout 404s with a
+      # token holding only `id-token: write`.
+      contents: read
+      id-token: write # OIDC for PyPI Trusted Publishing; no API token is stored.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      # The version is STATIC in pyproject.toml -- there is no hatch-vcs here to
+      # derive it from the tag -- so the tag and the metadata are two independent
+      # hand-maintained strings. A tag cut without bumping the version would
+      # otherwise publish the PREVIOUS version's number, and PyPI would reject it
+      # as a duplicate at best or accept a wrong-numbered artifact at worst.
+      - name: Built version must match the tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! ls dist/dagster_dex-"${VERSION}"-*.whl >/dev/null 2>&1; then
+            echo "Built artifacts do not match tag version ${VERSION}:"
+            ls -1 dist/
+            echo "Bump the version in pyproject.toml, merge, then re-tag."
+            exit 1
+          fi
+          echo "Built artifacts match ${VERSION}."
+
+      # `--trusted-publishing always` rather than the default `automatic`. On
+      # `automatic`, a misconfigured publisher makes uv fall back to looking for a
+      # token, and the failure surfaces as a confusing credentials error instead of
+      # naming the real cause. `always` fails closed and says why.
+      - name: Publish to PyPI (Trusted Publishing)
+        run: uv publish --trusted-publishing always

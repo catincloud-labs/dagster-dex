@@ -1,0 +1,50 @@
+# This repository holds a Python distribution, so unlike the sibling document
+# repositories the build artefacts below are not hypothetical -- they appear the
+# first time anyone runs `uv build` or installs the package editable.
+#
+# `dist/` and `build/` are anchored at the root deliberately, and the
+# `*.egg-info` rule is NOT anchored. In the monorepo this package came from, the
+# ignore rule was written as `packages/*/build/` and `dist/` was not ignored at
+# all -- so a stale `build/lib/` tree and a built wheel both sat untracked and
+# un-ignored in the working tree, one `cp -r` away from being published. A rule
+# that only covers the layout you had is not a rule.
+build/
+dist/
+*.egg-info/
+.eggs/
+*.whl
+*.tar.gz
+
+# Byte cache and test/tooling state.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments. `uv run --no-project` avoids creating one, and the README
+# says why; this is the safety net for the invocation that forgets.
+.venv/
+venv/
+
+# Environment and key material. Nothing here needs credentials, which is exactly
+# when this is cheap to add: a key committed once is compromised even after the
+# file is deleted, so the rule has to predate the key rather than follow it.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+id_rsa
+id_ed25519
+keys.txt
+
+# Local agent configuration. Deliberately untracked: settings files here
+# accumulate machine-specific absolute paths and permission allowlists, which are
+# a property of one workstation rather than of this project.
+.claude/
+
+# OS junk
+.DS_Store
+Thumbs.db

@@ -1,0 +1,24 @@
+version: 2
+
+updates:
+  # GitHub Actions only.
+  #
+  # `pip` is deliberately absent, and this is a decision rather than an
+  # omission. This package's `[dex]` extra pins `exmergo-dex-core~=1.6.4`, and
+  # that pin is not housekeeping -- the mapping in `dex.py` targets dex-core's own
+  # model, and the version is part of what the package claims to have been
+  # verified against. A bot raising that pin would be editing a guarantee, and it
+  # would do so with a diff that looks like routine maintenance.
+  #
+  # Bumping the engine is a human decision that comes with re-running the
+  # boundary and criterion suites against the new version. See AGENTS.md.
+  #
+  # The single runtime dependency (`pyyaml>=6.0`) is a floor rather than a pin and
+  # needs no bot either.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"

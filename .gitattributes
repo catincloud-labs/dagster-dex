@@ -1,0 +1,25 @@
+# Normalize line endings across platforms.
+# Force LF in the working tree everywhere, not just in the repo. This is
+# authored on Windows, and anything that ends up executing elsewhere - a CI
+# runner, a container, a host - must not receive CRLF.
+* text=auto eol=lf
+
+# These execute or are parsed by tools that care, so they are stated
+# explicitly rather than left to `text=auto` inference.
+*.sh    text eol=lf
+*.py    text eol=lf
+.githooks/*  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+
+# Binary assets Git must never normalize. Left in place ahead of need: the
+# cost is nothing, and the failure mode of omitting one is a corrupted file
+# that looks like a diff.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary

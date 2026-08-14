@@ -1,0 +1,159 @@
+[build-system]
+# setuptools>=77 is a REQUIREMENT, not tidiness: `license = "Apache-2.0"` below is
+# a PEP 639 SPDX expression and `license-files` is its companion field, and both
+# are only understood from 77 on. An unpinned floor lets an older resolver read
+# the SPDX string as a legacy free-text license and emit a metadata error rather
+# than a message naming the version. `wheel` is dropped because
+# `setuptools.build_meta` declares it itself; listing it here is vestigial.
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dagster-dex"
+version = "0.1.0"
+# Leads with the use case rather than the design argument, because this is the
+# COLDEST surface the package has: it renders under the name in PyPI search
+# results, above the README. The framing the README and the repo carry -- an
+# asset graph as a project format, and the tiered seam it proposes -- is one
+# scroll down, where a reader has already decided to look.
+#
+# ASCII on purpose, and the em-dash it wants is deliberately not here. The
+# metadata is UTF-8 and PyPI's web page renders one correctly -- but this string
+# is also what `pip show` prints, and a Windows console at cp1252 turns it into a
+# replacement character. Observed, not assumed. A summary is read in terminals as
+# often as in browsers, so it gets the punctuation that survives both.
+description = "Let dex read your Dagster asset graph the way it reads a dbt project: keys, joins, sources, semantics, drift"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+# Matches Dagster's own floor (it supports >=3.10,<3.15), because a format for
+# reading Dagster projects that excludes Dagster users is a self-inflicted wound.
+# Verified rather than assumed: the core suite runs green on 3.10, 3.11, 3.12 and
+# 3.13.
+#
+# The `[dex]` extra cannot install on 3.10 -- `exmergo-dex-core` requires
+# >=3.11 -- and that is a real, supported configuration rather than a hole. On
+# 3.10 you get the model, the reduction, the conformance contract and
+# `artifact.dumps`, which is enough to write a reduced project that a machine on
+# 3.11+ reads with the engine. That split is what the artifact transport exists
+# for, so the floor is set by the CORE rather than by the heaviest extra.
+requires-python = ">=3.10"
+authors = [{ name = "David Anaya" }]
+keywords = ["dagster", "dex", "dbt", "data-quality", "drift", "project-format"]
+
+# NO `License ::` CLASSIFIER, deliberately. PEP 639 makes the SPDX `license`
+# field above and the legacy `License ::` trove classifiers mutually exclusive,
+# and setuptools>=77 REFUSES the build when both are present. The license is
+# already declared, twice: as the SPDX expression and as `license-files`.
+#
+# `Development Status :: 3 - Alpha` rather than 4/Beta: the format is verified
+# end to end against a real Dagster graph and passes dex-core's own conformance
+# suite, but it has never been installed by anyone outside this repository and
+# tier 3 is declined by design. Alpha is what "the contract may still move"
+# looks like on a project page.
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Database",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+
+# `Typing :: Typed` above is backed by a real PEP 561 marker -- see
+# `[tool.setuptools.package-data]`. The classifier on its own is a claim a
+# consumer's type checker cannot act on, and the marker on its own is invisible
+# on the project page, so the two ship together or not at all. The wheel-import
+# check in the release workflow asserts the marker is actually in the built
+# distribution, because an unchecked packaging claim is how this stops being true.
+
+# The core is deliberately near-dependency-free: the model, the protocol, and
+# the conformance suite import nothing but the standard library and a YAML
+# parser. Everything heavier is an extra, so that a consumer running the
+# contract against their own format does not inherit an orchestrator or an
+# engine to do it.
+dependencies = ["pyyaml>=6.0"]
+
+# These were deliberately absent while the only source was private, on the
+# grounds that a dead link is a claim that a home exists. That condition no
+# longer holds.
+[project.urls]
+Homepage = "https://github.com/catincloud-labs/dagster-dex"
+Repository = "https://github.com/catincloud-labs/dagster-dex"
+Issues = "https://github.com/catincloud-labs/dagster-dex/issues"
+
+[project.optional-dependencies]
+# The orchestrator, needed only by DagsterProject.from_asset_graph().
+dagster = ["dagster>=1.13"]
+# The engine, needed only by dagster_dex.dex.
+#
+# `~=1.6.4` is `>=1.6.4, ==1.6.*`: patches move freely, the minor boundary does
+# not. That is where the evidence puts the danger -- dex-core 1.6.0, a MINOR,
+# began resolving this entry-point group and the pointer below failed on first
+# contact. The floor is load-bearing too: below 1.6.0 the group is not resolved
+# at all, so the package would install and silently never be found.
+#
+# An exact `==` pin was considered and rejected. This package is a PLUGIN
+# whose host is the pinned dependency -- dex-core resolves it through the entry
+# point below -- so `==` would make every dex-core release, patches included,
+# uninstallable alongside this package until it re-released. That inverts the
+# dependency. The version the mapping was actually verified against is recorded
+# where demonstrations belong rather than imposed on every consumer's resolver:
+# CI pins `==1.6.4` exactly, and the README says which version the claim rests on.
+dex = ["exmergo-dex-core~=1.6.4"]
+test = ["pytest>=8.4"]
+
+[project.entry-points."exmergo_dex_core.projects"]
+# Registered against the group name this package proposes, mirroring the storage
+# seam's `exmergo_dex_core.stores`.
+#
+# CORRECTED 2026-08-08. This pointed at the CLASS,
+# `dagster_dex.project:DagsterProject`, from 0.1.0 until dex-core 1.6.0
+# started resolving this group -- at which point it failed on first contact.
+# dex-core's `ProjectFactory` calls whatever it resolves WITH a `ProjectContext`,
+# so `DagsterProject(context)` bound the context to `models`, its first
+# positional parameter, and dex refused with "'ProjectContext' object is not
+# iterable".
+#
+# It went unnoticed because nothing looked the group up, which is the whole
+# lesson: a declared-but-unresolved extension point is not evidence that
+# registration works. It is evidence that nobody has tried.
+#
+# The target is now a factory that takes one context and returns a `DexProject`.
+# The wrapper is load-bearing rather than decorative: a bare `DagsterProject`
+# speaks this package's vocabulary (`format`, `declarations()`) and dex's seam
+# wants its own (`name`, `definitions()`), so returning the unwrapped project
+# moves the failure instead of removing it.
+dagster = "dagster_dex.dex:project_from_context"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# The PEP 561 marker the `Typing :: Typed` classifier claims. Without this line
+# the marker exists in the source tree and not in the wheel, which is the exact
+# shape of an unchecked claim.
+[tool.setuptools.package-data]
+dagster_dex = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# Checked at the FLOOR rather than at the newest interpreter, because that is the
+# version whose syntax and stdlib the annotations have to be valid against.
+[tool.mypy]
+python_version = "3.10"
+files = ["src/dagster_dex"]
+
+# These are OPTIONAL EXTRAS, and a clean type check must not require them.
+# `conformance.py` imports pytest so a third format can subclass the contract;
+# `dex.py` imports the engine at the one boundary allowed to know it exists.
+# Installing either to satisfy mypy would make the type check depend on exactly
+# the coupling the control step exists to keep out -- so they are declared
+# unresolvable here instead, which is what they actually are.
+[[tool.mypy.overrides]]
+module = ["pytest", "exmergo_dex_core.*"]
+ignore_missing_imports = true

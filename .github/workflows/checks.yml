@@ -1,0 +1,145 @@
+name: checks
+
+# `edited` is here on purpose. A body edit is the normal way an unacknowledged
+# close gets introduced or removed, and an early version of this gate omitted
+# it -- so a corrected body never re-ran, and a broken one never re-checked.
+# `synchronize` covers pushes to the branch.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# The job names below are load-bearing. `markdown`, `closing keywords` and
+# `tests` are the literal strings the organisation's `required checks` rulesets
+# demand. A rename does not fail -- the check simply never reports, and a check
+# that never reports never blocks a merge. The gate would go quiet rather than red.
+#
+# Renaming one means editing the ruleset in the same change.
+jobs:
+  markdown:
+    name: markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: catincloud-labs/workbench/.github/actions/markdown@main
+        with:
+          # Narrow to what this repository actually has. There is no `docs/`, and
+          # a glob matching nothing is noise rather than coverage.
+          globs: '*.md .github/**/*.md'
+
+  closing-keywords:
+    name: closing keywords
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: catincloud-labs/workbench/.github/actions/closing-keywords@main
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Compared byte-for-byte against workbench's copy. The vendored copy
+          # exists because a `commit-msg` hook cannot reach a PRIVATE repository at
+          # commit time, and `workbench` is private. This repository being public
+          # changes nothing about that -- the privacy that matters is the source's,
+          # not the consumer's.
+          vendored-copy: scripts/check_closing_keywords.py
+
+  # THE THREE STEPS BELOW ARE NOT A SPLIT FOR SPEED. The first is a CONTROL.
+  #
+  # It runs the whole suite with dex-core UNINSTALLED, which is what holds the
+  # engine coupling to `dex.py` alone. Add an `exmergo_dex_core` import to any
+  # other module and this step goes red at collection -- which is the package's
+  # central claim being tested rather than asserted. Merging it into the step
+  # below for speed would delete the only thing that checks it.
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Core runs with no engine installed (control)
+        run: |
+          uv run --no-project --with-editable . \
+            --with pytest==8.4.1 \
+            python -m pytest tests \
+            --ignore=tests/test_dex_bridge.py \
+            --ignore=tests/test_upstream_contract.py
+
+      # The engine is pinned EXACTLY here, which is deliberately not what the
+      # `[dex]` extra publishes (`~=1.6.4`). Consumers should not be forced onto
+      # one patch release; the demonstration should name the version it ran
+      # against. `sqlglot` is pinned for determinism only.
+      - name: Boundary runs against the real engine
+        run: |
+          uv run --no-project --with-editable . \
+            --with pytest==8.4.1 --with exmergo-dex-core==1.6.4 --with sqlglot==30.13.0 \
+            python -m pytest tests --ignore=tests/test_upstream_contract.py
+
+      # This package ships a PEP 561 `py.typed` marker and the `Typing :: Typed`
+      # classifier, which together claim its annotations are usable downstream.
+      # That claim is only worth something if something checks it -- a marker
+      # shipped on unchecked code is the decorative-control shape. Run at the
+      # floor (3.10), which is the version the annotations must be valid against.
+      - name: Type check (the py.typed claim, actually checked)
+        run: |
+          uv run --no-project --with-editable . \
+            --with mypy==1.14.1 --with types-PyYAML \
+            python -m mypy
+
+      # A real Dagster graph, which no other step exercises. Every test above
+      # uses fakes -- deliberately, so the suite runs without an orchestrator --
+      # but that means nothing else here would notice `from_asset_graph` breaking
+      # against the objects Dagster actually hands it. The `[dagster]` extra was
+      # declared and never installed by anything until this step existed.
+      - name: The reduction works against real Dagster objects
+        run: |
+          uv run --no-project --with-editable . --with 'dagster>=1.13' \
+            python -c "
+          import dagster as dg
+          from dagster_dex import DagsterProject, EditableProject, tier_of
+
+          @dg.asset(metadata={'layer': 'silver'})
+          def dim_date(): ...
+
+          @dg.asset(deps=[dim_date], metadata={'layer': 'GOLD'})
+          def fact_sales(): ...
+
+          p = DagsterProject.from_asset_graph([dim_date, fact_sales], name='demo')
+          models = {m.name: m for m in p.declarations().models}
+          assert tier_of(p) == 2, tier_of(p)
+          assert not isinstance(p, EditableProject), 'tier 3 must stay declined'
+          assert set(models) == {'dim_date', 'fact_sales'}, sorted(models)
+          assert models['fact_sales'].depends_on == ('dim_date',)
+          assert models['fact_sales'].layer == 'gold', 'metadata case not folded'
+
+          @dg.asset(name='dim_date')
+          def dupe(): ...
+          try:
+              DagsterProject.from_asset_graph([dim_date, dupe], name='demo')
+          except ValueError:
+              pass
+          else:
+              raise AssertionError('a duplicate asset key was not refused')
+          print('reduction verified against dagster', dg.__version__)
+          "
+
+      # `DEX_UPSTREAM_CONTRACT_REQUIRED=1` turns a missing upstream contract from
+      # a green skip into a collection error. Without it, a dex-core that stopped
+      # shipping `adapters.conformance` would leave this file quietly unrun and the
+      # job green -- and an unrun file and a passing file look identical.
+      - name: This format passes dex-core's own project contract
+        env:
+          DEX_UPSTREAM_CONTRACT_REQUIRED: "1"
+        run: |
+          uv run --no-project --with-editable . \
+            --with pytest==8.4.1 --with exmergo-dex-core==1.6.4 --with sqlglot==30.13.0 \
+            python -m pytest tests/test_upstream_contract.py -p no:cacheprovider

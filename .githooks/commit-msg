@@ -1,0 +1,27 @@
+#!/bin/sh
+# Refuse a commit message that closes an issue without acknowledging it.
+#
+# Enable per clone (hooks are not tracked into .git/hooks by git):
+#
+#     git config core.hooksPath .githooks
+#
+# The hook only exists on branches that contain it, and a clone that has not
+# run the command above has no guard at all. CI re-runs the same check on the
+# pull request, which is the copy that actually gates a merge.
+
+set -e
+
+if command -v python >/dev/null 2>&1; then
+  PY=python
+elif command -v python3 >/dev/null 2>&1; then
+  PY=python3
+else
+  # Fail loudly. A guard whose failure mode is silence is worse than no guard:
+  # it reads as "all clear" every single time.
+  echo "commit-msg: no python on PATH, cannot check for unacknowledged closes." >&2
+  echo "  Install python, or bypass this one commit with --no-verify." >&2
+  exit 1
+fi
+
+exec "$PY" "$(git rev-parse --show-toplevel)/scripts/check_closing_keywords.py" \
+  --commit-msg "$1"
