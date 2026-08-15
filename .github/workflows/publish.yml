@@ -139,6 +139,27 @@ jobs:
           print('exports :', len(p.__all__), 'names')
           "
 
+      # The step above proves the wheel is a working DISTRIBUTION. It does not
+      # prove the wheel is a working PROJECT FORMAT, and until this step existed
+      # nothing did: every behavioural test in this repository runs against the
+      # working directory, so "dex can read a project through the thing we
+      # publish" was asserted nowhere.
+      #
+      # That gap had the shape this package already has a lesson about. A
+      # declared-but-unresolved extension point is not evidence that
+      # registration works -- and "the wheel installs and the entry point is
+      # present" is a claim of exactly that shape, one level up.
+      #
+      # The engine is installed here and NOT above, deliberately: the step above
+      # must keep proving the wheel imports with dex-core absent, which is the
+      # same control the first test step applies to the source tree.
+      - name: dex reads a project through the built wheel (end to end)
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          uv run --no-project --with "./${WHEEL}" \
+            --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
+            python scripts/drive_dex_against_the_wheel.py
+
       - uses: actions/upload-artifact@v7
         with:
           name: dagster-dex-dist
