@@ -24,6 +24,68 @@ would delete the only thing checking the package's central claim.
 `tests/test_dex_bridge.py` additionally walks `dex.py`'s AST to assert it imports
 **public API only**, rather than trusting it.
 
+## The names in `protocol.py` are OURS, and must not be "fixed" to match
+
+| here | upstream (`adapters/project.py`) |
+| --- | --- |
+| `ProjectSource.declarations()` | `ExploreProject.definitions()` |
+| `FingerprintedProject.fingerprint()` | `MaintainProject.transform_layer()` + `.semantic_layer()` |
+| `EditableProject.propose_edits()` | `EditableProject.write_edits()` |
+
+**This is not drift.** The package was designed on its own terms and owes nothing
+to dex-core's model; `dex.py` is the bridge, which is exactly why the coupling is
+one file. Upstream's tier-2 shape is two methods rather than one because their
+`maintain snapshot` already exposed two - a correction that applies to *their*
+tree, not this one.
+
+**The word "tier" is theirs.** It was in their storage seam before it reached the
+project seam. Never describe the tiering as this package's invention.
+
+## Tier 3 is declined, and the decline is structural
+
+`propose_edits(edits) -> object` is deliberately vague. A project reduced from a
+running graph has no source of truth that can receive an edit: writing into the
+reduction would edit something regenerated from elsewhere on the next run.
+Declining is the honest answer, and `tier_of()` checks by `isinstance`, so a
+format cannot claim a tier it does not implement.
+
+The conformance suite asserts the decline **negatively** - `not isinstance(project,
+EditableProject)` - so reaching tier 3 by accident is caught rather than
+congratulated. `PlacingProject` is declined the same way and separately, because
+it sits *beside* the tiers rather than inside them: `tier_of() == 2` says nothing
+about it.
+
+## Sharp edges
+
+- **Sources are NOT graph dependencies.** `model_refs` is filtered to *built*
+  models, because the engine's `model_refs` is the `ref()` graph. A dependency on
+  something the project does not build is not a ref; what it might be instead is
+  reported in `notes` rather than guessed at.
+- **`notes` is the disclosure channel, and it is load-bearing.** Both layers
+  carry it. A lossy mapping that cannot disclose itself is the failure it exists
+  to prevent: an empty `files` compared against an empty `files` reads as "no file
+  drift" rather than as "this cannot be checked here".
+  - **Both halves need a loud arm and a quiet arm. This was got wrong once, and
+    it is now guarded - do not undo the guard.** Dropping `notes=` from the
+    `SemanticLayer` constructor once left an entire suite green, because every
+    semantic assertion read the standalone `semantic_layer_notes()` function
+    rather than the layer object the value is set on. => **Assert on the layer,
+    not on the function that feeds it.** A test that reads the source of a value
+    cannot see it failing to arrive at the destination.
+    - Both layers now carry both arms in `tests/test_dex_bridge.py`, asserted on
+      the layer. **Verified by mutation rather than by reading**: removing
+      `notes=` from `to_semantic_layer` turns
+      `test_an_unresolvable_field_arrives_as_none_and_is_disclosed` red on
+      *"the pairing is the layer's job now, not the caller's"*. A new test would
+      be a second copy of a working one.
+- **`path` is `None`, never `""`.** The empty string was an undocumented
+  sentinel, named as one by the release that made the field optional. A
+  regression test guards it, because `""` validates fine and would go unnoticed.
+- **The `exmergo_dex_core.projects` entry point is live as of dex-core 1.6.0**,
+  and was inert before it for as long as nothing looked the group up. That is the
+  origin of this repository's most-repeated lesson and the reason several tests
+  exist that look redundant: they check the *resolution*, not the registration.
+
 ## Running the suite
 
 Three steps, matching CI exactly. From the repository root:
