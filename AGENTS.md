@@ -116,6 +116,13 @@ found.
   filename it already holds and a rehearsal you can only run once is no use on the
   second attempt. Read the four-step preamble at the head of
   `.github/workflows/publish.yml` before changing any of this.
+- **The upload step is `pypa/gh-action-pypi-publish`, and the build step is still
+  uv.** That split is the whole reason for the action: uv does not generate PEP 740
+  attestations, only uploads ones something else made. Provenance attaches AT
+  UPLOAD and index files are immutable, so a release that ships without it cannot
+  be repaired, only superseded. Both jobs read the provenance back off the index
+  and assert it names this repository, `publish.yml`, and the environment they ran
+  in - presence alone would pass an attestation signed by anyone.
 
 ## Change workflow
 

@@ -38,6 +38,27 @@ name: publish
 # distribution. It was namespaced (`dagster-dex-project-v*`) in the monorepo this
 # came from, where a bare tag would have collided with everything else in the tree.
 # That reason does not travel.
+#
+# WHY `pypa/gh-action-pypi-publish` AND NOT `uv publish`, WHICH THIS USED TO USE.
+# uv does not generate PEP 740 attestations. It uploads `.publish.attestation`
+# files that something else produced, and generates none itself -- so a release
+# cut with it carries a verified PUBLISHER and no verifiable PROVENANCE, and that
+# gap cannot be closed afterwards: attestations attach at upload and PyPI files
+# are immutable. The action generates them by default under Trusted Publishing,
+# on PyPI and TestPyPI alike. uv still BUILDS both distributions here; only the
+# upload moved.
+#
+# THE COST, STATED RATHER THAN DISCOVERED LATER: this drops uv's
+# `--trusted-publishing always`, which failed closed and named the real cause
+# rather than falling back to hunting for a token. The action has no equivalent
+# switch, and does not need one -- with no `password` supplied there is nothing
+# for it to fall back TO, so the same fail-closed shape is reached by having no
+# alternative rather than by a flag.
+#
+# It is pinned to an exact version rather than the `@v7`-style major tag the
+# other actions here use, because this one publishes no major tag: `release/v1`
+# is a BRANCH. A moving branch on the step that holds the release identity is the
+# wrong trade, and dependabot keeps the exact pin fresh.
 
 on:
   push:
@@ -123,8 +144,9 @@ jobs:
     # THIS JOB IS THE ONLY PLACE THE OIDC PATH CAN BE EXERCISED BEFORE IT MATTERS.
     # Everything the real publish does that can fail -- minting a token against a
     # pending publisher, matching the environment name, the distribution name
-    # being one the publisher recognises -- fails here instead, against a
-    # namespace where being wrong costs nothing.
+    # being one the publisher recognises, signing an attestation and having the
+    # index store it -- fails here instead, against a namespace where being wrong
+    # costs nothing.
     #
     # WHAT IT DOES NOT PROVE: PyPI and TestPyPI are separate services with
     # separate publisher stamps, so a green rehearsal says nothing about whether
@@ -177,29 +199,72 @@ jobs:
           grep -qx "__version__ = \"${REHEARSAL}\"" src/dagster_dex/__init__.py \
             || { echo "__init__.py __version__ was not stamped"; exit 1; }
           echo "Rehearsing as ${REHEARSAL} (real version ${BASE} is untouched)."
+          # Carried to the provenance check below, which has to name the exact
+          # version it is asking the index about.
+          echo "REHEARSAL_VERSION=${REHEARSAL}" >> "$GITHUB_ENV"
 
       - name: Build sdist + wheel
         run: uv build
 
-      # `--publish-url` is the WHOLE difference from the real publish, and it is
-      # enough on its own. uv asks the upload host for its OIDC audience
-      # (`/_/oidc/audience` answers `testpypi` here and `pypi` there) and mints
-      # against that, so pointing at the other host cannot accidentally present a
-      # token minted for the real index.
-      #
-      # `--trusted-publishing always` for the same reason as below: on
-      # `automatic`, a misconfigured publisher makes uv fall back to hunting for
-      # a token and report a credentials error instead of the real cause. In a
-      # rehearsal, whose entire output is the diagnosis, that is worse than useless.
+      # `repository-url` is the WHOLE difference from the real publish. The OIDC
+      # audience is fetched from the upload host rather than assumed
+      # (`/_/oidc/audience` answers `testpypi` here and `pypi` there), so pointing
+      # at the other host cannot present a token minted for the real index.
       - name: Publish to TestPyPI (Trusted Publishing)
-        run: |
-          uv publish \
-            --publish-url https://test.pypi.org/legacy/ \
-            --trusted-publishing always
+        uses: pypa/gh-action-pypi-publish@v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
 
-      - name: Where it landed
+      # The attestation is a CLAIM until something reads it back, and the whole
+      # reason this job exists is that unread claims are how releases go wrong
+      # late. So: ask the index what provenance it actually stored, and check the
+      # IDENTITY inside it rather than its presence. An attestation naming a
+      # different repository, workflow or environment is a pass under a
+      # presence-only check and is exactly the thing worth catching.
+      #
+      # Bounded retry, because the Integrity API can lag the upload by seconds.
+      # After five tries it is a real absence rather than a slow index -- and a
+      # real absence means the upload succeeded with no provenance at all, which
+      # is the silent half of this whole change.
+      - name: The index stored provenance, and it names this workflow
+        env:
+          INDEX: https://test.pypi.org
+          EXPECT_ENVIRONMENT: testpypi
         run: |
-          echo "https://test.pypi.org/project/dagster-dex/" >> "$GITHUB_STEP_SUMMARY"
+          WHEEL=$(basename "$(ls dist/*.whl)")
+          URL="${INDEX}/integrity/dagster-dex/${REHEARSAL_VERSION}/${WHEEL}/provenance"
+          CODE=000
+          for attempt in 1 2 3 4 5; do
+            CODE=$(curl -sS -o provenance.json -w '%{http_code}' "$URL")
+            [ "$CODE" = "200" ] && break
+            echo "attempt ${attempt}: HTTP ${CODE}, re-asking in 10s"
+            sleep 10
+          done
+          if [ "$CODE" != "200" ]; then
+            echo "::error::No provenance at ${URL} (HTTP ${CODE}). The upload succeeded and shipped nothing to verify it."
+            exit 1
+          fi
+          python3 - "$EXPECT_ENVIRONMENT" <<'PY'
+          import json
+          import os
+          import sys
+
+          expected = {
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow": "publish.yml",
+              "environment": sys.argv[1],
+          }
+          bundles = json.load(open("provenance.json"))["attestation_bundles"]
+          publishers = [b["publisher"] for b in bundles]
+          print("publishers :", json.dumps(publishers))
+          for field, want in expected.items():
+              got = {p.get(field) for p in publishers}
+              if want not in got:
+                  sys.exit(f"provenance {field} is {got}, expected {want!r}")
+          count = sum(len(b["attestations"]) for b in bundles)
+          print(f"verified   : {count} attestation(s) naming this workflow")
+          PY
+          echo "${INDEX}/project/dagster-dex/" >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     # Tag only. A PR reaches `build` and stops there.
@@ -237,9 +302,52 @@ jobs:
           fi
           echo "Built artifacts match ${VERSION}."
 
-      # `--trusted-publishing always` rather than the default `automatic`. On
-      # `automatic`, a misconfigured publisher makes uv fall back to looking for a
-      # token, and the failure surfaces as a confusing credentials error instead of
-      # naming the real cause. `always` fails closed and says why.
       - name: Publish to PyPI (Trusted Publishing)
-        run: uv publish --trusted-publishing always
+        uses: pypa/gh-action-pypi-publish@v1.14.2
+
+      # The same read-back as the rehearsal, and it FAILS THE JOB, which needs
+      # saying because by the time it runs the release is already on PyPI and
+      # nothing here can take it off. A red job over a published release is the
+      # honest report: this version shipped without verifiable provenance, the
+      # only remedy is the next one, and a green tick would hide that until
+      # somebody went looking. The rehearsal is what stops this from firing.
+      - name: The index stored provenance, and it names this workflow
+        env:
+          INDEX: https://pypi.org
+          EXPECT_ENVIRONMENT: pypi
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          WHEEL=$(basename "$(ls dist/*.whl)")
+          URL="${INDEX}/integrity/dagster-dex/${VERSION}/${WHEEL}/provenance"
+          CODE=000
+          for attempt in 1 2 3 4 5; do
+            CODE=$(curl -sS -o provenance.json -w '%{http_code}' "$URL")
+            [ "$CODE" = "200" ] && break
+            echo "attempt ${attempt}: HTTP ${CODE}, re-asking in 10s"
+            sleep 10
+          done
+          if [ "$CODE" != "200" ]; then
+            echo "::error::${VERSION} is published, but there is no provenance at ${URL} (HTTP ${CODE})."
+            exit 1
+          fi
+          python3 - "$EXPECT_ENVIRONMENT" <<'PY'
+          import json
+          import os
+          import sys
+
+          expected = {
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "workflow": "publish.yml",
+              "environment": sys.argv[1],
+          }
+          bundles = json.load(open("provenance.json"))["attestation_bundles"]
+          publishers = [b["publisher"] for b in bundles]
+          print("publishers :", json.dumps(publishers))
+          for field, want in expected.items():
+              got = {p.get(field) for p in publishers}
+              if want not in got:
+                  sys.exit(f"provenance {field} is {got}, expected {want!r}")
+          count = sum(len(b["attestations"]) for b in bundles)
+          print(f"verified   : {count} attestation(s) naming this workflow")
+          PY
+          echo "${INDEX}/project/dagster-dex/" >> "$GITHUB_STEP_SUMMARY"
