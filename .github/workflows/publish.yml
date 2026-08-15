@@ -2,37 +2,43 @@ name: publish
 
 # The release path for this package.
 #
-# NOTHING HERE PUBLISHES UNTIL A TAG IS PUSHED, AND NO TAG HAS BEEN.
-# The workflow exists so that publishing is a decision rather than a project. The
-# package has never been released. If the PyPI Trusted Publisher below is not yet
-# configured, a tag pushed today fails at the publish step having already built
-# and tested cleanly. That is the intended failure: it cannot publish by accident,
-# and it cannot silently half-publish.
+# NOTHING HERE PUBLISHES WITHOUT A TAG. A merge cannot release, and a tag cannot
+# half-release. `0.1.0` went out on 2026-08-15 from `v0.1.0`, so the one-time
+# setup is done and what remains is short.
 #
-# TO ACTUALLY PUBLISH (all four, in order):
-#   1. Rehearse against TestPyPI, using the `rehearse` job below. It needs a
-#      TestPyPI *pending* publisher of its own -- project `dagster-dex`, owner
-#      `catincloud-labs`, repo `dagster-dex`, workflow `publish.yml`, environment
-#      `testpypi` -- and the `testpypi` GitHub environment to go with it. Then
-#      Actions => publish => Run workflow. The OIDC path has never executed, and
-#      the real namespace is not the place to learn it is misconfigured.
-#      NOTE: `workflow_dispatch` only appears in the UI once this file is on the
-#      DEFAULT BRANCH. The rehearsal cannot be run from the pull request that
-#      adds it.
-#   2. Create a PyPI *pending* publisher -- the project does not exist yet, so an
-#      ordinary Trusted Publisher cannot be attached to it. Project `dagster-dex`,
-#      owner `catincloud-labs`, repo `dagster-dex`, workflow `publish.yml`,
-#      environment `pypi`. This also claims the name.
-#   3. Create the `pypi` GitHub environment, with a required reviewer and
-#      deployment restricted to the tag pattern below.
-#   4. Tag, and push the tag:
-#        git tag v0.1.0 && git push origin v0.1.0
+# TO CUT A RELEASE (both, in order):
+#   1. BUMP THE VERSION -- `version` in pyproject.toml and `__version__` in
+#      `__init__.py`, two hand-maintained strings a test pins as equal. This is
+#      no longer optional the way it was for the first release: `0.1.0` exists
+#      on PyPI, and an index refuses a version it already holds. A tag cut
+#      without a bump stops at the match gate below, which is the cheap place to
+#      discover it.
+#   2. Tag the merged bump, and push the tag:
+#        git tag v0.1.1 && git push origin v0.1.1
+#      `build` runs, then `publish` WAITS on the `pypi` environment's required
+#      reviewer. That pause is the last moment at which nothing has been
+#      uploaded; everything after it is irreversible.
 #
-# STEP 4 NEEDS NO VERSION BUMP FOR THE FIRST RELEASE. `version` in
-# pyproject.toml is already `0.1.0`, it agrees with `__init__.__version__`, and
-# nothing has been published under it, so the match gate below passes as-is.
-# Bumping first would publish `0.1.1` and burn `0.1.0` for no reason. Bump only
-# for a SECOND release.
+# REHEARSE FIRST IF THIS FILE CHANGED. `Actions => publish => Run workflow` puts
+# a `.dev<run number>` build on TestPyPI and reads its provenance back. Cheap,
+# repeatable, and the only place the upload path can be wrong for free. A plain
+# version bump does not need it.
+#
+# THE ONE-TIME SETUP, RECORDED SO IT IS NOT REDISCOVERED. Both Trusted Publishers
+# began as PENDING publishers -- an ordinary one cannot attach to a project that
+# does not exist yet -- and both were converted to ordinary ones by their first
+# successful upload:
+#   - PyPI     : project `dagster-dex`, owner `catincloud-labs`, repo
+#                `dagster-dex`, workflow `publish.yml`, environment `pypi`.
+#   - TestPyPI : the same, environment `testpypi`.
+#   - `pypi` environment: required reviewer, deployments restricted to `v*` TAGS.
+#                `prevent_self_review` is off deliberately -- with a single
+#                reviewer, on would mean no release can ever be approved.
+#   - `testpypi` environment: deployments restricted to `main`, no reviewer,
+#                because the dispatch is already a deliberate human act.
+# A publisher matches on owner AND repo. `catincloudlabs` (no hyphen) is a
+# DIFFERENT organisation holding other repositories in this estate, and naming it
+# by mistake fails at upload -- after a tag is cut, having built and tested green.
 #
 # The tag is a bare `v*` because this repository holds exactly one
 # distribution. It was namespaced (`dagster-dex-project-v*`) in the monorepo this
@@ -148,10 +154,10 @@ jobs:
     # index store it -- fails here instead, against a namespace where being wrong
     # costs nothing.
     #
-    # WHAT IT DOES NOT PROVE: PyPI and TestPyPI are separate services with
-    # separate publisher stamps, so a green rehearsal says nothing about whether
-    # step 2 above was done, or done with the right owner. It proves the SHAPE is
-    # right, not that the real stamp exists.
+    # WHAT IT DOES NOT PROVE: PyPI and TestPyPI are separate services carrying
+    # separate publisher stamps, so a green rehearsal is evidence about the
+    # TestPyPI one alone. It proves the SHAPE is right. If the PyPI stamp is ever
+    # changed or removed, nothing here notices.
     if: github.event_name == 'workflow_dispatch'
     needs: [build]
     runs-on: ubuntu-latest
