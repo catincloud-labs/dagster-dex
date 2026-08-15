@@ -36,12 +36,12 @@ uv run --no-project --with-editable . --with pytest==8.4.1 \
 
 # 2. the boundary, against the real engine
 uv run --no-project --with-editable . --with pytest==8.4.1 \
-  --with exmergo-dex-core==1.6.4 --with sqlglot==30.13.0 \
+  --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
   python -m pytest tests --ignore=tests/test_upstream_contract.py
 
 # 3. dex-core's own project contract
 DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
-  --with pytest==8.4.1 --with exmergo-dex-core==1.6.4 --with sqlglot==30.13.0 \
+  --with pytest==8.4.1 --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
   python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
 ```
 
@@ -86,7 +86,15 @@ desk, wrong in CI, where an unrun file and a passing file look identical.
 
 - **Published** (`pyproject.toml`, the `[dex]` extra): `exmergo-dex-core~=1.6.4`,
   i.e. `>=1.6.4, ==1.6.*`. Patches move, the minor boundary does not.
-- **Tested** (CI and the commands above): `==1.6.4`, exactly.
+- **Tested** (CI and the commands above): `exmergo-dex-core==1.6.5`, exactly.
+  - This line used to read ``==1.6.4``, naming the version without naming the
+    package. That put it **outside** `tests/test_pin_coherence.py`, which
+    matches on the package name - so the one sentence in this file that states
+    the tested version was the one site nothing checked, and it would have gone
+    stale at the first bump with nothing to catch it. Found by the bump. Fixed
+    by making the sentence guardable rather than by loosening the guard, since a
+    looser pattern would have to match a bare `==1.6.5` anywhere and would find
+    versions of unrelated things.
 
 **These disagree on purpose.** This package is a plugin whose host resolves it
 through an entry point, so an `==` pin in published metadata would make every

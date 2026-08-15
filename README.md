@@ -127,7 +127,7 @@ uv run --no-project --with-editable . \
 
 # with the engine, to exercise the boundary
 uv run --no-project --with-editable . \
-    --with pytest==8.4.1 --with exmergo-dex-core==1.6.4 --with sqlglot==30.13.0 \
+    --with pytest==8.4.1 --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
     python -m pytest tests \
     --ignore=tests/test_upstream_contract.py
 ```
@@ -154,7 +154,7 @@ the criterion is now judged by upstream's released code rather than by a branch:
 ```bash
 DEX_UPSTREAM_CONTRACT_REQUIRED=1 \
 uv run --no-project --with-editable . \
-    --with pytest==8.4.1 --with exmergo-dex-core==1.6.4 --with sqlglot==30.13.0 \
+    --with pytest==8.4.1 --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
     python -m pytest tests/test_upstream_contract.py
 ```
 

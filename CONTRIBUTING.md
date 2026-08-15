@@ -44,12 +44,12 @@ uv run --no-project --with-editable . --with pytest==8.4.1 \
 
 # 2. the boundary, against the real engine
 uv run --no-project --with-editable . --with pytest==8.4.1 \
-  --with exmergo-dex-core==1.6.4 --with sqlglot==30.13.0 \
+  --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
   python -m pytest tests --ignore=tests/test_upstream_contract.py
 
 # 3. dex-core's own project contract
 DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
-  --with pytest==8.4.1 --with exmergo-dex-core==1.6.4 --with sqlglot==30.13.0 \
+  --with pytest==8.4.1 --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
   python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
 ```
 
