@@ -76,7 +76,10 @@ _PIN = re.compile(r"exmergo-dex-core(?:\[[^\]]*\])?\s*(==|~=)\s*([0-9][^\s\"',\]
 EXPECTED: dict[str, dict[str, int]] = {
     ".github/dependabot.yml": {"~=": 1},
     ".github/workflows/checks.yml": {"==": 2},
-    ".github/workflows/publish.yml": {"==": 1},
+    # Two: the suite step, and the end-to-end step that drives dex through the
+    # built wheel. The second was added after this guard existed and the guard
+    # caught it on the first run, which is the per-file map earning its keep.
+    ".github/workflows/publish.yml": {"==": 2},
     # Three commands plus the "Tested" line in the two-pins section. That line
     # named the version without naming the package until the 1.6.5 bump, which
     # put the one sentence stating the tested version outside this scan.
@@ -87,6 +90,10 @@ EXPECTED: dict[str, dict[str, int]] = {
     # operator: `==` here would be a different promise to every consumer's
     # resolver, with no count anywhere changing to show it.
     "pyproject.toml": {"~=": 1},
+    # The by-hand command in the end-to-end driver's docstring. A runnable
+    # command, so it is held like every other one: a reader who runs it against
+    # a different engine than CI does is not reproducing CI.
+    "scripts/drive_dex_against_the_wheel.py": {"==": 1},
 }
 
 
