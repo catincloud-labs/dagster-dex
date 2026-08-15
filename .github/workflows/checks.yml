@@ -20,34 +20,148 @@ permissions:
 # that never reports never blocks a merge. The gate would go quiet rather than red.
 #
 # Renaming one means editing the ruleset in the same change.
+#
+# ---------------------------------------------------------------------------
+# WHY THE FIRST TWO JOBS ARE WRITTEN OUT HERE INSTEAD OF CALLING A SHARED ACTION
+#
+# They used to call composite actions from a sibling repository. That repository
+# is private, and a workflow in a PUBLIC repository cannot resolve an action in a
+# private one -- measured, not assumed, on four pull requests here:
+#
+#   ##[error]Unable to resolve action `<org>/<shared>`, not found
+#
+# It fails at `Set up job`, before any step runs, so both required checks failed
+# on every pull request and nothing could merge. `tests` and `publish` were
+# unaffected because they call public actions only.
+#
+# The rulesets match on CONTEXT STRING alone, so a job named `markdown` here
+# satisfies exactly the same requirement the shared one did. Gate strength is
+# unchanged; what changed is where the code lives.
+#
+# THE COST, STATED RATHER THAN DISCOVERED LATER: the check logic now exists in
+# two places, and one of them cannot see the other. The shared action compared
+# this repository's vendored guard byte-for-byte against its source on every run;
+# that step is GONE from this file because it is the one thing that genuinely
+# cannot work from here.
+#
+# It has not been dropped. It moved to the private side, which is the direction
+# that does work -- a private job can read a public repository, and that was
+# measured too. The vendored files below are compared there:
+#
+#   scripts/check_closing_keywords.py
+#   scripts/test_check_closing_keywords.py
+#   .github/markdownlint.json
+#
+# So do NOT edit those three to suit local taste. They are copies, they are
+# checked, and the check is somewhere you cannot see from this file. The
+# weakening is real and worth naming: drift is now caught after it lands rather
+# than blocked on the pull request that introduces it.
+# ---------------------------------------------------------------------------
 jobs:
   markdown:
     name: markdown
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: catincloud-labs/workbench/.github/actions/markdown@main
-        with:
-          # Narrow to what this repository actually has. There is no `docs/`, and
-          # a glob matching nothing is noise rather than coverage.
-          globs: '*.md .github/**/*.md'
+
+      # Narrow to what this repository actually has. There is no `docs/`, and a
+      # glob matching nothing is noise rather than coverage.
+      #
+      # The config is passed explicitly and lives at `.github/markdownlint.json`
+      # rather than at the repository root. A root `.markdownlint.json` is
+      # auto-discovered and outranks any shared default, so a copy of the estate
+      # rules sitting there would read as this repository having DECIDED its own
+      # lint rules. It has decided nothing. It is carrying a copy because it
+      # cannot reach the original, and the location says which of those is true.
+      #
+      # Without `--config` the CLI falls back to its own defaults, where MD013
+      # and MD041 are both ON -- so a wrong path must fail loudly rather than
+      # lint quietly against the wrong rules. A missing file gives ENOENT.
+      - name: markdownlint
+        run: npx -y markdownlint-cli2 --config .github/markdownlint.json '*.md' '.github/**/*.md'
 
   closing-keywords:
     name: closing keywords
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@v4
-      - uses: catincloud-labs/workbench/.github/actions/closing-keywords@main
-        with:
-          pr-number: ${{ github.event.pull_request.number }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # Compared byte-for-byte against workbench's copy. The vendored copy
-          # exists because a `commit-msg` hook cannot reach a PRIVATE repository at
-          # commit time, and `workbench` is private. This repository being public
-          # changes nothing about that -- the privacy that matters is the source's,
-          # not the consumer's.
-          vendored-copy: scripts/check_closing_keywords.py
+
+      # The guard's own self-test runs before the guard does. A checker that has
+      # silently stopped detecting anything passes every pull request, which is
+      # the one failure mode this job cannot otherwise observe.
+      #
+      # Vendored, like the guard beside it, and for the same reason: this
+      # repository cannot call the shared action. Both files are compared against
+      # `workbench` from the private side -- see the note at the head of this
+      # file -- so neither is edited here.
+      - name: Guard fires and goes quiet
+        run: python scripts/test_check_closing_keywords.py
+
+      - name: Scan the pull request body
+        run: |
+          gh pr view "$PR" --json body -q .body > "$RUNNER_TEMP/pr-body.md"
+          python scripts/check_closing_keywords.py "$RUNNER_TEMP/pr-body.md"
+
+      - name: Scan every commit message in the pull request
+        run: |
+          gh pr view "$PR" --json commits \
+            -q '.commits[].messageHeadline + "\n" + .commits[].messageBody' \
+            > "$RUNNER_TEMP/pr-commits.txt"
+          python scripts/check_closing_keywords.py "$RUNNER_TEMP/pr-commits.txt"
+
+      # The regex above is our reimplementation; this is the authority. When the
+      # two disagree, believe this one -- but read the reported line before
+      # believing the disagreement, because the field lags a body edit by tens of
+      # seconds and reads empty right after a pull request opens.
+      - name: Ask GitHub what it will actually close
+        run: |
+          # This step fetches; it does not decide. Reading the trailer and
+          # comparing the two sets is the guard's rule, so it lives in the script
+          # and is exercised by the self-test above.
+          #
+          # KEY: do not add a second reader here. CI once grew its own `grep` for
+          # the trailer alongside the script's `find_acknowledged()`, and the two
+          # disagreed -- the grep was anchored at line start and not fence-aware,
+          # so a body that merely SHOWED an example trailer failed CI, which is
+          # the exact case the self-test pins as clean. If the rule needs to
+          # change, change it in the script.
+          gh pr view "$PR" --json body -q .body > "$RUNNER_TEMP/pr-body-reconcile.md"
+
+          attempt() {
+            reported="$(
+              gh pr view "$PR" --json closingIssuesReferences \
+                -q '[.closingIssuesReferences[].number] | sort | join(",")'
+            )"
+            python scripts/check_closing_keywords.py \
+              --github-closes "$reported" \
+              "$RUNNER_TEMP/pr-body-reconcile.md" \
+              > "$RUNNER_TEMP/reconcile.txt" 2>&1
+          }
+
+          # The field lags a body edit by tens of seconds and reads empty right
+          # after a pull request opens, so one disagreement is not believed until
+          # it has been asked again. Timing is this step's business; the verdict
+          # is not.
+          if attempt; then
+            cat "$RUNNER_TEMP/reconcile.txt"
+            exit 0
+          fi
+
+          echo "Disagreement on first read; the field lags an edit. Re-asking in 30s."
+          sleep 30
+
+          if attempt; then
+            cat "$RUNNER_TEMP/reconcile.txt"
+            exit 0
+          fi
+
+          cat "$RUNNER_TEMP/reconcile.txt"
+          echo "::error::GitHub and the Autoclose trailer disagree about what merging this will close."
+          exit 1
 
   # THE THREE STEPS BELOW ARE NOT A SPLIT FOR SPEED. The first is a CONTROL.
   #
