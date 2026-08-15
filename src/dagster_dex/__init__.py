@@ -28,7 +28,7 @@ from .model import (
 from .project import DagsterProject
 from .protocol import EditableProject, FingerprintedProject, ProjectSource, tier_of
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "DagsterProject",

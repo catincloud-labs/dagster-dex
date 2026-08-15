@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dagster-dex"
-version = "0.1.0"
+version = "0.2.0"
 # Leads with the use case rather than the design argument, because this is the
 # COLDEST surface the package has: it renders under the name in PyPI search
 # results, above the README. The framing the README and the repo carry -- an

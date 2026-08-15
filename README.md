@@ -256,7 +256,7 @@ answers requests reads it back.
 project:
   format: dagster
   options:
-    artifact: project/my_project.json   # written by dagster_dex.artifact.dumps
+    artifact: project/my_project.json   # written by dagster_dex.artifact.dump
 ```
 
 Exactly one of the two is required, and naming both is refused rather than
@@ -267,3 +267,65 @@ and `name:` are refused beside it rather than silently ignored.
 **A missing artifact is refused, not read as an empty project.** An empty
 project is a valid one, so the tolerant reading would report a broken deploy as a
 warehouse with nothing declared, quietly, and for as long as it lasted.
+
+### Writing one, from the side that has the graph
+
+`dagster_dex.artifact.dump` writes the file. It is deliberately
+orchestrator-free - the reduction reads asset definitions structurally - so the
+scheduling around it is yours. This is what that looks like in Dagster, and it is
+**user code**: copy it, do not import it.
+
+```python
+from datetime import datetime, timezone
+
+import dagster as dg
+from dagster_dex import DagsterProject
+from dagster_dex.artifact import dump
+
+@dg.op
+def write_project_artifact(context) -> int:
+    from my_project.definitions import all_assets   # deferred: see below
+
+    project = DagsterProject.from_asset_graph(all_assets, name="my_project")
+    declarations = project.declarations()
+    dump(
+        "/shared/project/my_project.json",
+        name="my_project",
+        models=declarations.models,
+        generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        declaration_sources=my_declaration_yaml,      # {filename: text}
+    )
+    context.log.info("wrote %s models", len(declarations.models))
+    return len(declarations.models)
+
+@dg.job
+def write_project_artifact_job() -> None:
+    write_project_artifact()
+
+write_project_artifact_schedule = dg.ScheduleDefinition(
+    job=write_project_artifact_job,
+    cron_schedule="0 6 * * *",
+    execution_timezone="UTC",
+    default_status=dg.DefaultScheduleStatus.RUNNING,
+)
+```
+
+Four things in that sketch are not incidental:
+
+- **The asset import is deferred into the op body.** A module-scope import of
+  the graph is a cycle if your `definitions.py` also imports this module, and a
+  failure in it takes down the whole code location rather than one job.
+- **`generated_at` is yours to supply.** The library has no clock on purpose: a
+  default would make every artifact look freshly written, including one produced
+  by a replay.
+- **The path's parent must already exist.** `dump` will not create it - a
+  missing parent is a configuration mistake, and creating it writes the artifact
+  somewhere nobody reads.
+- **Schedule it.** An artifact that regenerates when someone remembers is a
+  stale artifact, and a stale project is a wrong drift report rather than an
+  absent one.
+
+**This snippet is prose and nothing runs it**, which is a real cost and is
+stated rather than hidden: `examples/reduce_asset_graph.py` is executed by CI and
+this is not. It is here because scheduling is a decision, and a library that made
+it for you would be wrong in every deployment that differs.

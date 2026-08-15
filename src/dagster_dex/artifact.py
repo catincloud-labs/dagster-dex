@@ -34,13 +34,25 @@ It is also what both existing readers already hand to the constructor, so the
 artifact path and the directory path feed it byte-identical input.
 
 **Absence is refused, not tolerated.** See :func:`loads`.
+
+**This module is text, plus exactly one filesystem operation, and the asymmetry
+is deliberate.** :func:`dump` takes a path; there is no ``load(path)``. Writing
+needs the path because *atomicity is not expressible in text* - the swap has to
+happen on a filesystem or it is not a swap. Reading does not, because what a
+missing file *means* is a policy the caller owns and only the caller knows:
+:mod:`~.dagster_dex.dex` refuses a missing artifact, because for dex a stale
+drift report is worse than a loud failure, and a different host may reasonably
+decide otherwise.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from .model import ProjectModel
 
@@ -48,6 +60,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "ProjectArtifact",
     "ArtifactError",
+    "dump",
     "dumps",
     "loads",
 ]
@@ -143,6 +156,95 @@ def dumps(
     return json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
+def dump(
+    path: str | os.PathLike[str],
+    *,
+    name: str,
+    models: Sequence[ProjectModel],
+    generated_at: str,
+    declaration_sources: Mapping[str, str] | None = None,
+    semantic_sources: Mapping[str, str] | None = None,
+    source_declarations: Mapping[str, str] | None = None,
+) -> None:
+    """:func:`dumps`, plus a swap a reader cannot observe half of.
+
+    **It takes a path rather than a file object, and that is forced rather than
+    stylistic.** The staging file must be created in the *destination directory*,
+    because ``os.replace`` is only atomic within a filesystem - and a caller
+    handing over an open file has already chosen where it lives. A reader who
+    knows ``json.dump`` will notice the divergence; this is the reason for it.
+
+    **Why atomicity at all.** The consumer builds a project per command, so it
+    reads this file at times the writer does not choose. A plain write is
+    observable in three broken states: truncated, half-written, and
+    zero-length - and the reader refuses all three, which is correct and means a
+    regeneration would take the consumer down for its duration. ``os.replace`` is
+    atomic on POSIX by definition, so a reader sees either the whole previous
+    artifact or the whole new one.
+
+    Each of the following was bought with a production failure, and none is
+    tidiness:
+
+    - **The temp file goes in the destination directory.** A cross-device rename
+      raises ``OSError`` (EXDEV), and the destination is often a mounted volume
+      that is not the writer's root filesystem. Seeing EXDEV from here means
+      someone moved the staging location.
+    - **flush + fsync before the replace.** Without them a hard reboot can leave
+      a zero-length file that parses as nothing. The reader refuses it - loudly,
+      and on every request until the next successful write. Microseconds on a
+      file this size.
+    - **An explicit 0644.** ``mkstemp`` creates 0600, and an artifact exists to
+      be read by *another* process, frequently under another uid. There is no
+      ``mode=`` parameter on purpose: it would let 0600 be passed back in and
+      re-create the bug this line exists to prevent.
+    - **The staging file is unlinked if anything fails.** A failed write must not
+      take out the artifact the consumer is currently reading.
+
+    **The parent directory is not created.** A path whose parent does not exist
+    is a configuration mistake, and creating the tree would hide it by writing
+    the artifact somewhere nobody reads. That is this module's *absence is
+    refused, not tolerated* applied to the write side.
+
+    **Errors are ``OSError`` and are left to propagate.** :class:`ArtifactError`
+    is not reused: its docstring says *a project artifact could not be read*, and
+    :mod:`~.dex` maps it to a configuration refusal on the read path, so a write
+    failure arriving as one would be indistinguishable there. No new exception
+    type is introduced either - a bespoke error invites a caller to catch and
+    continue, and continuing is the failure this module refuses everywhere else.
+    """
+
+    destination = Path(path)
+    text = dumps(
+        name=name,
+        models=models,
+        generated_at=generated_at,
+        declaration_sources=declaration_sources,
+        semantic_sources=semantic_sources,
+        source_declarations=source_declarations,
+    )
+
+    handle, staging = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=str(destination.parent)
+    )
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(staging, 0o644)
+        os.replace(staging, destination)
+    except BaseException:
+        # BaseException, not Exception: a KeyboardInterrupt between the create
+        # and the replace would otherwise leave the staging file behind, and the
+        # cleanup is what keeps a failed write from accumulating litter in a
+        # directory the consumer reads.
+        try:
+            os.unlink(staging)
+        except OSError:
+            pass
+        raise
+
+
 def _text_mapping(document: Mapping[str, object], key: str) -> dict[str, str]:
     """One of the three declaration mappings, checked to be ``{str: str}``.
 
@@ -174,8 +276,14 @@ def loads(text: str) -> ProjectArtifact:
     project could not be read". That failure is silent, permanent, and reads
     exactly like a clean result. A refusal is loud once.
 
-    The caller is expected to refuse a **missing** file on the same reasoning;
-    this function only sees text, so it cannot make that decision itself.
+    The caller is expected to refuse a **missing** file on the same reasoning.
+    ``loads`` sees text only, deliberately, so it cannot make that decision
+    itself - and there is no ``load(path)`` beside :func:`dump` for exactly that
+    reason. **The asymmetry is the design, not an omission.** Atomicity is not
+    expressible in text, so writing needs the path; what absence *means* is a
+    policy the caller owns, and only the caller knows it. :func:`~.dex.
+    project_from_context` refuses a missing artifact because a stale drift
+    report is worse than a loud failure; a different host may reasonably differ.
     """
 
     try:
