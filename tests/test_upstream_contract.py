@@ -61,9 +61,16 @@ else:
     )
 
 from exmergo_dex_core.adapters.project import (  # noqa: E402
+    ExploreProject,
     MaintainProject,
     ProjectContext,
+    tier_of,
 )
+from exmergo_dex_core.adapters.project_resolver import (  # noqa: E402
+    build_project,
+    resolve_project_factory,
+)
+from exmergo_dex_core.errors import ConfigurationError  # noqa: E402
 
 from dagster_dex.dex import DexProject, project_from_context  # noqa: E402
 
@@ -307,6 +314,93 @@ _BROKEN_DECLARATIONS = tempfile.TemporaryDirectory()
 )
 
 
+def _factory_context(**options) -> ProjectContext:
+    """A context naming the fake graph, the way a configuration entry would."""
+
+    base = {"assets": f"{__name__}:UPSTREAM_FACTORY_ASSETS"}
+    base.update(options)
+    return ProjectContext(options=base)
+
+
+def test_the_entry_point_resolves_through_dex_cores_own_scan():
+    """The third check on the entry point, and the only one from THEIR side.
+
+    Two already exist and neither proves this. `test_packaging.py` asserts the
+    metadata string starts with `dagster_dex.dex:`, deliberately without loading
+    it, because it runs in the engine-free step. `test_dex_bridge.py` asserts the
+    exact string and hand-loads it through `importlib.metadata`.
+
+    Both read the registration. Neither runs dex-core's resolution, and dex-core's
+    resolution is the thing that was broken from `0.1.0` until 1.6.0 began
+    exercising it - the group was declared, nothing looked it up, and there was no
+    moment at which it could have failed. Asserting a string is not asserting that
+    a scan finds it.
+
+    Identity rather than `callable()`: anything with `__call__` satisfies the
+    weaker check, including the class this entry point used to name by mistake.
+    """
+
+    assert resolve_project_factory("dagster") is project_from_context
+
+
+def test_the_resolved_format_builds_a_tier_2_project():
+    """Tier 2 specifically, because tier 1 fails silently rather than loudly.
+
+    `construct_project` enforces only the `ExploreProject` floor. A format that
+    resolved, built, and satisfied tier 1 while losing tier 2 would serve every
+    `maintain` command an empty blast radius without erroring anywhere - which is
+    the shape this package's own `Freshness` tri-state exists to avoid elsewhere.
+    """
+
+    project = build_project("dagster", _factory_context(name="demo_project"))
+
+    assert isinstance(project, ExploreProject)
+    assert isinstance(project, MaintainProject)
+    assert tier_of(project) == 2
+
+    # `name` on the seam is the FORMAT identifier, not the instance name. The
+    # `name` option above sets the graph's name and deliberately does not surface
+    # here, which is exactly why a test asserting `project.name == "demo_project"`
+    # would look right and be wrong.
+    assert project.name == "dagster"
+
+
+def test_our_refusals_reach_a_host_as_a_configuration_error():
+    """What a HOST catches, which is not what the factory raises.
+
+    `test_dex_bridge.py` asserts `project_from_context` raises `ValueError` naming
+    the bad option. That is true and it is under-specified in two ways this test
+    pins, because `ConfigurationError` subclasses `ValueError` and so the existing
+    assertion passes either side of the boundary without discriminating.
+
+    `construct_project` re-raises a `ConfigurationError` untouched and wraps
+    anything else. This package's refusals are plain `ValueError`s raised through
+    a lazily-imported boundary, so they always take the wrap branch: the type a
+    host sees is always `ConfigurationError`, never the `ValueError` we raised.
+
+    The middle assertion is the load-bearing one. Upstream's wrap embeds `{exc}`,
+    and refusing an option BY NAME is the whole reason `_KNOWN_OPTIONS` exists. If
+    upstream ever stops embedding the cause, a typo produces a generic "failed to
+    build" naming nothing, and this package's most useful refusal degrades to
+    noise without anything going red.
+    """
+
+    with pytest.raises(ConfigurationError) as refusal:
+        build_project("dagster", _factory_context(declerations="/tmp/x"))
+
+    # Not merely "a ValueError": the exact type, since one is a subclass of the
+    # other and the weaker assertion cannot tell the wrap from its absence.
+    assert type(refusal.value) is ConfigurationError
+
+    # Our sentence survived the wrap and still names the option.
+    assert "declerations" in str(refusal.value)
+
+    # And we did NOT start raising ConfigurationError ourselves, which would take
+    # the pass-through branch and change what a host reads.
+    assert isinstance(refusal.value.__cause__, ValueError)
+    assert not isinstance(refusal.value.__cause__, ConfigurationError)
+
+
 class TestDagsterProjectBuiltFromContext(
     conformance.ProjectFactoryContract,
     conformance.MaintainProjectContract,
@@ -316,11 +410,36 @@ class TestDagsterProjectBuiltFromContext(
 
     Separate from the class above rather than folded into it, and both are worth
     running. That one proves the format is correct when a host constructs it; this
-    one proves it is reachable from `.dex/config.yml`, which is the only door open
-    to a host that reaches dex as a subprocess. A format can pass the first and fail
+    one proves it is reachable the way dex reaches it, which is the only door open
+    to a host running dex as a subprocess. A format can pass the first and fail
     the second, and this package has done exactly that: the behavioural suite was
     green for months while the registered entry point could not build anything at
     all.
+
+    **This docstring made that claim before it was true, and the correction is
+    the point rather than an embarrassment.** `build()` called
+    `project_from_context` directly - the local symbol, bypassing the entry-point
+    scan and `construct_project` entirely - while the sentence above promised the
+    resolved path. So the file asserted the exact property it did not check, in a
+    package whose own recorded lesson is that *a declared-but-unresolved extension
+    point is not evidence that registration works*. It now goes through
+    `build_project`, which is what the sentence always said.
+
+    Routing through the resolver buys two assertions for free, and neither was
+    reachable before:
+
+    - `construct_project` applies `isinstance(project, ExploreProject)` and names
+      what is missing. That is the check making `DexProject`'s wrapper
+      load-bearing rather than merely documented - return the bare
+      `DagsterProject` and it fails with *"missing name, definitions"*.
+    - Upstream's own refusal assertions now see the error type a **host** sees,
+      which is not the one the factory raises. See
+      `test_our_refusals_reach_a_host_as_a_configuration_error`.
+
+    **The cost, stated rather than discovered:** every failure in this class now
+    has two possible causes - the format, or the resolution in front of it. The
+    three tests immediately above exist so a resolver break is attributed by its
+    own name before this class is read.
 
     `ProjectFactoryContract` goes first so its `make_project()` supplies every
     inherited assertion below with a factory-built project. That is the whole point
@@ -335,8 +454,14 @@ class TestDagsterProjectBuiltFromContext(
 
     tier = MaintainProject
 
-    def build(self, context) -> DexProject:
-        return project_from_context(context)
+    def build(self, context) -> ExploreProject:
+        # `build_project`, not `project_from_context`. The name string goes
+        # through dex-core's own resolution - shipped formats, then a dotted
+        # path, then the `exmergo_dex_core.projects` entry-point scan - and the
+        # result through `construct_project`'s tier floor. That is the path a
+        # host takes, and calling the local symbol here is what made this
+        # class's docstring false.
+        return build_project("dagster", context)
 
     def empty_context(self):
         # No `repo_root`: this format is keyed by an importable module, and the
