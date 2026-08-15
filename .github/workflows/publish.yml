@@ -10,9 +10,15 @@ name: publish
 # and it cannot silently half-publish.
 #
 # TO ACTUALLY PUBLISH (all four, in order):
-#   1. Rehearse against TestPyPI with a pending publisher there first. The OIDC
-#      path has never executed, and the real namespace is not the place to learn
-#      it is misconfigured.
+#   1. Rehearse against TestPyPI, using the `rehearse` job below. It needs a
+#      TestPyPI *pending* publisher of its own -- project `dagster-dex`, owner
+#      `catincloud-labs`, repo `dagster-dex`, workflow `publish.yml`, environment
+#      `testpypi` -- and the `testpypi` GitHub environment to go with it. Then
+#      Actions => publish => Run workflow. The OIDC path has never executed, and
+#      the real namespace is not the place to learn it is misconfigured.
+#      NOTE: `workflow_dispatch` only appears in the UI once this file is on the
+#      DEFAULT BRANCH. The rehearsal cannot be run from the pull request that
+#      adds it.
 #   2. Create a PyPI *pending* publisher -- the project does not exist yet, so an
 #      ordinary Trusted Publisher cannot be attached to it. Project `dagster-dex`,
 #      owner `catincloud-labs`, repo `dagster-dex`, workflow `publish.yml`,
@@ -41,6 +47,10 @@ on:
   # `checks.yml` does not -- that one installs editable, and an editable install
   # can succeed against packaging metadata that cannot produce a valid sdist.
   pull_request:
+  # The rehearsal, and manual on purpose. Uploading to TestPyPI on every merge
+  # would make the rehearsal a routine that nobody reads the output of, which is
+  # the opposite of what step 1 above is for.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -106,6 +116,90 @@ jobs:
         with:
           name: dagster-dex-dist
           path: dist/
+
+  rehearse:
+    # Manual only. A PR reaches `build` and stops there; a tag goes to `publish`.
+    #
+    # THIS JOB IS THE ONLY PLACE THE OIDC PATH CAN BE EXERCISED BEFORE IT MATTERS.
+    # Everything the real publish does that can fail -- minting a token against a
+    # pending publisher, matching the environment name, the distribution name
+    # being one the publisher recognises -- fails here instead, against a
+    # namespace where being wrong costs nothing.
+    #
+    # WHAT IT DOES NOT PROVE: PyPI and TestPyPI are separate services with
+    # separate publisher stamps, so a green rehearsal says nothing about whether
+    # step 2 above was done, or done with the right owner. It proves the SHAPE is
+    # right, not that the real stamp exists.
+    if: github.event_name == 'workflow_dispatch'
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # A DIFFERENT environment from the real one, and that is not tidiness: a
+    # Trusted Publisher matches on environment name, so a rehearsal running in
+    # `pypi` would either fail against the TestPyPI stamp or, if `pypi` were ever
+    # stamped on both, let a rehearsal run under the identity of the real
+    # release. The two identities stay separate at the only place that enforces it.
+    environment: testpypi
+    permissions:
+      # Restated rather than inherited, for the reason spelled out in `publish`.
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+
+      # A rehearsal that can only be run once is not a rehearsal. An index
+      # refuses a filename it already holds, so uploading the real `0.1.0` here
+      # would make the SECOND attempt fail at the upload step for a reason that
+      # has nothing to do with what is being rehearsed -- and the second attempt
+      # is the one that runs after fixing whatever the first found. The run
+      # number gives every rehearsal its own PEP 440 dev release, which sorts
+      # BELOW the version it is derived from and so never shadows it.
+      #
+      # BOTH strings are stamped, not just the one that reaches the metadata.
+      # `tests/test_packaging.py` pins them as equal, and an artifact reporting
+      # one version at runtime and another in its metadata is the exact thing
+      # that test exists to prevent. A rehearsal is allowed to be throwaway; it
+      # is not allowed to be inconsistent in a way the real path forbids.
+      #
+      # The base version is READ rather than written here, so this does not rot
+      # silently at the next bump. If either substitution misses, the job stops:
+      # a no-op `sed` would quietly rehearse against the real version number.
+      - name: Stamp a throwaway dev version so the rehearsal can be repeated
+        run: |
+          BASE=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          REHEARSAL="${BASE}.dev${{ github.run_number }}"
+          sed -i "s/^version = \"${BASE}\"/version = \"${REHEARSAL}\"/" pyproject.toml
+          sed -i "s/^__version__ = \"${BASE}\"/__version__ = \"${REHEARSAL}\"/" \
+            src/dagster_dex/__init__.py
+          grep -qx "version = \"${REHEARSAL}\"" pyproject.toml \
+            || { echo "pyproject.toml version was not stamped"; exit 1; }
+          grep -qx "__version__ = \"${REHEARSAL}\"" src/dagster_dex/__init__.py \
+            || { echo "__init__.py __version__ was not stamped"; exit 1; }
+          echo "Rehearsing as ${REHEARSAL} (real version ${BASE} is untouched)."
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      # `--publish-url` is the WHOLE difference from the real publish, and it is
+      # enough on its own. uv asks the upload host for its OIDC audience
+      # (`/_/oidc/audience` answers `testpypi` here and `pypi` there) and mints
+      # against that, so pointing at the other host cannot accidentally present a
+      # token minted for the real index.
+      #
+      # `--trusted-publishing always` for the same reason as below: on
+      # `automatic`, a misconfigured publisher makes uv fall back to hunting for
+      # a token and report a credentials error instead of the real cause. In a
+      # rehearsal, whose entire output is the diagnosis, that is worse than useless.
+      - name: Publish to TestPyPI (Trusted Publishing)
+        run: |
+          uv publish \
+            --publish-url https://test.pypi.org/legacy/ \
+            --trusted-publishing always
+
+      - name: Where it landed
+        run: |
+          echo "https://test.pypi.org/project/dagster-dex/" >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     # Tag only. A PR reaches `build` and stops there.
