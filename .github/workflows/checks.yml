@@ -214,37 +214,26 @@ jobs:
       # but that means nothing else here would notice `from_asset_graph` breaking
       # against the objects Dagster actually hands it. The `[dagster]` extra was
       # declared and never installed by anything until this step existed.
+      #
+      # THE ASSERTIONS MOVED OUT OF THIS FILE AND INTO `examples/`, and the file
+      # they moved to is now what this step runs. They were a `python -c` blob
+      # here: twenty-eight lines of Python inside YAML inside `run: |`, with the
+      # quoting hazards that implies, no line numbers in a traceback, and -- the
+      # reason this changed -- the package's only runnable demonstration living
+      # in the one file a reader never opens.
+      #
+      # CONTRIBUTING.md asked for a runnable example and named its absence the
+      # clearest gap. Adding one *beside* this step would have created the other
+      # failure this repository keeps recording: an example nobody executes, which
+      # is the same shape as an extension point nobody resolves. Being the step is
+      # what stops it rotting.
+      #
+      # It cannot use pytest: this is the only step that installs `dagster`, and
+      # it installs no test runner. Plain asserts and a nonzero exit, deliberately.
       - name: The reduction works against real Dagster objects
         run: |
           uv run --no-project --with-editable . --with 'dagster>=1.13' \
-            python -c "
-          import dagster as dg
-          from dagster_dex import DagsterProject, EditableProject, tier_of
-
-          @dg.asset(metadata={'layer': 'silver'})
-          def dim_date(): ...
-
-          @dg.asset(deps=[dim_date], metadata={'layer': 'GOLD'})
-          def fact_sales(): ...
-
-          p = DagsterProject.from_asset_graph([dim_date, fact_sales], name='demo')
-          models = {m.name: m for m in p.declarations().models}
-          assert tier_of(p) == 2, tier_of(p)
-          assert not isinstance(p, EditableProject), 'tier 3 must stay declined'
-          assert set(models) == {'dim_date', 'fact_sales'}, sorted(models)
-          assert models['fact_sales'].depends_on == ('dim_date',)
-          assert models['fact_sales'].layer == 'gold', 'metadata case not folded'
-
-          @dg.asset(name='dim_date')
-          def dupe(): ...
-          try:
-              DagsterProject.from_asset_graph([dim_date, dupe], name='demo')
-          except ValueError:
-              pass
-          else:
-              raise AssertionError('a duplicate asset key was not refused')
-          print('reduction verified against dagster', dg.__version__)
-          "
+            python examples/reduce_asset_graph.py
 
       # `DEX_UPSTREAM_CONTRACT_REQUIRED=1` turns a missing upstream contract from
       # a green skip into a collection error. Without it, a dex-core that stopped
