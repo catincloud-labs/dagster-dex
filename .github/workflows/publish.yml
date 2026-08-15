@@ -102,7 +102,7 @@ jobs:
           print('exports :', len(p.__all__), 'names')
           "
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dagster-dex-dist
           path: dist/
