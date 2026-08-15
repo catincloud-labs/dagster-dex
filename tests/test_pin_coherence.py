@@ -77,7 +77,10 @@ EXPECTED: dict[str, dict[str, int]] = {
     ".github/dependabot.yml": {"~=": 1},
     ".github/workflows/checks.yml": {"==": 2},
     ".github/workflows/publish.yml": {"==": 1},
-    "AGENTS.md": {"==": 2, "~=": 1},
+    # Three commands plus the "Tested" line in the two-pins section. That line
+    # named the version without naming the package until the 1.6.5 bump, which
+    # put the one sentence stating the tested version outside this scan.
+    "AGENTS.md": {"==": 3, "~=": 1},
     "CONTRIBUTING.md": {"==": 2},
     "README.md": {"==": 2},
     # The published guarantee. This one entry is the reason the map is keyed by
