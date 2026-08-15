@@ -109,6 +109,13 @@ found.
   asserts both agree with the tag.
 - The release is tag-gated on `v*` and **no tag has been pushed**. Publishing is a
   deliberate act, not the tail of a merge.
+- The rehearsal is the `rehearse` job in the same workflow: `workflow_dispatch`
+  only, TestPyPI, with its **own** `testpypi` environment and pending publisher -
+  a Trusted Publisher matches on environment name, so the two identities cannot
+  share one. It stamps a `.dev<run number>` version, because an index refuses a
+  filename it already holds and a rehearsal you can only run once is no use on the
+  second attempt. Read the four-step preamble at the head of
+  `.github/workflows/publish.yml` before changing any of this.
 
 ## Change workflow
 
