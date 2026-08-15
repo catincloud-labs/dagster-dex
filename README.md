@@ -243,10 +243,18 @@ anything private, which is the property the old sentence did not have.
 ### Two ways to name the project, and the reason there are two
 
 `assets:` reduces a live asset graph in the calling process. That is the honest
-form, and on a real project it costs **~2.6 s** - almost entirely the import of
-the code location, which is not something laziness or caching can reach, because
-a host that builds a project per command never holds one long enough to amortize
-it.
+form, and its cost is dominated by **importing the code location** rather than by
+the reduction - which is not something laziness or caching can reach, because a
+host that builds a project per command never holds one long enough to amortize
+it. How long that import takes is a property of your project rather than of this
+package, so it is the thing to measure before choosing between the two forms:
+time `dagster definitions list` against your own code location and you have the
+number, on your machine, where it is true.
+
+**This paragraph used to give a figure from a private project.** It was measured,
+it was accurate where it was written, and nobody outside could reproduce it -
+the same defect as the four numbers removed above, left standing twenty lines
+below the paragraph that removed them.
 
 `artifact:` is the answer for a host that cannot pay that: the side that already
 has the graph reduces it once and writes the result down, and the side that
