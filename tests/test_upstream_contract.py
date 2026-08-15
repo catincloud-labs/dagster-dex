@@ -67,6 +67,17 @@ from exmergo_dex_core.adapters.project import (  # noqa: E402
 
 from dagster_dex.dex import DexProject, project_from_context  # noqa: E402
 
+#: Every assertion in this file is upstream's to make, which is what the marker
+#: says. `conftest.py` holds marked tests to ZERO skips whenever
+#: `DEX_UPSTREAM_CONTRACT_REQUIRED=1`, because a skipped conformance assertion is
+#: a criterion not met rather than one met quietly - upstream declines to judge a
+#: format on assertions it cannot reach, and the skip reason says so out loud.
+#:
+#: Module scope on purpose: it propagates to every test inherited from an
+#: upstream contract class, which is most of what runs here and none of what is
+#: written here.
+pytestmark = pytest.mark.criterion
+
 MODELS = (
     ProjectModel(name="dim_date", layer="silver"),
     ProjectModel(name="fact_sessions", depends_on=("dim_date",), layer="gold"),
@@ -397,3 +408,63 @@ def test_the_format_name_is_forwarded_not_duplicated():
 
     assert project.name == "dagster"
     assert project.name == project._project.format
+
+
+#: Contracts upstream ships that this format deliberately does NOT mix in, with
+#: the reason each one is declined. The value is prose because it is the whole
+#: point: a decline that cannot say why is indistinguishable from an oversight.
+_DECLINED = {
+    "EditableProjectContract": (
+        "tier 3 is declined structurally - a project reduced from a running "
+        "graph has no source of truth that can receive an edit, so the method "
+        "is absent rather than present and empty"
+    ),
+    "PlacingProjectContract": (
+        "placement is declined for the same reason: an edit path into a "
+        "reduction would name a file regenerated from something else"
+    ),
+}
+
+
+def test_every_contract_upstream_ships_is_mixed_in_or_explicitly_declined():
+    """The half a skip count cannot reach: upstream ADDING a contract.
+
+    dex-core 1.6.4 added `PlacingProjectContract`. Nothing in this package went
+    red, because a contract nobody mixes in runs no assertions - it is invisible
+    to a suite that only counts what ran. Someone noticed by hand and wrote a
+    paragraph explaining why the number had not moved, which is a control made
+    of attention.
+
+    Both directions are asserted, and the second is the one that rots:
+
+    - A contract upstream ships that is neither mixed in nor declined is a gap
+      in what this format is judged on, and it arrives silently at a bump.
+    - A decline naming a contract upstream no longer ships is an allowance that
+      outlived its reason, which is a gate with a hole in it.
+    """
+
+    shipped = {
+        name
+        for name in dir(conformance)
+        if name.endswith("Contract") and isinstance(getattr(conformance, name), type)
+    }
+
+    mixed_in = {
+        base.__name__
+        for cls in (TestDagsterProjectAgainstDexCore, TestDagsterProjectBuiltFromContext)
+        for base in cls.__mro__
+    }
+
+    unconsidered = shipped - mixed_in - set(_DECLINED)
+    assert not unconsidered, (
+        "dex-core ships conformance contracts this format neither implements nor "
+        f"declines: {sorted(unconsidered)}. Mix one in, or add it to _DECLINED "
+        "with the reason. An unconsidered contract is an assertion nobody made."
+    )
+
+    stale = set(_DECLINED) - shipped
+    assert not stale, (
+        f"_DECLINED names contracts dex-core no longer ships: {sorted(stale)}. "
+        "A decline that outlived its contract is an allowance with nothing "
+        "behind it; delete the entry."
+    )

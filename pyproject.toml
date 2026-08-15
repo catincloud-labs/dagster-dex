@@ -141,6 +141,13 @@ dagster_dex = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Registered so an unregistered-marker WARNING never stands in for the guard.
+# `tests/conftest.py` holds every test carrying this marker to zero skips while
+# DEX_UPSTREAM_CONTRACT_REQUIRED=1, which is what keeps the acceptance criterion
+# from passing over assertions upstream declined to run.
+markers = [
+  "criterion: an assertion dex-core's own conformance suite makes about this format",
+]
 
 # Checked at the FLOOR rather than at the newest interpreter, because that is the
 # version whose syntax and stdlib the annotations have to be valid against.
