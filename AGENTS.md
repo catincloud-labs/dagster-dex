@@ -107,15 +107,20 @@ found.
 - `version` in `pyproject.toml` and `__version__` in `__init__.py` are two
   hand-maintained strings. A test asserts they agree, and the release workflow
   asserts both agree with the tag.
-- The release is tag-gated on `v*` and **no tag has been pushed**. Publishing is a
-  deliberate act, not the tail of a merge.
+- The release is tag-gated on `v*`. Publishing is a deliberate act, not the tail of
+  a merge, and the `pypi` environment holds the tag at a required reviewer before
+  anything is uploaded.
+- **`0.1.0` is published** (2026-08-15, from `v0.1.0`). That makes the version bump
+  mandatory for every release after it: an index refuses a version it already
+  holds, so a tag cut without one stops at the workflow's match gate.
 - The rehearsal is the `rehearse` job in the same workflow: `workflow_dispatch`
-  only, TestPyPI, with its **own** `testpypi` environment and pending publisher -
-  a Trusted Publisher matches on environment name, so the two identities cannot
-  share one. It stamps a `.dev<run number>` version, because an index refuses a
-  filename it already holds and a rehearsal you can only run once is no use on the
-  second attempt. Read the four-step preamble at the head of
-  `.github/workflows/publish.yml` before changing any of this.
+  only, TestPyPI, with its **own** `testpypi` environment and publisher - a Trusted
+  Publisher matches on environment name, so the two identities cannot share one. It
+  stamps a `.dev<run number>` version, because an index refuses a filename it
+  already holds and a rehearsal you can only run once is no use on the second
+  attempt. **Run it for any change to the upload path**; a plain version bump does
+  not need it. Read the preamble at the head of `.github/workflows/publish.yml`
+  before changing any of this.
 - **The upload step is `pypa/gh-action-pypi-publish`, and the build step is still
   uv.** That split is the whole reason for the action: uv does not generate PEP 740
   attestations, only uploads ones something else made. Provenance attaches AT
