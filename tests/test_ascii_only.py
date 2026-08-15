@@ -20,9 +20,16 @@ for readers who know it, and it does not travel to strangers.
 The second reason is a style rule, and a style rule with no control is a
 suggestion. This is the control.
 
-One exemption, and it is not a style choice: `scripts/check_closing_keywords.py`
-is a vendored copy compared **byte-for-byte** against its source by CI. Editing it
-to satisfy this test would trade a passing test for a failing pipeline.
+Two exemptions, and neither is a style choice. `scripts/check_closing_keywords.py`
+and `scripts/test_check_closing_keywords.py` are vendored copies compared
+**byte-for-byte** against their source. Editing either to satisfy this test would
+trade a passing test for a failing pipeline.
+
+The second one arrived late. This repository is public and cannot resolve actions
+in a private repository, so the shared check that used to run the guard's
+self-test could not run here at all -- the self-test had to be vendored next to
+the guard it proves. The exemption's reason did not change, only how many files
+it covers.
 """
 
 from __future__ import annotations
@@ -35,9 +42,18 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
-#: Compared byte-for-byte against `workbench` by the `closing keywords` job. Not
-#: ours to reformat. See this module's docstring.
-VENDORED = "scripts/check_closing_keywords.py"
+#: Compared byte-for-byte against their source. Not ours to reformat. See this
+#: module's docstring.
+#:
+#: A set rather than a single path since the guard's self-test had to be vendored
+#: too. Membership is checked with `in`, so adding a third vendored file is a
+#: one-line change rather than a rewrite of the filter below.
+VENDORED = frozenset(
+    {
+        "scripts/check_closing_keywords.py",
+        "scripts/test_check_closing_keywords.py",
+    }
+)
 
 
 def _tracked_files() -> list[str]:
@@ -62,7 +78,7 @@ def _text_files() -> list[str]:
     return [
         f
         for f in _tracked_files()
-        if f != VENDORED and not f.lower().endswith(skip_suffixes)
+        if f not in VENDORED and not f.lower().endswith(skip_suffixes)
     ]
 
 
