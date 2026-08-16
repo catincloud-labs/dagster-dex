@@ -138,8 +138,9 @@ are the two commands CI runs, and the first is a **control**: it is what holds
 the engine coupling to one file, so an `exmergo_dex_core` import anywhere else
 turns it red at collection.
 
-The engine is pinned to `==1.6.4` here and in CI, which is **not** what the
-`[dex]` extra publishes. The extra is `~=1.6.4`, so consumers are not forced onto
+The engine is pinned to `exmergo-dex-core==1.6.5` here and in CI, which is
+**not** what the `[dex]` extra publishes. The extra is
+`exmergo-dex-core~=1.6.4`, so consumers are not forced onto
 one patch release; the exact pin is where the demonstration lives, because a
 claim about what passed should name the version it passed against.
 

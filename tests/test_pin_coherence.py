@@ -85,7 +85,13 @@ EXPECTED: dict[str, dict[str, int]] = {
     # put the one sentence stating the tested version outside this scan.
     "AGENTS.md": {"==": 3, "~=": 1},
     "CONTRIBUTING.md": {"==": 2},
-    "README.md": {"==": 2},
+    # Three `==` and one `~=`: the two runnable commands, plus the two-pins
+    # paragraph, which named both versions without naming the package until
+    # 2026-08-15 and so stated the tested version from outside this scan. It
+    # went stale at the 1.6.5 bump exactly as AGENTS.md's own note predicted,
+    # and the guard passed the whole time. The `~=` here is the published range
+    # restated in prose; it is in scope so the minor-alignment arm reads it.
+    "README.md": {"==": 3, "~=": 1},
     # The published guarantee. This one entry is the reason the map is keyed by
     # operator: `==` here would be a different promise to every consumer's
     # resolver, with no count anywhere changing to show it.
