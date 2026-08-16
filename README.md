@@ -127,7 +127,7 @@ uv run --no-project --with-editable . \
 
 # with the engine, to exercise the boundary
 uv run --no-project --with-editable . \
-    --with pytest==8.4.1 --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
+    --with pytest==8.4.1 --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
     python -m pytest tests \
     --ignore=tests/test_upstream_contract.py
 ```
@@ -138,7 +138,7 @@ are the two commands CI runs, and the first is a **control**: it is what holds
 the engine coupling to one file, so an `exmergo_dex_core` import anywhere else
 turns it red at collection.
 
-The engine is pinned to `exmergo-dex-core==1.6.5` here and in CI, which is
+The engine is pinned to `exmergo-dex-core==1.6.6` here and in CI, which is
 **not** what the `[dex]` extra publishes. The extra is
 `exmergo-dex-core~=1.6.4`, so consumers are not forced onto
 one patch release; the exact pin is where the demonstration lives, because a
@@ -155,7 +155,7 @@ the criterion is now judged by upstream's released code rather than by a branch:
 ```bash
 DEX_UPSTREAM_CONTRACT_REQUIRED=1 \
 uv run --no-project --with-editable . \
-    --with pytest==8.4.1 --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
+    --with pytest==8.4.1 --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
     python -m pytest tests/test_upstream_contract.py
 ```
 

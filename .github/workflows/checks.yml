@@ -195,7 +195,7 @@ jobs:
       - name: Boundary runs against the real engine
         run: |
           uv run --no-project --with-editable . \
-            --with pytest==8.4.1 --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
+            --with pytest==8.4.1 --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
             python -m pytest tests --ignore=tests/test_upstream_contract.py
 
       # This package ships a PEP 561 `py.typed` marker and the `Typing :: Typed`
@@ -244,5 +244,5 @@ jobs:
           DEX_UPSTREAM_CONTRACT_REQUIRED: "1"
         run: |
           uv run --no-project --with-editable . \
-            --with pytest==8.4.1 --with exmergo-dex-core==1.6.5 --with sqlglot==30.13.0 \
+            --with pytest==8.4.1 --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
             python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
