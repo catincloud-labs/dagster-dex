@@ -13,6 +13,25 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  # `issues: read` is what makes `closingIssuesReferences` return anything at
+  # all. Without it the field resolves to an EMPTY LIST rather than erroring, and
+  # the reconcile step reads that as "merging this closes nothing" -- so the
+  # check cannot tell *no closing reference* from *cannot see one*.
+  #
+  # The silent half is the dangerous one. A stray closing keyword in the prose
+  # under an `Autoclose: none` trailer reconciles CLEAN, because a blind
+  # "nothing" agrees with a trailer claiming nothing. That is precisely the case
+  # this guard exists to catch, and without this line it cannot fire.
+  #
+  # Measured 2026-08-16 before adding this: `gh pr list --state merged --json
+  # closingIssuesReferences` across every repository that runs this gate returned
+  # ZERO pull requests that had ever closed an issue. So nothing escaped -- and
+  # the reconcile had compared "nothing" against "nothing" every time it ran.
+  #
+  # Fixed per repository rather than once in the shared workflows, which is
+  # otherwise the rule: `permissions:` is a property of the CALLING workflow and
+  # a composite action cannot grant itself a scope.
+  issues: read
 
 # The job names below are load-bearing. `markdown`, `closing keywords` and
 # `tests` are the literal strings the organisation's `required checks` rulesets
