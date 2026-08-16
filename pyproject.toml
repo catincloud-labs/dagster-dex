@@ -103,7 +103,13 @@ dagster = ["dagster>=1.13"]
 # uninstallable alongside this package until it re-released. That inverts the
 # dependency. The version the mapping was actually verified against is recorded
 # where demonstrations belong rather than imposed on every consumer's resolver:
-# CI pins `==1.6.4` exactly, and the README says which version the claim rests on.
+# CI pins the engine exactly. The version it pins is deliberately NOT repeated
+# here: this file must contain no `==` for that package, because
+# `test_the_published_extra_is_a_range_and_the_tested_pin_is_exact` reads the
+# whole file and cannot tell a comment from a dependency spec -- correctly, since
+# an `==` here would be a promise to every consumer's resolver. A restatement
+# would also be a second copy of a version that moves. See the "two pins"
+# section of AGENTS.md, which names it and is inside the coherence scan.
 dex = ["exmergo-dex-core~=1.6.4"]
 test = ["pytest>=8.4"]
 
