@@ -182,17 +182,84 @@ jobs:
           echo "::error::GitHub and the Autoclose trailer disagree about what merging this will close."
           exit 1
 
-  # THE THREE STEPS BELOW ARE NOT A SPLIT FOR SPEED. The first is a CONTROL.
+
+  # ---------------------------------------------------------------------------
+  # THE JOB NAMED `tests` IS THE AGGREGATE AT THE BOTTOM OF THIS FILE, NOT A
+  # SUITE. Read the note on it before renaming anything here.
+  #
+  # What follows is three jobs across two axes, and neither axis existed before
+  # 2026-08-18. Until then this was one job, on one interpreter, with the engine
+  # at one exact version - while the package published `requires-python >= 3.10`
+  # and a compatible-release range for the engine. Both promises were verified by
+  # a human running a matrix by hand at each release and remembering to. A step
+  # that has to be remembered is not a control.
+  #
+  # WHAT IS DELIBERATELY *NOT* RUN, so a green matrix does not imply it: the
+  # CROSS-PRODUCT. The Python axis runs the engine-free suite only, and the
+  # engine axis runs one interpreter only. So "the floor of the engine range on
+  # the newest interpreter" is untested here. That is a cost, stated, not an
+  # oversight - the two axes cover the two promises independently, and the
+  # product would quadruple the job count to cover combinations no consumer has
+  # reported needing.
+  # ---------------------------------------------------------------------------
+
+  # The engine range, resolved rather than listed. See the long docstring in
+  # `scripts/resolve_engine_range.py` for why a hand-written list of versions
+  # would be a registry that fails open the day upstream publishes a patch.
+  engine-range:
+    name: engine range
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      versions: ${{ steps.resolve.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      # The script prints ONE json array on stdout and everything else on
+      # stderr, so this capture cannot pick up a log line by accident. It exits
+      # nonzero rather than printing an empty array when it cannot resolve -- a
+      # matrix built from `[]` runs no jobs and reports success, which is the
+      # fail-open shape the whole arrangement exists to avoid.
+      - name: Resolve the ends of the published engine range
+        id: resolve
+        run: |
+          set -euo pipefail
+          VERSIONS="$(python scripts/resolve_engine_range.py)"
+          echo "resolved: ${VERSIONS}"
+          echo "versions=${VERSIONS}" >> "$GITHUB_OUTPUT"
+
+  # THIS JOB IS THE CONTROL, and matrixing it did not weaken it.
   #
   # It runs the whole suite with dex-core UNINSTALLED, which is what holds the
   # engine coupling to `dex.py` alone. Add an `exmergo_dex_core` import to any
-  # other module and this step goes red at collection -- which is the package's
-  # central claim being tested rather than asserted. Merging it into the step
-  # below for speed would delete the only thing that checks it.
-  tests:
-    name: tests
+  # other module and this goes red at collection -- the package's central claim
+  # being tested rather than asserted. It now goes red at collection on four
+  # interpreters instead of one.
+  #
+  # It also carries the OTHER promise: `requires-python = ">=3.10"`. That was a
+  # sentence in `pyproject.toml` and nothing else. The floor is set by the
+  # CORE, not by the heaviest extra -- the `[dex]` extra cannot install on 3.10
+  # at all, because dex-core requires >=3.11, and that is a supported
+  # configuration rather than a hole. Which is exactly why this axis runs the
+  # engine-free suite: it is the only suite 3.10 can run, and 3.10 is the
+  # version the floor claim is about.
+  python-floor:
+    name: python ${{ matrix.python }} (engine-free)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # The four versions `requires-python` and the Dagster range admit.
+        # Unlike the engine axis, this list IS written out, and the reason is
+        # that it is not derivable: `>=3.10` is open-ended, so a resolver would
+        # answer "every future release" and the honest set is "the ones this
+        # package claims and Dagster supports". Adding 3.14 here is a decision
+        # about what is claimed, which is a thing to review rather than compute.
+        python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -201,11 +268,72 @@ jobs:
 
       - name: Core runs with no engine installed (control)
         run: |
-          uv run --no-project --with-editable . \
+          uv run --no-project --python ${{ matrix.python }} --with-editable . \
             --with pytest==8.4.1 \
             python -m pytest tests \
             --ignore=tests/test_dex_bridge.py \
             --ignore=tests/test_upstream_contract.py
+
+  # The ENDS of the published range, which nothing ran until now.
+  #
+  # This does not replace the exactly-pinned steps in `suite` below, and must
+  # not be folded into them. They are two different claims, and `AGENTS.md`'s
+  # "two pins" section is the argument: the exact pin is the version the mapping
+  # was DEMONSTRATED against and is named in every reproduction command, while
+  # this is the range the package PROMISES a consumer's resolver. Folding them
+  # would delete one of the two.
+  #
+  # It also means the literal `exmergo-dex-core==` pins stay in `suite`, where
+  # `tests/test_pin_coherence.py` can still see them. A matrix expression is not
+  # a pin, so templating those steps would have quietly shrunk that guard's
+  # corpus by two sites while every count it reports stayed green.
+  engine-ends:
+    name: dex-core ${{ matrix.version }}
+    needs: engine-range
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(needs.engine-range.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Boundary runs against this end of the range
+        run: |
+          uv run --no-project --with-editable . \
+            --with pytest==8.4.1 \
+            --with exmergo-dex-core==${{ matrix.version }} --with sqlglot==30.13.0 \
+            python -m pytest tests --ignore=tests/test_upstream_contract.py
+
+      # Upstream's own contract judges a SHAPE, and since the write tier reached
+      # the artifact transport it judges two of them. Running it only at the
+      # demonstrated pin left the promised ends unjudged by the one suite whose
+      # author is somebody else.
+      - name: This format passes dex-core's own project contract
+        env:
+          DEX_UPSTREAM_CONTRACT_REQUIRED: "1"
+        run: |
+          uv run --no-project --with-editable . \
+            --with pytest==8.4.1 \
+            --with exmergo-dex-core==${{ matrix.version }} --with sqlglot==30.13.0 \
+            python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
+
+  # The demonstrated pin, and the two steps that install neither pytest nor the
+  # engine. This job is the former `tests`, renamed: its steps are unchanged and
+  # its exact pins are deliberately still literal strings.
+  suite:
+    name: suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
 
       # The engine is pinned EXACTLY here, which is deliberately not what the
       # `[dex]` extra publishes (`~=1.6.4`). Consumers should not be forced onto
@@ -265,3 +393,60 @@ jobs:
           uv run --no-project --with-editable . \
             --with pytest==8.4.1 --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
             python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
+
+  # ---------------------------------------------------------------------------
+  # THE NAME `tests` IS LOAD-BEARING AND THIS JOB EXISTS TO CARRY IT.
+  #
+  # `tests` is a required status check on an ORGANISATION ruleset -- "required
+  # checks: repos with a test suite", matched on the repository property
+  # `test-suite=true`. A required check matches by CONTEXT STRING. Put a
+  # `strategy.matrix` on a job called `tests` and its contexts become
+  # `tests (3.10)`, `tests (3.11)` and so on; the context `tests` then never
+  # reports, and a check that never reports never blocks a merge. THE GATE GOES
+  # QUIET RATHER THAN RED, which is the worse failure and the one nobody sees.
+  #
+  # So the matrixed work is in the jobs above under their own names, and this
+  # reads their results. Renaming it means editing the organisation ruleset in
+  # the same change.
+  #
+  # `skipped` IS TREATED AS A FAILURE. Every job above carries `needs:` or can
+  # be skipped when an upstream one fails, and `if: always()` means this runs
+  # anyway -- so a skipped `engine-ends` (because `engine-range` could not
+  # resolve) must not be read as "nothing to complain about". Reading the results
+  # explicitly is what makes a skip a decision rather than an accident.
+  #
+  # The shape is lifted from `catincloud-labs/groundstation`'s `ci.yml`, where it
+  # was written after observing exactly that: a red job skipping two downstream
+  # ones and the aggregate reporting success.
+  # ---------------------------------------------------------------------------
+  tests:
+    name: tests
+    if: always()
+    needs:
+      - engine-range
+      - python-floor
+      - engine-ends
+      - suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse unless every job above actually succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "upstream results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            if [ "${result}" != "success" ]; then
+              echo "::error::a job this gate depends on reported '${result}', not 'success'."
+              exit 1
+            fi
+          done
+          # An empty RESULTS would fall through the loop and pass. It cannot
+          # happen while `needs:` is non-empty, but "I checked nothing" must
+          # never be the same output as "everything passed".
+          if [ -z "${RESULTS// /}" ]; then
+            echo "::error::no upstream results to read; this gate scanned nothing."
+            exit 1
+          fi
+          echo "every job this gate depends on succeeded."
