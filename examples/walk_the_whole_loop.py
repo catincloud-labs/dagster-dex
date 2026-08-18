@@ -47,13 +47,31 @@ WHAT EACH LEG IS FOR
   9. THE PLAN TRAVELS. Copy the project to a path this process never planned
      against, carry ONLY the stored plan JSON, and apply it there.
  10. And it refuses: re-applying over the edit it already made is a conflict.
+ 11. `maintain schema` after the declared SOURCE table is dropped. Two findings
+     come back and the pair is the point: `table_dropped` is the warehouse
+     noticing, `dangling_source` is the PROJECT noticing. Only the second needs
+     a source declaration to have been read, and it names the file that made
+     the claim.
+ 12. `maintain semantic` after a measure is redefined. `definition_changed` is
+     drift that no amount of warehouse inspection finds, because nothing in the
+     warehouse changed.
 
-NOT COVERED HERE, DELIBERATELY
+WHAT THIS COVERS OF THE ONE-LINE CLAIM
 
-Sources and semantics. This demo declares keys and one join, so `sources:` and
-`semantics:` are surfaces the README claims and this file does not reach. Said
-out loud rather than left for a reader to discover: a walkthrough that implies
-coverage it does not have is the failure this repository keeps recording.
+The README says a Dagster graph is read for "keys, joins, sources, semantics,
+drift". All five are exercised here against a real warehouse:
+
+  keys      leg 6 to 8 - `declared_keys` moves across the apply
+  joins     the `relationships:` in the fact declaration, read as a foreign key
+  sources   leg 3 and 11 - into the baseline, then a dangling one, with provenance
+  semantics leg 3 and 12 - into the baseline, then a definition that moved
+  drift     leg 5, 11, 12 - grain, schema and semantic axes, all real
+
+This section replaced one headed NOT COVERED HERE, DELIBERATELY, which named
+sources and semantics as the two surfaces this file did not reach. It was true
+when it was written and stopped being true in the change that added legs 11 and
+12. A docstring is read as an instruction, so leaving it would have been worse
+than never having written it.
 
 CONSTRAINTS, INHERITED FROM `reduce_asset_graph.py`
 
@@ -132,6 +150,42 @@ models:
               field: date_key
 """
 
+#: The file STEM names the model that READS these tables, which is the one
+#: place this format reads a key as data rather than as a label. `fact_sales`
+#: reads a raw landing table the asset graph does not build - which is exactly
+#: what an external source is.
+SOURCES_YML = """\
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: sales_events
+        columns:
+          - name: event_id
+          - name: occurred_on
+"""
+
+#: `expr` on every field on purpose. A bare column reference is what a
+#: consumer needs to check a definition against the warehouse; anything else
+#: resolves to no column, and leg 12 turns that into an observation rather
+#: than a footnote.
+SEMANTICS_YML = """\
+semantic_models:
+  - name: sales
+    model: ref('fact_sales')
+    dimensions:
+      - name: date_key
+        expr: date_key
+    measures:
+      - name: amount
+        expr: amount
+metrics:
+  - name: total_amount
+    type: simple
+    type_params:
+      measure: amount
+"""
+
 CONFIG_YML = """\
 connector: duckdb
 duckdb:
@@ -141,6 +195,8 @@ project:
   options:
     assets: demo_assets:all_assets
     declarations: declarations
+    sources: sources
+    semantics: semantics
 """
 
 
@@ -208,6 +264,15 @@ def seed_warehouse(path: Path) -> None:
             "dayname(DATE '2026-01-01' + INTERVAL (i) DAY) AS day_name "
             "FROM range(0, 60) t(i)"
         )
+        # The landing table `sources/fact_sales.yml` declares. The asset graph does
+        # not build it, which is the whole point of calling it a source.
+        con.execute("CREATE SCHEMA IF NOT EXISTS raw")
+        con.execute(
+            "CREATE TABLE raw.sales_events AS "
+            "SELECT i AS event_id, "
+            "(DATE '2026-01-01' + INTERVAL (i % 60) DAY) AS occurred_on "
+            "FROM range(0, 100) t(i)"
+        )
         con.execute(
             "CREATE TABLE analytics.fact_sales AS "
             "SELECT i AS sale_id, "
@@ -248,10 +313,41 @@ def build_project(root: Path) -> None:
     (root / "declarations" / "fact_sales.yml").write_bytes(
         FACT_SALES_YML.encode("utf-8")
     )
+    (root / "sources").mkdir()
+    (root / "sources" / "fact_sales.yml").write_bytes(SOURCES_YML.encode("utf-8"))
+    (root / "semantics").mkdir()
+    (root / "semantics" / "sales.yml").write_bytes(SEMANTICS_YML.encode("utf-8"))
     (root / "demo_assets.py").write_bytes(ASSETS_MODULE.encode("utf-8"))
     (root / ".dex").mkdir()
     (root / ".dex" / "config.yml").write_bytes(CONFIG_YML.encode("utf-8"))
     seed_warehouse(root / "warehouse.duckdb")
+
+
+def drop_raw_table(path: Path) -> None:
+    """Remove the landing table the source declaration claims the project reads."""
+
+    import duckdb
+
+    con = duckdb.connect(str(path))
+    try:
+        con.execute("DROP TABLE raw.sales_events")
+    finally:
+        con.close()
+
+
+def redefine_the_measure(root: Path) -> None:
+    """Change what `amount` MEANS, without touching a single warehouse row."""
+
+    target = root / "semantics" / "sales.yml"
+    text = target.read_text(encoding="utf-8")
+    changed = text.replace(
+        "      - name: amount\n        expr: amount\n",
+        "      - name: amount\n        expr: amount * 1.2\n",
+        1,
+    )
+    if changed == text:
+        raise AssertionError("the measure fixture moved; leg 12 would test nothing")
+    target.write_bytes(changed.encode("utf-8"))
 
 
 def declared_keys(root: Path) -> set:
@@ -299,9 +395,18 @@ def main() -> int:
         inventory = dex(root, "explore", "inventory")
         objects = {o["identifier"] for o in inventory["data"]["objects"]}
         check(
-            "leg 1: both tables are visible",
-            objects
-            == {"warehouse.analytics.dim_date", "warehouse.analytics.fact_sales"},
+            "leg 1: the two tables the graph builds are visible",
+            {"warehouse.analytics.dim_date", "warehouse.analytics.fact_sales"}
+            <= objects,
+            "saw {}".format(sorted(objects)),
+        )
+        # And the landing table, which the graph does NOT build. The warehouse
+        # cannot tell the two kinds apart; the project is the only thing that
+        # knows one is a source and the others are models, which is what leg 11
+        # goes on to depend on.
+        check(
+            "leg 1: and so is the landing table the graph does not build",
+            "warehouse.raw.sales_events" in objects,
             "saw {}".format(sorted(objects)),
         )
         check(
@@ -309,7 +414,11 @@ def main() -> int:
             inventory["cost"]["paradigm"] == "free_local",
             "paradigm was {}".format(inventory["cost"]["paradigm"]),
         )
-        if not announce("leg 1 ok          : {} objects, free_local".format(len(objects))):
+        if not announce(
+            "leg 1 ok          : {} objects ({} built by the graph), free_local".format(
+                len(objects), 2
+            )
+        ):
             return report()
 
         # -- leg 2: the instrument says it is blind, rather than saying clean -
@@ -332,15 +441,15 @@ def main() -> int:
         # -- leg 3: give it a baseline ---------------------------------------
         mapped = dex(root, "explore", "map", "--confirm")
         check(
-            "leg 3: both objects were profiled",
-            mapped["data"]["profiled_count"] == 2,
+            "leg 3: every object was profiled, the landing table included",
+            mapped["data"]["profiled_count"] == 3,
             "profiled_count was {}".format(mapped["data"]["profiled_count"]),
         )
         snapshot = dex(root, "maintain", "snapshot")
         baseline = snapshot["data"]["baseline"]
         check(
             "leg 3: the baseline now holds a grain for each table",
-            baseline["grain_baseline_count"] == 2,
+            baseline["grain_baseline_count"] == 3,
             "grain_baseline_count was {}".format(baseline["grain_baseline_count"]),
         )
         check(
@@ -350,10 +459,30 @@ def main() -> int:
                 snapshot["data"]["transform_layer"]["model_count"]
             ),
         )
+        # The other two surfaces the README claims, carried into the baseline. A
+        # project that parsed them and dropped them would look identical here
+        # without these two lines, and legs 11 and 12 would then be testing
+        # nothing while still going green.
+        check(
+            "leg 3: the declared SOURCE reached the baseline",
+            snapshot["data"]["transform_layer"]["source_count"] == 1,
+            "source_count was {}".format(
+                snapshot["data"]["transform_layer"]["source_count"]
+            ),
+        )
+        check(
+            "leg 3: and so did the SEMANTIC model and its metric",
+            snapshot["data"]["semantic_layer"]
+            == {"semantic_model_count": 1, "metric_count": 1},
+            "semantic_layer was {}".format(snapshot["data"]["semantic_layer"]),
+        )
         if not announce(
-            "leg 3 ok          : baseline from cache, {} grains, {} models".format(
+            "leg 3 ok          : baseline from cache, {} grains, {} models, "
+            "{} source, {} metric".format(
                 baseline["grain_baseline_count"],
                 snapshot["data"]["transform_layer"]["model_count"],
+                snapshot["data"]["transform_layer"]["source_count"],
+                snapshot["data"]["semantic_layer"]["metric_count"],
             )
         ):
             return report()
@@ -512,6 +641,84 @@ def main() -> int:
         )
         announce("leg 10 ok         : re-applying refused rather than rewriting")
 
+        # -- leg 11: the declared SOURCE does work ----------------------------
+        #
+        # Drop the landing table the project says it reads. Two findings come
+        # back and the pair is the point: `table_dropped` is the WAREHOUSE
+        # noticing something it used to have, and `dangling_source` is the
+        # PROJECT noticing something it still claims. Only the second one needs
+        # a source declaration to exist, so only the second one is evidence
+        # that `sources:` was read.
+        #
+        # `declared_in` is asserted because it was `None` for every source this
+        # format produced until 2026-08-18 - the provenance was in the reader's
+        # hand and discarded one line later. A finding that cannot say where the
+        # claim was written sends a reader looking through the whole project.
+        drop_raw_table(root / "warehouse.duckdb")
+        schema = dex(root, "maintain", "schema")
+        by_code = {f["code"]: f for f in schema["data"]["findings"]}
+        check(
+            "leg 11: the project noticed its declared source is gone",
+            "dangling_source" in by_code,
+            "codes were {}".format(sorted(by_code)),
+        )
+        dangling = by_code.get("dangling_source")
+        if dangling is not None:
+            check(
+                "leg 11: and it named the table the declaration named",
+                dangling["identifier"] == "raw.sales_events",
+                "identifier was {}".format(dangling["identifier"]),
+            )
+            check(
+                "leg 11: and said WHICH FILE claimed it",
+                (dangling.get("data") or {}).get("declared_in")
+                == "sources/fact_sales.yml",
+                "declared_in was {}".format(
+                    (dangling.get("data") or {}).get("declared_in")
+                ),
+            )
+        if not announce(
+            "leg 11 ok         : dangling_source on {}, declared_in {}".format(
+                dangling["identifier"] if dangling else "?",
+                (dangling.get("data") or {}).get("declared_in") if dangling else "?",
+            )
+        ):
+            return report()
+
+        # -- leg 12: the SEMANTIC layer does work too --------------------------
+        #
+        # Redefine a measure. `definition_changed` is the semantic axis noticing
+        # that what the project means by `amount` is not what the baseline
+        # agreed to - a class of drift no amount of warehouse inspection finds,
+        # because nothing in the warehouse changed.
+        #
+        # The second assertion is the more interesting one. The new expression
+        # is `amount * 1.2`, which is not a bare column reference, so the field
+        # resolves to NO warehouse column. dex says so rather than checking it
+        # and reporting agreement: "their absence is indistinguishable from
+        # agreement". A measure that silently stopped being checkable would look
+        # exactly like one that passed.
+        redefine_the_measure(root)
+        semantic = dex(root, "maintain", "semantic", "--confirm")
+        codes = {f["code"] for f in semantic["data"]["findings"]}
+        check(
+            "leg 12: the redefinition was caught",
+            "definition_changed" in codes,
+            "codes were {}".format(sorted(codes)),
+        )
+        check(
+            "leg 12: and the now-uncheckable field was DISCLOSED, not passed",
+            any(
+                "indistinguishable from agreement" in w and "sales.amount" in w
+                for w in semantic.get("warnings") or []
+            ),
+            "warnings were {}".format(semantic.get("warnings")),
+        )
+        announce(
+            "leg 12 ok         : definition_changed, and sales.amount reported "
+            "as uncheckable"
+        )
+
     return report()
 
 
@@ -523,8 +730,10 @@ def report() -> int:
             print("  - {}".format(failure))
         return 1
     print("")
-    print("OK - a real graph, a real warehouse, a real drift finding, and an")
-    print("     edit that travelled to a second checkout and landed there.")
+    print("OK - a real graph, a real warehouse, and real drift on three axes:")
+    print("     an edit that travelled to a second checkout and landed there, a")
+    print("     dangling source that named the file declaring it, and a semantic")
+    print("     definition that moved without the warehouse changing.")
     return 0
 
 
