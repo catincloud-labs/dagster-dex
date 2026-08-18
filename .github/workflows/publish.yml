@@ -160,6 +160,27 @@ jobs:
             --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
             python scripts/drive_dex_against_the_wheel.py
 
+      # The step above proves dex can READ a project through the wheel. It says
+      # nothing about the write path, and the two conformance contracts dex-core
+      # ships do not close that gap either: of five defects introduced one at a
+      # time into `propose_edits`, those contracts caught two. A format treating
+      # them as proof is the one making the mistake.
+      #
+      # So this drives the whole thing from the caller's side. A reconcile
+      # proposal becomes a stored plan, the plan is written through this format,
+      # and the file it wrote changes what the project declares. Then a human
+      # edits that file behind a second plan and the apply has to refuse.
+      #
+      # No warehouse, no orchestrator, no credential: the drift finding is
+      # fabricated, because the question is what dex does with one rather than
+      # whether a warehouse can produce one.
+      - name: a reconcile proposal reaches the write path (end to end)
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          uv run --no-project --with "./${WHEEL}" \
+            --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
+            python scripts/drive_the_write_path_against_the_wheel.py
+
       - uses: actions/upload-artifact@v7
         with:
           name: dagster-dex-dist

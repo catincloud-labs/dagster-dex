@@ -76,14 +76,17 @@ _PIN = re.compile(r"exmergo-dex-core(?:\[[^\]]*\])?\s*(==|~=)\s*([0-9][^\s\"',\]
 EXPECTED: dict[str, dict[str, int]] = {
     ".github/dependabot.yml": {"~=": 1},
     ".github/workflows/checks.yml": {"==": 2},
-    # Two: the suite step, and the end-to-end step that drives dex through the
-    # built wheel. The second was added after this guard existed and the guard
-    # caught it on the first run, which is the per-file map earning its keep.
-    ".github/workflows/publish.yml": {"==": 2},
-    # Three commands plus the "Tested" line in the two-pins section. That line
+    # Three: the suite step, and the two end-to-end steps that drive dex through
+    # the built wheel - one for the read path, one for the write path. Each was
+    # added after this guard existed and caught on its first run, which is the
+    # per-file map earning its keep twice.
+    ".github/workflows/publish.yml": {"==": 3},
+    # Four commands plus the "Tested" line in the two-pins section. That line
     # named the version without naming the package until the 1.6.5 bump, which
-    # put the one sentence stating the tested version outside this scan.
-    "AGENTS.md": {"==": 3, "~=": 1},
+    # put the one sentence stating the tested version outside this scan. The
+    # fourth command is the write-path driver's, in the section on the two
+    # drivers.
+    "AGENTS.md": {"==": 4, "~=": 1},
     "CONTRIBUTING.md": {"==": 2},
     # Three `==` and one `~=`: the two runnable commands, plus the two-pins
     # paragraph, which named both versions without naming the package until
@@ -96,10 +99,11 @@ EXPECTED: dict[str, dict[str, int]] = {
     # operator: `==` here would be a different promise to every consumer's
     # resolver, with no count anywhere changing to show it.
     "pyproject.toml": {"~=": 1},
-    # The by-hand command in the end-to-end driver's docstring. A runnable
-    # command, so it is held like every other one: a reader who runs it against
-    # a different engine than CI does is not reproducing CI.
+    # The by-hand command in each end-to-end driver's docstring. Runnable
+    # commands, so they are held like every other one: a reader who runs one
+    # against a different engine than CI does is not reproducing CI.
     "scripts/drive_dex_against_the_wheel.py": {"==": 1},
+    "scripts/drive_the_write_path_against_the_wheel.py": {"==": 1},
 }
 
 
