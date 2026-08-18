@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import importlib.metadata as md
 import importlib.resources as res
+from pathlib import Path
 
 import dagster_dex
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_the_two_version_strings_agree():
@@ -31,6 +34,70 @@ def test_the_two_version_strings_agree():
     """
 
     assert dagster_dex.__version__ == md.version("dagster-dex")
+
+
+def test_every_name_in_all_resolves():
+    """`__all__` is a hand-maintained list beside the imports it describes.
+
+    A name in it that resolves to nothing breaks `from dagster_dex import *` and,
+    more to the point, breaks a documented import for a consumer who read the
+    project page - while every ordinary `import dagster_dex` keeps working, so
+    nothing else here would notice. Cheap to state, and the list grew by four
+    names when the write tier became importable from the top level.
+    """
+
+    missing = [name for name in dagster_dex.__all__ if not hasattr(dagster_dex, name)]
+    assert not missing, f"__all__ names nothing importable: {missing}"
+
+
+def test_the_top_level_exports_the_write_tier_vocabulary():
+    """The seam and the words to call it with are exported together, or neither.
+
+    `tier_of` and `EditableProject` were exported from `0.1.0`, so a consumer
+    could ask whether a project reaches tier 3 from the top level and then had to
+    reach into `dagster_dex.protocol` for the type to call it with. That
+    asymmetry reads as an oversight rather than a decision, and this is the
+    assertion that keeps it from returning by accident - a reordered import block
+    is enough to drop one.
+
+    **Held to what a caller CONSTRUCTS.** `EditConflict`, `ProjectFile` and
+    `ProjectFileView` are values a caller receives and reads, never names, so
+    they stay module-scoped. Exporting a type with no consumer is a promise made
+    for nothing, and this contract is alpha.
+    """
+
+    assert {
+        "EditableDagsterProject",
+        "EditOutcome",
+        "ProposedEdit",
+    } <= set(dagster_dex.__all__)
+
+
+def test_the_changelog_has_an_entry_for_the_version_being_shipped():
+    """A release with no entry is the way this file stops being true.
+
+    Not "a changelog exists" - that is satisfied forever by the day it was
+    written. The version in `pyproject.toml` must have a heading, so a bump with
+    no entry fails here rather than shipping a release a consumer cannot read
+    about. It is the same argument as the two version strings above: the release
+    workflow gates the tag against the metadata and has no opinion about whether
+    anybody was told what changed.
+
+    Deliberately not asserting the entry's CONTENT. A heading with nothing useful
+    under it would pass, and no test can tell a real entry from a placeholder -
+    that part is review's, and this stops the case review never sees because
+    there is nothing on screen to notice.
+    """
+
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    version = md.version("dagster-dex")
+
+    assert f"## {version}" in changelog, (
+        f"CHANGELOG.md has no `## {version}` heading. Every release needs an "
+        "entry, and the bump is the moment to write it - afterwards it gets "
+        "reconstructed from git history, which is how the 0.1.0 and 0.2.0 "
+        "entries in that file came to be shorter than they deserve."
+    )
 
 
 def test_the_py_typed_marker_exists():

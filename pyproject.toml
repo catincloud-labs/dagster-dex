@@ -85,6 +85,10 @@ dependencies = ["pyyaml>=6.0"]
 Homepage = "https://github.com/catincloud-labs/dagster-dex"
 Repository = "https://github.com/catincloud-labs/dagster-dex"
 Issues = "https://github.com/catincloud-labs/dagster-dex/issues"
+# Rendered in the sidebar of the PyPI project page, which is where a consumer
+# deciding whether to upgrade is standing. A changelog nothing links to is the
+# same shape as an entry point nothing resolves: present, and never reached.
+Changelog = "https://github.com/catincloud-labs/dagster-dex/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # The orchestrator, needed only by DagsterProject.from_asset_graph().
