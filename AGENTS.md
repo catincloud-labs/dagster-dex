@@ -54,10 +54,34 @@ tier - including one built from an `artifact:`, which is a JSON file carrying
 every edit at call time, and a caller finding out by receiving an empty result
 that looks like success is exactly what the tiers exist to prevent.
 
-So `project_from_context` picks the class: a live graph **plus** a
-`declarations:` directory gets the editable one, and everything else does not.
-`tests/test_dex_bridge.py` asserts all three cases, and the artifact case is the
-one that rots.
+So `project_from_context` picks the class: a **`declarations:` directory** gets
+the editable one, and everything else does not. `tests/test_dex_bridge.py` asserts
+all four cases.
+
+**This used to read "a live graph *plus* a `declarations:` directory", and the
+live graph is no longer part of it.** A `declarations:` directory named beside an
+`artifact:` reaches tier 3 too, which is what made the write tier reachable for
+the deployment shape that had it and could not use it. The tier still turns on
+having somewhere for an edit to land; what changed is that the graph is not the
+only way to have one.
+
+**The directory SUPERSEDES the declaration text the artifact carries, and it
+has to. Do not "fix" this into the artifact keeping its declarations.** That was
+proposed first and cannot be built:
+
+- An artifact keys declarations by a **bare stem**, and must keep doing so - it
+  has no directory to have come from, and inventing one is the fabricated
+  provenance `ExternalSource.declared_in` exists to avoid.
+- `_within` is segment-wise, so a bare stem is **inside no surface**.
+- So an edit view built from the artifact's text is **empty**: every edit pins
+  against a file it believes absent and every apply is a conflict on a file that
+  plainly exists. Refused on every write, forever - worse than declining the tier.
+
+The supersession is disclosed through `notes()`, with both arms: an artifact
+carrying no declarations loses nothing, and claiming a loss that did not happen is
+the same defect pointing the other way. And the cost argument never covered
+declarations - `artifact:` exists to avoid importing a code location, and reading
+YAML needs neither an import nor an orchestrator.
 
 **What can receive an edit is the declarations, not the models.** A model is a
 node in a running asset graph, regenerated on the next run. The declared keys
@@ -226,6 +250,27 @@ against a tier-2 project reports an `AttributeError` traceback instead of naming
 the leg. Found by running it against the tree from before the write tier
 existed, which is also the run that proves the legs can fail at all.
 
+**It runs the round trip twice: legs 1-6 on the live-graph path, legs 7-15 on the
+artifact transport.** The second half is not a copy. It is a different
+construction route with two keyspaces meeting, and leg 13 is the artefact that
+decided the design - a reconcile proposal read back as a declared key over the
+artifact transport, with no artifact regenerated.
+
+**The bail has a cost, and it bounds what calibration can prove.** Once
+anything fails, every later `announce` returns `False`, so a mutation can only be
+shown to fire the **earliest** leg it breaks. Two consequences, both measured
+rather than reasoned:
+
+- A mutation that breaks both transports fires on the live-graph half and the
+  artifact half is never reached. Scope such a mutation to one route, or it
+  proves nothing about the other.
+- **Leg 11's pin assertion is a backstop no mutation reaches**, and the leg says
+  so. It was written believing it caught an edit view built from the artifact's
+  keyspace; leg 10 catches that first, because reconcile *merges* into the text
+  the view hands it and an empty view yields no edit at all. Two other candidates
+  fired legs 12 and 4. => **An assertion written for a defect is not evidence the
+  defect is caught there.**
+
 ## The Python floor
 
 `requires-python = ">=3.10"`, matching Dagster's own supported range. Verified
@@ -353,5 +398,12 @@ say it better. Use `=>` for an arrow and `...` for an ellipsis.
   `MD013` (line length) and `MD041` (first line must be a top-level heading) -
   `MD041` because the GitHub templates under `.github/` correctly do not start
   with an H1.
+  - **`MD024` is ON, and it collides with a changelog.** `siblings_only` is not
+    set, so a second release section carrying `### Added` is an error even though
+    every changelog convention repeats it. Only `0.3.0` uses `###` sub-headings;
+    every section since uses bold lead-ins instead. Fixing it properly means a
+    local `.markdownlint.json`, and a local file **outranks** the shared one
+    entirely - so it would have to restate `MD013` and `MD041` too, which is two
+    copies of a decision. Left as a known cost rather than paid that way.
 - **Never put a number in a document that something else can change.** A test
   count, an export count, a timing - cite the command instead.

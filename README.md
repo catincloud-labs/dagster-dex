@@ -54,10 +54,15 @@ be a dbt project first.
 
 **Which tier you get depends on how the project was built, and that is the
 point.** `DagsterProject` reaches tier 2. `EditableDagsterProject` reaches tier
-3, and the factory returns one only when the project was reduced from a live
-graph *and* points at a declarations directory on disk. Read one from an
-`artifact:` and you get tier 2, because an artifact is a JSON file with no
-directory behind it and nowhere for an edit to land.
+3, and the factory returns one only when the project points at a declarations
+directory on disk - somewhere an edit can land. Read one from an `artifact:`
+alone and you get tier 2, because an artifact is a JSON file with no directory
+behind it.
+
+**The graph is no longer the only way to have one.** A `declarations:` directory
+named beside an `artifact:` reaches tier 3 as well; see
+[Two ways to name the project](#two-ways-to-name-the-project-and-the-reason-there-are-two)
+for what that directory supersedes and why it has to.
 
 The split is a class, not a flag, and it has to be. `EditableProject` is
 `runtime_checkable`, so it matches on the method being present: put
@@ -292,13 +297,54 @@ project:
 ```
 
 Exactly one of the two is required, and naming both is refused rather than
-resolved: a snapshot and a live graph disagree by design. An artifact carries
-its own declarations and its own name, so `declarations:`/`semantics:`/`sources:`
-and `name:` are refused beside it rather than silently ignored.
+resolved: a snapshot and a live graph disagree by design. An artifact carries its
+own semantics, its own sources and its own name, so `semantics:`, `sources:` and
+`name:` are refused beside it rather than silently ignored - each would modify
+nothing while reading as though the files on disk were live, which is the
+ordinary shape of a config quietly a day out of date.
 
 **A missing artifact is refused, not read as an empty project.** An empty
 project is a valid one, so the tolerant reading would report a broken deploy as a
 warehouse with nothing declared, quietly, and for as long as it lasted.
+
+#### Reaching the write tier over the artifact transport
+
+`declarations:` is the one option admitted beside `artifact:`, and it
+**supersedes** the declaration text the artifact carries:
+
+```yaml
+project:
+  format: dagster
+  options:
+    artifact: project/my_project.json
+    declarations: declared            # the live source, and where edits land
+```
+
+The obvious reading of that option - the artifact still declares, and the
+directory only says where an edit may land - cannot be built, and the reason is
+worth knowing before proposing it again:
+
+- An artifact keys its declarations by a **bare stem**, and must keep doing so.
+  It has no directory to have come from, and inventing one would be fabricated
+  provenance.
+- An editing surface is checked segment-wise, so `declarations` admits
+  `declarations/dim_date.yml` and refuses a bare `dim_date`. A bare stem is
+  inside no surface.
+- So an edit view built from the artifact's text is **empty**. Every edit pins
+  against a file it believes absent, and every apply is then a conflict on a file
+  that plainly exists - refused on every write, forever, which is worse than
+  declining the tier.
+
+The directory has to be read, so it is the declarations. That costs nothing the
+artifact was protecting: `artifact:` exists because reducing a live graph imports
+a code location, and hand-written YAML needs neither an import nor an
+orchestrator. What the artifact still answers for is the graph.
+
+Because the artifact's copy of that text loses, `notes()` says so - a mapping
+that drops something without disclosing it is the failure `notes` exists to
+prevent. A missing directory is refused rather than read as "nothing is
+editable": a declined write tier is indistinguishable from a format that never
+had one, so a typo would be silent.
 
 ### Writing one, from the side that has the graph
 

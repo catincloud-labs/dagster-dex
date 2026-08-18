@@ -12,6 +12,73 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
+## Unreleased
+
+The write tier becomes reachable over the artifact transport, which is the
+deployment shape that had it and could not use it.
+
+**Added.**
+
+- **`declarations:` is admitted beside `artifact:`, and reaches tier 3.** A host
+  on the artifact transport could not reach the write tier at all: `artifact:`
+  returned a tier-2 project, and the four options an artifact answers for itself
+  were refused beside it - so the two were mutually exclusive, and the transport
+  exists precisely for hosts that cannot afford the live-graph path. One of those
+  four is now admitted. `semantics:`, `sources:` and `name:` still are not.
+- **`EditableDexProject` takes `extra_notes`**, appended by `notes()`. It carries
+  disclosures about how a project was assembled, which the declarations cannot:
+  `parse_declarations` never sees the text that lost, so it has no way to mention
+  it.
+
+**Changed.**
+
+- **A `declarations:` directory named beside an `artifact:` SUPERSEDES the
+  declaration text the artifact carries**, and the supersession is reported
+  through `notes()`. The reading that would have been preferable - the artifact
+  still declares, the directory only names a place - cannot be built: an artifact
+  keys declarations by a bare stem, a bare stem is inside no editing surface, and
+  an edit view built from those keys is empty, so every apply becomes a conflict
+  on a file that plainly exists. The directory has to be read, which makes it the
+  declarations. Nothing the artifact was protecting is lost - it exists to avoid
+  importing a code location, and reading YAML needs no import.
+- **Not breaking for any working configuration.** `artifact:` with
+  `declarations:` raised a `ValueError` on every released version, so no
+  deployment's behaviour moves.
+
+**Fixed.**
+
+- **The test guarding the refused-option set could not discriminate.** It matched
+  the option's name against the whole refusal sentence, which contains the
+  literal words "declarations" and "name" whichever option fired - so every arm
+  passed on prose, and it stayed green for `declarations` on an unrelated error
+  after the option was admitted. It now matches the phrase that names the option,
+  and the set is pinned from outside instead of hand-copied into a parametrize.
+
+**Verified.**
+
+- `scripts/drive_the_write_path_against_the_wheel.py` runs the whole round trip a
+  second time over the artifact transport - reconcile, plan, apply, and the
+  written test read back as a declared key **with no artifact regenerated** -
+  then requires the apply to refuse over a human's edit on that route too.
+- **Calibrated by mutation, one at a time, rather than observed to pass.** Six
+  defects were introduced into the finished implementation and each had to turn a
+  named leg red; the table is in the pull request. One did not land where it was
+  predicted to, and that is recorded on the leg rather than tidied away: keying
+  the edit view by bare stem fires leg 10, not leg 11, because reconcile merges
+  into the text the view hands it and an empty view yields no edit at all. Leg
+  11's pin assertion is a backstop no mutation reaches.
+- The artifact-built shape now reaches dex-core's own `EditableProjectContract`
+  and `PlacingProjectContract`. It reached none of the three contract classes
+  before: they build from in-memory text or from `assets:`, and the completeness
+  gate counts contracts rather than shapes, so the hole was invisible to it.
+
+**Known limits.**
+
+- **This makes tier 3 reachable, not reached.** Nothing in production uses it
+  yet: a deployment on the artifact transport has to mount its declarations
+  directory where the reader can see it, which is a change on the deployment's
+  side. "Shipped" and "exercised" are still different claims.
+
 ## 0.3.0 - 2026-08-18
 
 The write tier. `maintain reconcile` can now propose an edit to a project in this
