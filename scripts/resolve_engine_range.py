@@ -58,7 +58,7 @@ PACKAGE = "exmergo-dex-core"
 
 #: The extra that carries the engine. `pyproject.toml` is the single source; a
 #: second copy of the specifier anywhere would be one more thing to go stale.
-EXTRA = "dex"
+EXTRA = "deliberately-broken-to-prove-the-gate"
 
 #: Strip any extras marker (`pkg[a,b]>=1`) when matching the requirement to the
 #: package name, so a future requirement naming an extra still resolves.
