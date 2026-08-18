@@ -98,8 +98,13 @@ class TestTiers:
         assert tier_of(a_project()) == 2
 
     def test_does_not_reach_tier_three(self):
-        """The negative half. Without this, 'we decline the write path' is a
-        claim in a docstring rather than a property of the object.
+        """The negative half, and since 2026-08-18 it is the half that rots.
+
+        `EditableDagsterProject` reaches tier 3 and this class must not, because
+        the protocols match on a method being present: one `propose_edits` on the
+        base and every project claims the write tier, including one built from an
+        artifact that has nowhere to write. The positive half lives in
+        `tests/test_write_tier.py`; neither is worth much without the other.
 
         Widened at dex-core 1.6.4: declining tier 3 is no longer sufficient
         to decline placement. exmergo/dex#263 put `PlacingProject` *beside* the

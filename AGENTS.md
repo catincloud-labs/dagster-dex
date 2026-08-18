@@ -41,28 +41,61 @@ tree, not this one.
 **The word "tier" is theirs.** It was in their storage seam before it reached the
 project seam. Never describe the tiering as this package's invention.
 
-## Tier 3 is declined, and the reason is not the one this section used to give
+## Tier 3 is reached by ONE class, and the split is the design
 
-`propose_edits(edits) -> object` is deliberately vague. Declining is checked
-rather than claimed: `tier_of()` checks by `isinstance`, so a format cannot
-claim a tier it does not implement.
+`EditableDagsterProject` implements the write tier. `DagsterProject` does not,
+and must not be given the method.
 
-**This section used to call the decline structural**, on the grounds that a
-project reduced from a running graph has no source of truth that can receive an
-edit. **That reason was retracted in the code on 2026-08-09 and stood here
-anyway**, in the file an agent reads first. The models are a reduction and
-cannot receive an edit; the declared keys, joins, semantics and sources are
-hand-written YAML that nothing regenerates, and they can. See `dex.DexProject`'s
-docstring, which is where the correction landed.
+**It cannot be a flag or a runtime refusal.** `EditableProject` and
+`PlacingProject` are both `runtime_checkable`, so they match on a method being
+*present*. Put `propose_edits` on the shared class and every instance claims the
+tier - including one built from an `artifact:`, which is a JSON file carrying
+`{name: text}` with no directory behind it. That instance would have to refuse
+every edit at call time, and a caller finding out by receiving an empty result
+that looks like success is exactly what the tiers exist to prevent.
 
-**The second reason has expired too.** The tier stayed declined because dex
-could not route an edit to a non-dbt format. Both blockers this package filed
-(`exmergo/dex#257`, `#258`) closed on 2026-08-11, resolved by our own merged
-`exmergo/dex#263`, which shipped `PlacingProject` in dex-core 1.6.4. This
-package pins 1.6.6.
+So `project_from_context` picks the class: a live graph **plus** a
+`declarations:` directory gets the editable one, and everything else does not.
+`tests/test_dex_bridge.py` asserts all three cases, and the artifact case is the
+one that rots.
 
-=> **What is left is work, not a blocker.** Do not re-derive either dead reason
-from the assertions below: they assert the current state, not why it holds.
+**What can receive an edit is the declarations, not the models.** A model is a
+node in a running asset graph, regenerated on the next run. The declared keys
+and joins are hand-written, version-controlled YAML in dbt's schema-test
+spelling - which is what these files were already written in - so the `unique`
+test `maintain reconcile` proposes lands where this package's own parser reads it
+back as a declared key.
+
+**Placement answers one kind and declines the rest.** `SCHEMA_YML` resolves;
+every other `EditKind` is `None`, and that is a complete answer rather than a
+partial implementation - upstream's protocol names this exact shape as what it
+was built for. Two consequences worth knowing before changing anything here:
+
+- `edit_path`'s `model` is the **warehouse table**, not our model name. There is
+  no table-to-relation mapping here (`ProjectModel.relation` is `None`), so the
+  table name is used as the file stem rather than guessed through one.
+- Reconcile reads the model name out of the placed key's **stem**, so placement
+  presumes **one model per declaration file**. A file declaring several gets a
+  warning and no edit, which is upstream refusing to guess.
+
+**Two dead reasons, so nobody re-derives them.** This section used to call the
+decline structural, on the grounds that a reduction has no source of truth that
+can receive an edit - retracted in the code on 2026-08-09 and left standing here
+regardless. Then it stayed declined because dex could not route an edit to a
+non-dbt format; both blockers this package filed (`exmergo/dex#257`, `#258`)
+closed on 2026-08-11 under our own merged `exmergo/dex#263`.
+
+## `load()` is required by two callers and declared by no protocol
+
+`transform.plans.plan` calls it to pin each edit against the file it would
+change, and `maintain.commands` calls it before reconcile builds a proposal.
+Neither `EditableProject` nor `PlacingProject` declares it, and neither shipped
+conformance contract exercises it.
+
+=> **A format can pass every assertion upstream ships and fail at the first real
+reconcile.** `EditableDexProject.load()` exists because the callers need it, not
+because the contract asked. Do not delete it on the grounds that nothing
+declares it.
 
 The conformance suite asserts the decline **negatively** - `not isinstance(project,
 EditableProject)` - so reaching tier 3 by accident is caught rather than

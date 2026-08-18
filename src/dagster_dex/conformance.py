@@ -42,9 +42,10 @@ from __future__ import annotations
 import pytest
 
 from .model import Freshness
-from .protocol import FingerprintedProject, ProjectSource, tier_of
+from .protocol import EditableProject, FingerprintedProject, ProjectSource, tier_of
 
 __all__ = [
+    "EditableProjectContract",
     "FingerprintedProjectContract",
     "ProjectSourceContract",
     "a_composite_key_declaration",
@@ -570,6 +571,148 @@ class FingerprintedProjectContract(ProjectSourceContract):
             {}, {}, {"reader": a_source_declaration(schema="sales_backup")}
         ).fingerprint()
         assert here.layers != there.layers
+
+
+class EditableProjectContract:
+    """Tier 3, the write path.
+
+    **Mixed in beside** :class:`FingerprintedProjectContract` **rather than
+    inheriting it**, because the two need different constructors. A tier-1 or
+    tier-2 project can be built from text held in memory; a project that can
+    receive an edit has somewhere for the edit to land, and a hook shaped for the
+    first cannot produce the second without inventing a place.
+
+    **Everything here is behavioural, and none of it is optional.** This is the
+    tier where getting it wrong costs somebody their work rather than costing an
+    inaccurate report. No shape check can tell a ``propose_edits`` that refuses
+    correctly from one that never writes at all, which is why the refusing arm
+    and the writing arm are both required and neither counts alone.
+
+    Supply one hook::
+
+        class TestMyFormatWrites(EditableProjectContract):
+            def an_edit_against_a_changed_target(self):
+                ...
+                return project, edits, read_target
+    """
+
+    def an_edit_against_a_changed_target(self):
+        """A staged conflict: ``(project, edits, read_target)``.
+
+        Build a project, propose an edit against something in it, then change
+        that target behind the proposal's back - which is what a human editing
+        during review does. Return, in order:
+
+        - ``project``: the tier-3 project the edits go through.
+        - ``edits``: the edit set, pinned to the content from *before* the change.
+        - ``read_target``: a zero-argument callable returning what the target
+          holds right now. Any value comparing equal to itself will do; these
+          assertions only ask whether it moved.
+
+        **Return a freshly staged scenario on every call.** Both write
+        assertions use it and one of them writes, so a shared fixture would let
+        the second see what the first left behind.
+
+        This hook is mandatory, unlike ``make_unreadable_project`` on the read
+        contract. A format may honestly have no unparseable state; a format that
+        writes into a source of truth a human can also edit always has the state
+        where the human got there first. One that cannot stage that scenario
+        cannot detect it either, and one that cannot detect it overwrites work
+        silently.
+        """
+
+        raise NotImplementedError(
+            "a tier-3 conformance subclass must implement "
+            "an_edit_against_a_changed_target() -> (project, edits, read_target), "
+            "staging the case the write tier exists to get right: a human edited "
+            "the target after the edit was proposed"
+        )
+
+    def test_satisfies_the_write_tier(self):
+        project, _edits, _read_target = self.an_edit_against_a_changed_target()
+        assert isinstance(project, EditableProject)
+        assert tier_of(project) == 3
+
+    def test_an_unconfirmed_write_refuses_a_target_that_moved(self):
+        """The human edit survives, and nothing is written.
+
+        This is propose-don't-impose at the only layer that can enforce it. The
+        content an edit was proposed against is pinned precisely so the window
+        between proposing and writing - a human review, and it can be long - does
+        not end with somebody's work replaced by a proposal written before it
+        existed.
+        """
+
+        project, edits, read_target = self.an_edit_against_a_changed_target()
+        before = read_target()
+
+        project.propose_edits(edits)
+
+        assert read_target() == before, (
+            "propose_edits() overwrote a target that changed after the edit was "
+            "proposed, with confirmed left at its default. A conflict has to "
+            "refuse the whole set and write nothing until a human confirms it"
+        )
+
+    def test_a_confirmed_write_overrides_the_conflict(self):
+        """Without this the refusal above is satisfied by a write path that never
+        writes, and a format could pass by doing nothing at all."""
+
+        project, edits, read_target = self.an_edit_against_a_changed_target()
+        before = read_target()
+
+        project.propose_edits(edits, confirmed=True)
+
+        assert read_target() != before, (
+            "propose_edits() left the target unchanged with confirmed=True. The "
+            "override is what a human reaches for after reading the conflict, so "
+            "a format that refuses either way has no write path at all"
+        )
+
+    def test_the_outcome_reports_what_happened(self):
+        """A caller has to be able to tell a refusal from a write.
+
+        Both readings fail closed on an outcome answering neither, and they fail
+        in opposite directions: a proposal recorded as applied that wrote
+        nothing, or a conflict that never reaches the person it was raised for.
+        Asserted on the refusing case, which is the one where the two fields
+        disagree and so the one an outcome reporting nothing gets wrong.
+        """
+
+        project, edits, _read_target = self.an_edit_against_a_changed_target()
+
+        outcome = project.propose_edits(edits)
+
+        assert not outcome.written, (
+            "propose_edits() reported paths in `written` while refusing an "
+            "unconfirmed conflict, so a caller marks the proposal applied and "
+            "nobody is asked about the conflict"
+        )
+        assert outcome.conflicts, (
+            "propose_edits() refused the write and reported no `conflicts`, so "
+            "the divergence it refused over never reaches a human and the "
+            "refusal looks like a clean no-op"
+        )
+
+    def test_the_declared_surface_cannot_reach_outside_the_project(self):
+        """A surface is a region of the project, not a way out of it.
+
+        Escapes are refused whatever is declared, so this widens nothing;
+        declaring one means the format believes it owns something it does not,
+        and the belief is worth catching here rather than as a refusal on the
+        first edit that uses it.
+        """
+
+        from pathlib import PurePosixPath
+
+        project, _edits, _read_target = self.an_edit_against_a_changed_target()
+
+        for prefix in project.editing_surface():
+            candidate = PurePosixPath(str(prefix).replace("\\", "/"))
+            assert not candidate.is_absolute() and ".." not in candidate.parts, (
+                f"editing_surface() declares '{prefix}', which is absolute or "
+                "climbs out of the project"
+            )
 
 
 @pytest.fixture

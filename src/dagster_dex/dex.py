@@ -22,13 +22,21 @@ module scope is not really optional.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 from .model import Freshness, ProjectDeclarations
-from .protocol import ProjectSource
+from .protocol import ProjectSource, ProposedEdit
+
+if TYPE_CHECKING:  # pragma: no cover - a type-only import
+    # Imported for the annotation alone. Every runtime import of `.project` in
+    # this module stays deferred: a host that only ever reads an artifact should
+    # not pay to import the reduction, and a module that eagerly imports what it
+    # sometimes needs is not really deferring anything.
+    from .project import EditableDagsterProject
 
 __all__ = [
     "DexProject",
+    "EditableDexProject",
     "ProjectContext",
     "project_from_context",
     "semantic_layer_notes",
@@ -610,6 +618,141 @@ class DexProject:
         )
 
 
+class EditableDexProject(DexProject):
+    """The write tier, and where a proposed edit lands, wearing dex-core's names.
+
+    Two seams meet here and they are not the same seam. dex-core's tier 3 is
+    ``write_edits(edits, project_dir, *, confirmed=False)`` returning something
+    with ``written`` and ``conflicts``; beside it, and deliberately not on it,
+    ``PlacingProject`` asks ``edit_path`` and ``editing_surface``. Ours is
+    ``propose_edits`` over :class:`~.protocol.ProposedEdit`. The mechanism is on
+    our side, in :class:`~.project.EditableDagsterProject`, where it is testable
+    with the engine uninstalled; everything below is translation.
+
+    **Placement answers one kind and declines the rest, and that asymmetry is the
+    reason the seam exists.** ``MODEL_SQL`` is ``None``: a model here is a node
+    in a running asset graph, and a file authored for it would be regenerated
+    away. ``SCHEMA_YML`` resolves, because the declared keys are hand-written
+    YAML in this format's own vocabulary - dbt's schema-test spelling, which is
+    what these files were already written in - so a ``unique`` test reconcile
+    proposes lands somewhere this format's own parser reads it back as a declared
+    key. One ``None`` and one path is a complete answer, and upstream's protocol
+    names exactly this shape as what it was built for.
+
+    **``model`` is the warehouse table, not our model name**, which upstream
+    names as the thing this method is most often gotten wrong on. This format
+    has no table-to-relation mapping - ``ProjectModel.relation`` is ``None`` -
+    so the table name is used as the file stem rather than translated through a
+    guess. A project whose declaration file is not named after the table it
+    declares gets no edit and a warning saying so, which is upstream refusing to
+    guess rather than this format writing to the wrong file.
+
+    **A project that packs several models into one declaration file gets a
+    warning, not an edit.** Reconcile reads the model name out of the placed
+    key's stem, so placement here presumes one model per file. That is a real
+    limit on the convention rather than a defect to work around: the alternative
+    is a format guessing which entry in a shared file a finding is about.
+    """
+
+    def __init__(
+        self, project: EditableDagsterProject, *, declarations_prefix: str
+    ) -> None:
+        super().__init__(project)
+        # Narrowed for the type checker, and named separately rather than by
+        # re-annotating the base's attribute: `DexProject` genuinely holds a
+        # tier-1 project and re-declaring the field would be this class telling
+        # the base what it holds. The two always refer to the same object.
+        self._editable = project
+        self._declarations_prefix = declarations_prefix
+
+    def load(self) -> Any:
+        """The editable files and the place their keys are relative to.
+
+        **Nothing in dex-core's project protocols declares this method**, and two
+        of its callers require it: ``transform.plans.plan`` calls it to pin each
+        edit against the file it would change, and ``maintain.commands`` calls it
+        before reconcile builds a proposal. So a format can satisfy
+        ``EditableProject`` and ``PlacingProject`` in full, pass both shipped
+        conformance contracts, and fail at the first real reconcile. Implemented
+        here because the callers need it, not because the contract asked.
+
+        Returns our own :class:`~.protocol.ProjectFileView` rather than dex-core's
+        ``DbtProjectView``, which is what routes both callers down their
+        format-neutral branch: ``plans.plan`` asks the *view* whether dbt's
+        checks apply rather than asking the class that produced it, so handing
+        back a dbt view would opt this format into dbt's macro-path and
+        root-manifest rules and have it refused by them.
+        """
+
+        return self._editable.editable_view()
+
+    def edit_path(self, kind: Any, model: str) -> str | None:
+        """Where an edit of ``kind`` for the warehouse table ``model`` lives."""
+
+        from exmergo_dex_core.transform.plans import (  # noqa: PLC0415 - optional dependency
+            EditKind,
+        )
+
+        if kind is not EditKind.SCHEMA_YML:
+            return None
+        return f"{self._declarations_prefix}/{model}.yml"
+
+    def editing_surface(self) -> list[str]:
+        """The prefixes this format admits its edits may land in."""
+
+        return list(self._editable.editing_surface())
+
+    def write_edits(
+        self, edits: Any, project_dir: Any = None, *, confirmed: bool = False
+    ) -> Any:
+        """dex-core's write tier, translated onto :meth:`propose_edits`.
+
+        ``project_dir`` is the directory the plan being applied was pinned
+        against, and it wins over the one this instance was built from. That is
+        not deference for its own sake: this instance points wherever the engine
+        was configured when it was built, the plan points where its hashes came
+        from, and the two agreeing is the common case rather than a guarantee.
+
+        The pin does the rest of the work. A plan applied against the wrong
+        directory finds different content, or no file where it expected one, and
+        both are conflicts - so a configuration that has moved under a stored
+        plan is refused rather than written through.
+
+        Returns dex-core's ``ApplyResult`` because it is the shipped shape their
+        own protocol points at, and a local lookalike would be a second copy of a
+        contract that can move.
+        """
+
+        from exmergo_dex_core.dbt_project import (  # noqa: PLC0415 - optional dependency
+            ApplyResult,
+            Conflict,
+            EditOp,
+        )
+
+        proposed = [
+            ProposedEdit(
+                key=edit.path,
+                new_content=None if edit.op is EditOp.DELETE else edit.new_content,
+                pinned_hash=edit.old_content_hash,
+            )
+            for edit in edits
+        ]
+        outcome = self._editable.propose_edits(
+            proposed, root=project_dir, confirmed=confirmed
+        )
+        return ApplyResult(
+            written=list(outcome.written),
+            conflicts=[
+                Conflict(
+                    path=conflict.key,
+                    expected_sha256=conflict.expected,
+                    found_sha256=conflict.found,
+                )
+                for conflict in outcome.conflicts
+            ],
+        )
+
+
 # -- construction from configuration ------------------------------------------
 
 
@@ -651,6 +794,19 @@ def _load_yaml_dir(repo_root: str | None, option: str, value: object) -> dict[st
     which is a constraint on placement rather than on reading.
     """
 
+    return _read_yaml_dir(_resolve_dir(repo_root, option, value))
+
+
+def _resolve_dir(repo_root: str | None, option: str, value: object) -> Any:
+    """The directory an option names, resolved and checked, as a ``Path``.
+
+    Split out from :func:`_load_yaml_dir` because the factory needs the place as
+    well as its contents: the keys are relative to the directory, so the
+    directory is what a later write has to resolve them against. Reading the text
+    and then re-deriving the path from a key would be a second answer to a
+    question already answered, and the two can differ.
+    """
+
     from pathlib import Path  # noqa: PLC0415 - stdlib, kept local for symmetry
 
     if not isinstance(value, str):
@@ -668,6 +824,12 @@ def _load_yaml_dir(repo_root: str | None, option: str, value: object) -> dict[st
 
     if not directory.is_dir():
         raise ValueError(f"project option {option!r} names {str(directory)!r}, which is not a directory")
+
+    return directory
+
+
+def _read_yaml_dir(directory: Any) -> dict[str, str]:
+    """``{<directory name>/<file name>: text}`` for the YAML in one directory."""
 
     return {
         f"{directory.name}/{path.name}": path.read_text(encoding="utf-8")
@@ -874,26 +1036,72 @@ def project_from_context(context: Any) -> DexProject:
             f"does not define it"
         ) from exc
 
-    from .project import DagsterProject  # noqa: PLC0415 - deferred on purpose
+    from .project import (  # noqa: PLC0415 - deferred on purpose
+        DagsterProject,
+        EditableDagsterProject,
+    )
 
-    return DexProject(
-        DagsterProject.from_asset_graph(
-            assets,
-            name=str(options.get("name", "asset_graph")),
-            declaration_sources=(
-                _load_yaml_dir(repo_root, "declarations", options["declarations"])
-                if "declarations" in options
-                else None
-            ),
-            semantic_sources=(
-                _load_yaml_dir(repo_root, "semantics", options["semantics"])
-                if "semantics" in options
-                else None
-            ),
-            source_declarations=(
-                _load_yaml_dir(repo_root, "sources", options["sources"])
-                if "sources" in options
-                else None
-            ),
+    directories = {
+        option: _resolve_dir(repo_root, option, options[option])
+        for option in ("declarations", "semantics", "sources")
+        if option in options
+    }
+    text = {
+        option: _read_yaml_dir(directory) for option, directory in directories.items()
+    }
+
+    name = str(options.get("name", "asset_graph"))
+    declarations = text.get("declarations")
+    semantics = text.get("semantics")
+    sources = text.get("sources")
+
+    # THE WRITE TIER IS PER INSTANCE, AND THIS IS WHERE IT IS DECIDED.
+    #
+    # `EditableProject` is `runtime_checkable` and matches on a method being
+    # present, so the decision cannot be a flag or a refusal at call time - it
+    # has to be which class gets built. A project with no `declarations`
+    # directory has nowhere for the one kind of edit this format can place, and
+    # `edit_path` answering None for every kind is upstream's own description of
+    # a format that should be declining the tier instead.
+    #
+    # The artifact path never reaches here at all: it returns above, from
+    # `_project_from_artifact`, and an artifact is a JSON file carrying
+    # `{name: text}` with no directory behind it.
+    if "declarations" not in directories:
+        return DexProject(
+            DagsterProject.from_asset_graph(
+                assets,
+                name=name,
+                declaration_sources=declarations,
+                semantic_sources=semantics,
+                source_declarations=sources,
+            )
         )
+
+    root = directories["declarations"].parent
+    # A directory configured somewhere else is still read and still contributes
+    # declarations. It is left out of the surface because a surface is a claim
+    # about a region of ONE keyspace, and a directory under a different parent is
+    # not addressable by a key relative to this root. Claiming it would produce
+    # placements the containment check then refuses, which reads as dex declining
+    # rather than as this format contradicting itself.
+    surface = sorted(
+        {
+            directory.name
+            for directory in directories.values()
+            if directory.parent == root
+        }
+    )
+
+    return EditableDexProject(
+        EditableDagsterProject.from_asset_graph(
+            assets,
+            root=root,
+            surface=surface,
+            name=name,
+            declaration_sources=declarations,
+            semantic_sources=semantics,
+            source_declarations=sources,
+        ),
+        declarations_prefix=directories["declarations"].name,
     )

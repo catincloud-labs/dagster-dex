@@ -147,6 +147,64 @@ def _wrapped(**sources) -> DexProject:
     )
 
 
+#: The warehouse table placement is asked about. It is also a model name here,
+#: which is a property of this fixture rather than of the format: `edit_path`
+#: takes the table as the warehouse spells it, and this format has no
+#: table-to-relation mapping to translate one into the other.
+_PLACEABLE_TABLE = "dim_date"
+
+
+def _editable_wrapped(*, declaring: bool = False) -> DexProject:
+    """The same format with a declarations directory on a real disk.
+
+    A fresh directory per call. Both of upstream's write assertions call the
+    staging hook and one of them writes, so a shared directory would let the
+    second see what the first left behind - and a staged conflict that is not
+    freshly staged is not staging anything.
+
+    **Empty by default, and that is upstream's requirement rather than a
+    convenience.** `make_project()` feeds the tier-1 assertions, several of which
+    check that a project declaring nothing says so without raising, so a fixture
+    that declared a key would fail them for a reason having nothing to do with
+    the write tier. The directory still exists, which is what the tier turns on:
+    editability is having somewhere for an edit to land, not having something
+    there already.
+    """
+
+    import tempfile
+    from pathlib import Path
+
+    from dagster_dex.dex import EditableDexProject
+    from dagster_dex.project import EditableDagsterProject
+
+    root = Path(tempfile.mkdtemp())
+    directory = root / "declarations"
+    directory.mkdir()
+
+    declarations: dict[str, str] = {}
+    if declaring:
+        target = directory / f"{_PLACEABLE_TABLE}.yml"
+        target.write_text(
+            a_single_key_declaration(_PLACEABLE_TABLE, "date"),
+            encoding="utf-8",
+            newline="\n",
+        )
+        declarations[f"declarations/{_PLACEABLE_TABLE}.yml"] = target.read_text(
+            encoding="utf-8"
+        )
+
+    return EditableDexProject(
+        EditableDagsterProject(
+            MODELS,
+            root=root,
+            surface=("declarations",),
+            name="demo_project",
+            declaration_sources=declarations,
+        ),
+        declarations_prefix="declarations",
+    )
+
+
 class TestDagsterProjectAgainstDexCore(
     conformance.DeclaringProjectContract,
     conformance.SemanticProjectContract,
@@ -494,11 +552,17 @@ def test_the_tier_we_reach_is_two_and_three_is_declined():
     permanent one: the models cannot receive an edit, but the declarations are
     hand-written files that can.
 
-    **The blockers moved on 2026-08-11**, so this is now the assertion that has to
-    change deliberately rather than the one waiting for them. Both closed together
-    under `exmergo/dex#263`, which shipped `PlacingProject` in dex-core 1.6.4; this
-    suite runs against 1.6.6. What holds tier 3 declined today is that the write
-    path is unimplemented here.
+    **The blockers moved on 2026-08-11** and the write path landed here on
+    2026-08-18, so what this asserts is no longer "tier 3 is declined" but
+    **which** projects decline it. The tier is per instance and cannot be
+    anything else: both protocols are `runtime_checkable`, so they match on a
+    method being present, and a `write_edits` on the shared class would have
+    every instance claim the tier and then refuse at call time.
+
+    **The mixed case is the test.** A project reduced from a graph with
+    declarations on disk reaches 3; one built from text alone stays at 2.
+    Asserting either half on its own passes on an implementation that answers the
+    same way for both, which is precisely what this split exists to rule out.
 
     This assertion previously read `== 1` and was named
     `..._and_that_is_deliberate`, describing the gap as a finding about a tier
@@ -513,17 +577,22 @@ def test_the_tier_we_reach_is_two_and_three_is_declined():
         tier_of,
     )
 
-    project = _wrapped()
+    read_only = _wrapped()
+    writable = _editable_wrapped()
 
-    assert tier_of(project) == 2
-    assert isinstance(project, MaintainProject)
-    assert not isinstance(project, EditableProject)
+    assert tier_of(read_only) == 2
+    assert isinstance(read_only, MaintainProject)
+    assert not isinstance(read_only, EditableProject)
     # `PlacingProject` (dex-core 1.6.4, exmergo/dex#263) sits BESIDE the tiers
-    # rather than inside them, so `tier_of() == 2` says nothing about it and the
-    # line above does not imply this one. Upstream's write gate reads the
-    # capability directly, which makes this the assertion that actually keeps
-    # reconcile's proposals advisory for our format.
-    assert not isinstance(project, PlacingProject)
+    # rather than inside them, so `tier_of()` says nothing about it in either
+    # direction and neither line above implies the one after it. Upstream's write
+    # gate reads the capability directly, so this is the assertion that decides
+    # whether reconcile's proposals stay advisory for our format.
+    assert not isinstance(read_only, PlacingProject)
+
+    assert tier_of(writable) == 3
+    assert isinstance(writable, EditableProject)
+    assert isinstance(writable, PlacingProject)
 
 
 def test_the_format_name_is_forwarded_not_duplicated():
@@ -542,28 +611,78 @@ def test_the_format_name_is_forwarded_not_duplicated():
 #: Contracts upstream ships that this format deliberately does NOT mix in, with
 #: the reason each one is declined. The value is prose because it is the whole
 #: point: a decline that cannot say why is indistinguishable from an oversight.
+class TestTheWriteTierAgainstDexCore(
+    TestDagsterProjectAgainstDexCore,
+    conformance.EditableProjectContract,
+    conformance.PlacingProjectContract,
+):
+    """Tier 3 and placement, judged by upstream's own shipped assertions.
+
+    **Inherits the tier-1 and tier-2 class rather than repeating its hooks**, so
+    every read assertion runs against the editable project as well. That is not
+    padding: the write tier is a subclass, and a subclass that quietly broke
+    `definitions()` or a layer would otherwise be caught only where the read-only
+    class is exercised, which is a different object.
+
+    `PlacingProjectContract` is mixed in separately because it sits *beside* the
+    tiers rather than inside them. A format implementing tier 3 without it gets
+    advisory proposals and no stored plan, which is the same outcome as declining
+    the tier: reconcile has nowhere to plan an edit against.
+    """
+
+    def make_project(self) -> DexProject:
+        return _editable_wrapped()
+
+    def placeable_model(self) -> str:
+        return _PLACEABLE_TABLE
+
+    def an_edit_against_a_changed_target(self):
+        from pathlib import Path
+
+        from exmergo_dex_core.dbt_project import Edit
+
+        project = _editable_wrapped(declaring=True)
+        view = project.load()
+        root = Path(view.root)
+        key = f"declarations/{_PLACEABLE_TABLE}.yml"
+        target = root / key
+
+        edits = [
+            Edit(
+                path=key,
+                new_content="models: []\n",
+                old_content_hash=view.files[key].sha256,
+            )
+        ]
+
+        # The human, arriving mid-review. Everything above is the proposal, and
+        # this line is the state the write tier exists to notice.
+        target.write_text(
+            "models: [{name: edited_by_a_human}]\n", encoding="utf-8", newline="\n"
+        )
+
+        return project, root, edits, lambda: target.read_text(encoding="utf-8")
+
+
+#: **This is empty, and it was two entries until 2026-08-18.** Every conformance
+#: contract dex-core ships is now mixed in, so there is nothing left to excuse.
 #:
-#: BOTH REASONS HERE WERE STALE, AND ONE HAD BEEN RETRACTED IN THE CODE. This
+#: Kept rather than deleted along with its entries, for the half of the test
+#: below the entries were never the point of: a contract upstream ADDS arrives
+#: silently, because one nobody mixes in runs no assertions and is invisible to a
+#: suite that counts what ran. An empty mapping is the honest state, and the name
+#: still has to exist for the check to have something to read.
+#:
+#: History worth keeping, since it is the defect this repository names most
+#: often. Both entries were stale and one had been RETRACTED IN THE CODE: this
 #: mapping said tier 3 was declined "structurally" because a reduction has no
-#: source of truth that can receive an edit - the exact claim `DexProject`'s
-#: docstring withdrew on 2026-08-09, before this mapping was last touched. A
-#: decline that cannot say why is indistinguishable from an oversight; a decline
-#: saying something the code beside it has already denied is worse, because it
-#: reads as a second opinion rather than as a stale copy.
-#: => A prose field is not exempt from the rule about two copies of a claim.
-_DECLINED = {
-    "EditableProjectContract": (
-        "the write path is unimplemented here. The models cannot receive an "
-        "edit, but the hand-written declarations can, and dex has been able to "
-        "route one to a non-dbt format since dex-core 1.6.4 (exmergo/dex#263, "
-        "closing #257 and #258). So this is work outstanding, not a limit"
-    ),
-    "PlacingProjectContract": (
-        "placement is declined while the write tier is: a format saying where "
-        "an edit lands while unable to receive one has described a path to "
-        "nowhere. These two move together or not at all"
-    ),
-}
+#: source of truth that can receive an edit, which is the exact claim
+#: `DexProject`'s docstring withdrew on 2026-08-09. A decline that cannot say why
+#: is indistinguishable from an oversight; a decline contradicting the module it
+#: describes is worse, because it reads as a second opinion rather than as a
+#: stale copy. => A prose field is not exempt from the rule about two copies of a
+#: claim.
+_DECLINED: dict[str, str] = {}
 
 
 def test_every_contract_upstream_ships_is_mixed_in_or_explicitly_declined():
@@ -591,7 +710,11 @@ def test_every_contract_upstream_ships_is_mixed_in_or_explicitly_declined():
 
     mixed_in = {
         base.__name__
-        for cls in (TestDagsterProjectAgainstDexCore, TestDagsterProjectBuiltFromContext)
+        for cls in (
+            TestDagsterProjectAgainstDexCore,
+            TestDagsterProjectBuiltFromContext,
+            TestTheWriteTierAgainstDexCore,
+        )
         for base in cls.__mro__
     }
 

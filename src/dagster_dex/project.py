@@ -43,7 +43,9 @@ suite can be run by someone who has neither.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
 from .declarations import (
@@ -58,8 +60,15 @@ from .model import (
     ProjectModel,
     definition_hash,
 )
+from .protocol import (
+    EditConflict,
+    EditOutcome,
+    ProjectFile,
+    ProjectFileView,
+    ProposedEdit,
+)
 
-__all__ = ["DagsterProject"]
+__all__ = ["DagsterProject", "EditableDagsterProject"]
 
 
 class _AssetKey(Protocol):
@@ -314,39 +323,281 @@ class DagsterProject:
         does not build.
         """
 
-        definitions = list(assets)
-
-        flat_keys = [key.path[-1] for d in definitions for key in d.keys]
-        seen: dict[str, str] = {}
-        for model_name in flat_keys:
-            folded = model_name.casefold()
-            if folded in seen:
-                raise ValueError(
-                    f"two assets reduce to the same model name: "
-                    f"{seen[folded]!r} and {model_name!r}"
-                )
-            seen[folded] = model_name
-
-        models: list[ProjectModel] = []
-        for definition in definitions:
-            deps_by_key = definition.asset_deps
-            metadata_by_key = definition.metadata_by_key
-            for key in definition.keys:
-                layer = (metadata_by_key.get(key) or {}).get("layer")
-                models.append(
-                    ProjectModel(
-                        name=key.path[-1],
-                        depends_on=tuple(
-                            sorted(p.path[-1] for p in deps_by_key.get(key, ()))
-                        ),
-                        layer=str(layer).lower() if layer else None,
-                    )
-                )
-
         return cls(
+            _reduce_asset_graph(assets),
+            name=name,
+            declaration_sources=declaration_sources,
+            semantic_sources=semantic_sources,
+            source_declarations=source_declarations,
+        )
+
+
+def _reduce_asset_graph(assets: Iterable[_AssetDefinition]) -> list[ProjectModel]:
+    """The reduction itself, as a function two constructors can share.
+
+    Extracted when a second project class needed it. Copying it into the second
+    one would have been the duplication that produces the next gap: two
+    near-identical readers of the orchestrator's surface, one of which stops
+    being maintained.
+    """
+
+    definitions = list(assets)
+
+    flat_keys = [key.path[-1] for d in definitions for key in d.keys]
+    seen: dict[str, str] = {}
+    for model_name in flat_keys:
+        folded = model_name.casefold()
+        if folded in seen:
+            raise ValueError(
+                f"two assets reduce to the same model name: "
+                f"{seen[folded]!r} and {model_name!r}"
+            )
+        seen[folded] = model_name
+
+    models: list[ProjectModel] = []
+    for definition in definitions:
+        deps_by_key = definition.asset_deps
+        metadata_by_key = definition.metadata_by_key
+        for key in definition.keys:
+            layer = (metadata_by_key.get(key) or {}).get("layer")
+            models.append(
+                ProjectModel(
+                    name=key.path[-1],
+                    depends_on=tuple(
+                        sorted(p.path[-1] for p in deps_by_key.get(key, ()))
+                    ),
+                    layer=str(layer).lower() if layer else None,
+                )
+            )
+
+    return models
+
+
+class EditableDagsterProject(DagsterProject):
+    """The same project, plus the one channel that can receive an edit.
+
+    **A separate class rather than a method on** :class:`DagsterProject`, and
+    that is the whole design. :class:`~.protocol.EditableProject` is
+    ``runtime_checkable``, so it matches on a method being *present*. Put
+    ``propose_edits`` on the base and every instance claims the write tier -
+    including one built from an artifact, which is a JSON file carrying
+    ``{name: text}`` and no filesystem behind it at all. Such an instance would
+    have to refuse at call time, which is the present-and-refusing shape this
+    package argues against in :mod:`.protocol`: the caller finds out by being
+    handed an empty result that looks like success, instead of by asking.
+
+    Splitting it means ``isinstance(project, EditableProject)`` is the truth for
+    every instance, and the factory decides which truth to build.
+
+    **What can receive an edit is the declarations, not the models.** The models
+    are a reduction of a running asset graph, whose source of truth is the code
+    that produced it: writing into the reduction edits something regenerated on
+    the next run. The declared keys, joins, semantics and sources are
+    hand-written YAML that nothing regenerates, they are version-controlled, and
+    they are exactly the artifact a mechanical ``unique`` test lands in. Those
+    are different claims about different files, and collapsing them is what this
+    package spent a release doing before it noticed.
+
+    ``root`` is what the keys are relative to. ``surface`` is the region of that
+    keyspace edits may touch, as directory names - see :meth:`editing_surface`.
+    """
+
+    def __init__(
+        self,
+        models: Sequence[ProjectModel],
+        *,
+        root: str | os.PathLike[str],
+        surface: Sequence[str],
+        name: str = "asset_graph",
+        declaration_sources: Mapping[str, str] | None = None,
+        semantic_sources: Mapping[str, str] | None = None,
+        source_declarations: Mapping[str, str] | None = None,
+    ) -> None:
+        super().__init__(
             models,
             name=name,
             declaration_sources=declaration_sources,
             semantic_sources=semantic_sources,
             source_declarations=source_declarations,
         )
+        self._root = Path(root)
+        self._surface = tuple(surface)
+
+    @classmethod
+    def from_asset_graph(  # type: ignore[override]
+        cls,
+        assets: Iterable[_AssetDefinition],
+        *,
+        root: str | os.PathLike[str],
+        surface: Sequence[str],
+        name: str = "asset_graph",
+        declaration_sources: Mapping[str, str] | None = None,
+        semantic_sources: Mapping[str, str] | None = None,
+        source_declarations: Mapping[str, str] | None = None,
+    ) -> EditableDagsterProject:
+        """The same reduction, plus the two coordinates the write tier needs.
+
+        Overridden rather than inherited because the base classmethod builds
+        ``cls(models, ...)`` and this class requires ``root`` and ``surface``
+        besides. Giving them defaults would be the cheaper change and the wrong
+        one: an editable project with no surface admits no edit anywhere, and it
+        would be constructible by accident.
+        """
+
+        return cls(
+            _reduce_asset_graph(assets),
+            root=root,
+            surface=surface,
+            name=name,
+            declaration_sources=declaration_sources,
+            semantic_sources=semantic_sources,
+            source_declarations=source_declarations,
+        )
+
+    # -- tier 3 ---------------------------------------------------------------
+
+    def editing_surface(self) -> tuple[str, ...]:
+        """The region of this project's keyspace an edit may land in.
+
+        Directory names, matched by path segment: ``declarations`` admits
+        ``declarations/orders.yml`` and does not admit
+        ``declarations_backup/orders.yml``.
+
+        **Containment is a safety property, not a lookup.** It is what keeps a
+        mistaken or hostile key from reaching the rest of the repository, and it
+        has to be declared by this format because only this format knows its own
+        layout. An empty surface refuses every edit rather than admitting all of
+        them, which is the same statement declining the tier makes and is why
+        the factory does not build this class without at least one directory to
+        name.
+        """
+
+        return self._surface
+
+    def editable_view(self) -> ProjectFileView:
+        """The editable files, keyed as this format keys them, with their hashes.
+
+        Built from the text this instance was constructed with rather than from a
+        fresh read, which is the point: the pin an edit is planned against and
+        the surface it is checked against then come from **one** reading of the
+        project. Two readings a moment apart can disagree, and the disagreement
+        is silent - it renders an existing file as a create, and the write after
+        it reports a conflict on a file nobody touched.
+
+        Only files inside :meth:`editing_surface` appear. A directory configured
+        somewhere else is still read, still parsed, and still contributes
+        declarations; it is simply not somewhere this format claims it may write,
+        and saying otherwise in the view would be claiming a surface the
+        containment check would then refuse.
+        """
+
+        files: dict[str, ProjectFile] = {}
+        for mapping in (
+            self._declaration_sources,
+            self._semantic_sources,
+            self._source_declarations,
+        ):
+            for key, text in mapping.items():
+                if _within(key, self._surface):
+                    files[key] = ProjectFile(
+                        key=key, content=text, sha256=definition_hash(text)
+                    )
+        return ProjectFileView(files=files, root=str(self._root))
+
+    def propose_edits(
+        self,
+        edits: Sequence[ProposedEdit],
+        *,
+        root: str | os.PathLike[str] | None = None,
+        confirmed: bool = False,
+    ) -> EditOutcome:
+        """Write the edits, hash-checked and all-or-nothing. See the protocol.
+
+        ``root`` overrides the directory this instance was built against, and the
+        caller's answer wins when it gives one. That is not a nicety: a caller
+        applying a stored proposal holds the place the proposal was *pinned*
+        against, and this instance holds whatever the engine was configured for
+        when it was built. The two agreeing is the common case rather than a
+        guarantee, and the disagreement is silent.
+
+        **Every target is re-read from disk here**, which is a different moment
+        from :meth:`editable_view` on purpose. The view is what the proposal was
+        built from; this is what is there now, possibly in another process, days
+        later, after a human read the diff and changed their mind about a line.
+
+        **The all-or-nothing is "check every target, then write", not a
+        transaction**, and the difference is worth stating rather than implying.
+        A failure part way through the writing leaves some files changed. What
+        this rules out is the far likelier and far quieter case: a conflict on
+        one target while the others are written anyway, leaving a project in a
+        state neither the proposal nor the human intended and no record of which
+        half landed.
+        """
+
+        base = Path(root) if root is not None else self._root
+
+        conflicts: list[EditConflict] = []
+        planned: list[tuple[Path, ProposedEdit]] = []
+        for edit in edits:
+            target = _resolve_within(base, edit.key, self._surface)
+            found = (
+                definition_hash(target.read_text(encoding="utf-8"))
+                if target.is_file()
+                else None
+            )
+            if found != edit.pinned_hash:
+                conflicts.append(
+                    EditConflict(key=edit.key, expected=edit.pinned_hash, found=found)
+                )
+            planned.append((target, edit))
+
+        if conflicts and not confirmed:
+            return EditOutcome(conflicts=tuple(conflicts))
+
+        written: list[str] = []
+        for target, edit in planned:
+            if edit.new_content is None:
+                if target.is_file():
+                    target.unlink()
+                    written.append(edit.key)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(edit.new_content, encoding="utf-8", newline="\n")
+            written.append(edit.key)
+
+        return EditOutcome(written=tuple(written), conflicts=tuple(conflicts))
+
+
+def _within(key: str, surface: Sequence[str]) -> bool:
+    """Is ``key`` inside one of the declared prefixes, by path segment?
+
+    Segment-wise rather than by string prefix, because ``declarations`` must not
+    admit ``declarations_backup/orders.yml``. An escape - an absolute key, or one
+    climbing out through ``..`` - is refused before the surface is consulted and
+    is not a format's to permit.
+    """
+
+    candidate = PurePosixPath(key.replace("\\", "/"))
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return False
+    return any(
+        candidate == PurePosixPath(prefix) or PurePosixPath(prefix) in candidate.parents
+        for prefix in surface
+    )
+
+
+def _resolve_within(base: Path, key: str, surface: Sequence[str]) -> Path:
+    """``base / key``, refusing anything the surface does not admit.
+
+    Checked here as well as wherever the proposal was built, because this method
+    is reachable directly and a containment check that only runs upstream is a
+    check somebody can route around. It costs a string comparison.
+    """
+
+    if not _within(key, surface):
+        listed = ", ".join(surface) or "nothing"
+        raise ValueError(
+            f"edit key {key!r} is outside the editing surface this project "
+            f"declares ({listed}); this format writes only what it says it owns"
+        )
+    return base / PurePosixPath(key)
