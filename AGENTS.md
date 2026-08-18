@@ -41,13 +41,28 @@ tree, not this one.
 **The word "tier" is theirs.** It was in their storage seam before it reached the
 project seam. Never describe the tiering as this package's invention.
 
-## Tier 3 is declined, and the decline is structural
+## Tier 3 is declined, and the reason is not the one this section used to give
 
-`propose_edits(edits) -> object` is deliberately vague. A project reduced from a
-running graph has no source of truth that can receive an edit: writing into the
-reduction would edit something regenerated from elsewhere on the next run.
-Declining is the honest answer, and `tier_of()` checks by `isinstance`, so a
-format cannot claim a tier it does not implement.
+`propose_edits(edits) -> object` is deliberately vague. Declining is checked
+rather than claimed: `tier_of()` checks by `isinstance`, so a format cannot
+claim a tier it does not implement.
+
+**This section used to call the decline structural**, on the grounds that a
+project reduced from a running graph has no source of truth that can receive an
+edit. **That reason was retracted in the code on 2026-08-09 and stood here
+anyway**, in the file an agent reads first. The models are a reduction and
+cannot receive an edit; the declared keys, joins, semantics and sources are
+hand-written YAML that nothing regenerates, and they can. See `dex.DexProject`'s
+docstring, which is where the correction landed.
+
+**The second reason has expired too.** The tier stayed declined because dex
+could not route an edit to a non-dbt format. Both blockers this package filed
+(`exmergo/dex#257`, `#258`) closed on 2026-08-11, resolved by our own merged
+`exmergo/dex#263`, which shipped `PlacingProject` in dex-core 1.6.4. This
+package pins 1.6.6.
+
+=> **What is left is work, not a blocker.** Do not re-derive either dead reason
+from the assertions below: they assert the current state, not why it holds.
 
 The conformance suite asserts the decline **negatively** - `not isinstance(project,
 EditableProject)` - so reaching tier 3 by accident is caught rather than
