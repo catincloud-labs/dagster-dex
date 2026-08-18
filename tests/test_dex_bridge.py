@@ -20,6 +20,7 @@ from dagster_dex.conformance import (
     a_semantic_definition_without_expr,
     a_single_key_declaration,
     a_source_declaration,
+    malformed_yaml,
 )
 
 pytest.importorskip("exmergo_dex_core", reason="the [dex] extra is not installed")
@@ -745,6 +746,111 @@ class TestTheFactory:
             _context(assets=f"{__name__}:FACTORY_ASSETS", declarations=str(tmp_path))
         )
         assert project.definitions().declared_keys == []
+
+
+class TestTheKeyNamesTheFileItCameFrom:
+    """A key read off a directory is a key into this format's own keyspace.
+
+    It used to be the file's STEM, which threw away both the directory and the
+    suffix. That was survivable while nothing wrote: the three parsers use the
+    key as an origin label in notes, so `'orders'` and `'declarations/orders.yml'`
+    read about the same to a human.
+
+    It stops being survivable the moment an edit has to land. dex asks a format
+    where an edit of a given kind goes, and the answer is a key into whatever
+    that format's own view returned - then checks it against the surface the
+    format declared it owns. A bare stem is in no surface, so a format keyed by
+    one can name no honest region of itself.
+
+    **One parser reads the key as data rather than as a label**, and that is the
+    assertion below that matters most: `parse_source_declarations` takes the key
+    to be the model doing the reading. Widening the key without moving that
+    reading would rename every reader after a file path, silently, and the
+    "sources declared as read by models the graph does not build" note would fire
+    on every source in a working project.
+    """
+
+    def test_a_note_names_the_directory_and_the_suffix(self, tmp_path):
+        """The loud arm: what the widened key buys is provenance a reader can act
+        on. `'broken'` names something the reader has to go looking for."""
+
+        directory = tmp_path / "declarations"
+        directory.mkdir()
+        (directory / "broken.yml").write_text(malformed_yaml(), encoding="utf-8")
+
+        project = project_from_context(
+            _context(assets=f"{__name__}:FACTORY_ASSETS", declarations=str(directory))
+        )
+
+        notes = project.definitions().notes
+        assert any("declarations/broken.yml" in note for note in notes), notes
+
+    def test_the_reader_of_a_source_is_still_the_model_not_the_path(self, tmp_path):
+        """The quiet arm, and the one that discriminates.
+
+        `read_by` is a model name, taken from the key. If the widened key reached
+        it unchanged, every reader would be named `sources/fact_orders.yml`, no
+        model would match, and `declarations()` would carry a note saying the
+        graph builds none of them - a working project reporting itself broken.
+        """
+
+        directory = tmp_path / "sources"
+        directory.mkdir()
+        (directory / "dim_date.yml").write_text(
+            a_source_declaration(), encoding="utf-8"
+        )
+
+        project = project_from_context(
+            _context(assets=f"{__name__}:FACTORY_ASSETS", sources=str(directory))
+        )
+        definitions = project.definitions()
+
+        source = project._project.declarations().sources[0]
+        assert source.read_by == ("dim_date",), source.read_by
+        assert not [n for n in definitions.notes if "does not build" in n]
+
+    def test_a_source_says_where_it_was_declared(self, tmp_path):
+        """`declared_in` existed and was never set, so `SourceTable.path` was
+        always `None`.
+
+        The provenance was in the caller's hand at read time and thrown away one
+        line later, which is the shape this package has recorded against itself
+        before: a limitation its own parser created. It is what an analyst sees
+        beside a `dangling_source` finding.
+        """
+
+        directory = tmp_path / "sources"
+        directory.mkdir()
+        (directory / "dim_date.yml").write_text(
+            a_source_declaration(), encoding="utf-8"
+        )
+
+        project = project_from_context(
+            _context(assets=f"{__name__}:FACTORY_ASSETS", sources=str(directory))
+        )
+
+        source = project._project.declarations().sources[0]
+        assert source.declared_in == "sources/dim_date.yml"
+        assert project.transform_layer().sources[0].path == "sources/dim_date.yml"
+
+    def test_a_hand_built_project_keys_by_nothing_in_particular_and_still_works(self):
+        """The other quiet arm: the key is a label, not a schema.
+
+        A project built in memory - by the conformance suite, by a host holding
+        its own text, by `artifact.loads`, which carries stems - passes whatever
+        it has. Nothing here may start requiring a path-shaped key, because an
+        artifact has no directory to have come from and inventing one would be
+        the fabricated provenance `declared_in` exists to avoid.
+        """
+
+        project = DagsterProject(
+            MODELS,
+            source_declarations={"fact_orders": a_source_declaration()},
+        )
+        source = project.declarations().sources[0]
+
+        assert source.read_by == ("fact_orders",)
+        assert source.declared_in is None
 
 
 def _write_artifact(directory, **overrides):

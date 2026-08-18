@@ -18,6 +18,7 @@ malformed - turns an authoring typo into an outage on a read path.
 from __future__ import annotations
 
 import re
+from pathlib import PurePosixPath
 from typing import Any
 
 import yaml
@@ -202,11 +203,28 @@ def parse_source_declarations(
 ) -> tuple[list[ExternalSource], list[str]]:
     """Parse source-declaration YAML into external sources, and notes.
 
-    ``sources`` is ``{reading model: file text}``: the key names the model that
-    reads the declared tables. Keying by the reader is what lets one input carry
+    ``sources`` is ``{origin: file text}``, and **the origin names the model that
+    reads the declared tables**. Keying by the reader is what lets one input carry
     both halves a consumer needs - which tables the project depends on, and
     which model each one lands in - without a second mapping that could
     disagree with the first.
+
+    **The origin may be a bare model name or a key naming a file**, and the
+    reader is its stem either way. A caller holding text in memory - the
+    conformance suite, a host, :func:`~.artifact.loads` - passes the model name
+    and always has. A caller reading a directory passes
+    ``sources/dim_date.yml``, and the stem of that is the same string the bare
+    form would have been, which is why widening the key was not a change to what
+    this returns.
+
+    That is worth stating because this is **the one parser that reads its key as
+    data rather than as a label**. The other two use it only in notes. Take the
+    whole key as the reader and every source in a working project is attributed
+    to a model the graph does not build, silently, with a note saying so.
+
+    ``declared_in`` is set only when the origin names a place. A bare model name
+    is not provenance, and putting one where a consumer expects a file would be
+    the fabricated value :class:`~.model.ExternalSource` refuses elsewhere.
 
     **Two models declaring the same table converge on one source with two
     readers.** Emitting it twice would be the more literal reading of the input
@@ -223,6 +241,11 @@ def parse_source_declarations(
     notes: list[str] = []
 
     for origin in sorted(sources):
+        # The reader is the stem, which is the whole origin when the caller
+        # passed a bare model name. `declared_in` is the origin itself, and only
+        # when it names somewhere.
+        reader = PurePosixPath(origin).stem
+        declared_in = origin if origin != reader else None
         try:
             document = yaml.safe_load(sources[origin])
         except yaml.YAMLError as exc:
@@ -267,17 +290,25 @@ def parse_source_declarations(
                         table=table,
                         schema_name=schema_name,
                         columns=columns,
-                        read_by=(origin,),
+                        read_by=(reader,),
+                        declared_in=declared_in,
                     )
                 else:
                     merged = list(existing.columns)
                     merged.extend(c for c in columns if c not in existing.columns)
+                    # The first declaration's provenance is kept when a second
+                    # reader joins. Two readers of one table were declared in two
+                    # places and the field holds one, so overwriting would make
+                    # which one survives depend on sort order; keeping the first
+                    # at least makes it stable and the `read_by` tuple says there
+                    # is more than one place to look.
                     found[found_key] = ExternalSource(
                         system=system,
                         table=table,
                         schema_name=schema_name,
                         columns=tuple(merged),
-                        read_by=existing.read_by + (origin,),
+                        read_by=existing.read_by + (reader,),
+                        declared_in=existing.declared_in or declared_in,
                     )
 
         # A file that parsed but declared nothing is the failure mode worth

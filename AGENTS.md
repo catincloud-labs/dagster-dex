@@ -96,6 +96,17 @@ about it.
 - **`path` is `None`, never `""`.** The empty string was an undocumented
   sentinel, named as one by the release that made the field optional. A
   regression test guards it, because `""` validates fine and would go unnoticed.
+  - It is no longer always `None`. `ExternalSource.declared_in` existed and was
+    never set, so the mapping carried a field whose value was absent by
+    construction; a source read out of a directory now names the file it came
+    from. Text handed over in memory still gets `None`, and must: a bare model
+    name is not a place.
+- **A declaration key is `<directory>/<file>`, and it was the bare stem.** The
+  three source mappings use it as an origin label in notes - except
+  `parse_source_declarations`, which reads it as **the name of the model doing
+  the reading**. That parser takes the key's stem, so a bare model name and a
+  file key give the same answer. Widen the key without that and every source in a
+  working project is attributed to a model the graph does not build.
 - **The `exmergo_dex_core.projects` entry point is live as of dex-core 1.6.0**,
   and was inert before it for as long as nothing looked the group up. That is the
   origin of this repository's most-repeated lesson and the reason several tests
