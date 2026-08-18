@@ -63,10 +63,18 @@ uv run --no-project --with-editable . --with mypy==1.14.1 --with types-PyYAML \
 # the reduction against real Dagster objects (everything above uses fakes)
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
   python examples/reduce_asset_graph.py
+
+# the whole loop against a real warehouse: real graph, real drift, real edit
+uv run --no-project --with-editable . --with 'dagster>=1.13' \
+  --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 --with duckdb \
+  python examples/walk_the_whole_loop.py
 ```
 
-All five run in CI on every pull request, and the fifth **is that file** rather
-than a copy of it. This block used to inline an eight-line `python -c` script
+Every command above runs in CI on every pull request, and the two `examples/`
+ones **are those files** rather than copies of them. (This sentence used to
+open "All five run in CI", and the count went wrong the moment a sixth was
+added - a number in a document that something else can change, which is the
+defect this repository names elsewhere and committed here.) This block used to inline an eight-line `python -c` script
 that built an asset and printed its tier. It worked, which is why it survived,
 and it was still wrong twice over: it was a second copy of a check that already
 had a home, and the sentence above it claimed CI ran it. CI has run

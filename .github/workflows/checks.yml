@@ -382,6 +382,32 @@ jobs:
           uv run --no-project --with-editable . --with 'dagster>=1.13' \
             python examples/reduce_asset_graph.py
 
+      # The step above stops at the reduction, and the two drivers under
+      # `scripts/` reach the write tier with FAKE asset objects and a fabricated
+      # drift finding. So until this step existed, nothing here put a real graph
+      # in front of a real warehouse and let dex find drift by itself -- the
+      # package's headline claim was the one thing no check made.
+      #
+      # It is affordable because dex-core's DuckDB adapter is free and local
+      # (`paradigm: free_local`): no credential, no network, no bill, and
+      # deterministic. This is the only step that installs the orchestrator, the
+      # engine and a warehouse together.
+      #
+      # Same two constraints as the step above: it IS the example, so it stays
+      # readable and runnable by hand, and it cannot use pytest because nothing
+      # installs one alongside `dagster`.
+      #
+      # Its load-bearing assertion is that a broken grain on `dim_date` reports
+      # `fact_sales` in `impacted_models`. Nothing in the warehouse connects
+      # them; only the asset graph does. Verified to FAIL when the `deps=` edge
+      # is removed, so it is a control that has been observed firing rather than
+      # one that has only ever passed.
+      - name: The whole loop works against a real warehouse
+        run: |
+          uv run --no-project --with-editable . --with 'dagster>=1.13' \
+            --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 --with duckdb \
+            python examples/walk_the_whole_loop.py
+
       # `DEX_UPSTREAM_CONTRACT_REQUIRED=1` turns a missing upstream contract from
       # a green skip into a collection error. Without it, a dex-core that stopped
       # shipping `adapters.conformance` would leave this file quietly unrun and the
