@@ -211,6 +211,10 @@ could be skipped - and a skipped assertion is not a passing one.
 not a settled interface: it exists to be argued with, and the argument may change
 it. Pin the minor if you depend on it.
 
+[CHANGELOG.md](CHANGELOG.md) names what changed between releases and which
+changes were breaking, which is the question this section cannot answer for a
+consumer already on an older version.
+
 **The entry point stopped being inert on 2026-08-08.** This section used to end:
 *"nothing resolves it today, and an entry point nobody looks up is inert."*
 dex-core **1.6.0** added resolution for exactly the `exmergo_dex_core.projects`
