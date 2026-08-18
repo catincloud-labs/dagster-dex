@@ -61,23 +61,41 @@ uv run --no-project --with-editable . --with mypy==1.14.1 --with types-PyYAML \
   python -m mypy
 
 # the reduction against real Dagster objects (everything above uses fakes)
-uv run --no-project --with-editable . --with 'dagster>=1.13' python -c "
-import dagster as dg
-from dagster_dex import DagsterProject, tier_of
-
-@dg.asset(metadata={'layer': 'silver'})
-def dim_date(): ...
-
-p = DagsterProject.from_asset_graph([dim_date], name='demo')
-print(tier_of(p), [m.name for m in p.declarations().models])
-"
+uv run --no-project --with-editable . --with 'dagster>=1.13' \
+  python examples/reduce_asset_graph.py
 ```
 
-All five run in CI on every pull request. `--with-editable` is not optional.
+All five run in CI on every pull request, and the fifth **is that file** rather
+than a copy of it. This block used to inline an eight-line `python -c` script
+that built an asset and printed its tier. It worked, which is why it survived,
+and it was still wrong twice over: it was a second copy of a check that already
+had a home, and the sentence above it claimed CI ran it. CI has run
+`examples/reduce_asset_graph.py` since that example existed.
+
+=> **A command in a document is a claim, and a runnable wrong command is the
+expensive kind.** A broken one gets fixed by the first person who tries it; this
+one printed a plausible answer, so nothing pushed back.
 
 **If you touch `from_asset_graph`, run the Dagster check.** The suite uses
 fakes so it can run without an orchestrator, which means it cannot see that
 method breaking against the objects Dagster actually passes it.
+
+Two more end-to-end checks run in `publish.yml`'s `build` job on every pull
+request, against the built wheel rather than the source tree:
+
+```bash
+uv run --no-project --with-editable . \
+  --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
+  python scripts/drive_dex_against_the_wheel.py
+
+uv run --no-project --with-editable . \
+  --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
+  python scripts/drive_the_write_path_against_the_wheel.py
+```
+
+The first reads a project through the distribution; the second drives a
+`maintain reconcile` proposal through plan, apply, and back out to
+`definitions()`, then requires the next apply to refuse over a human's edit.
 
 ## This repository is ASCII
 
