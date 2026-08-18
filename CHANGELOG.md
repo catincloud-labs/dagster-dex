@@ -12,7 +12,7 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
-## 0.3.0 (unreleased)
+## 0.3.0 - 2026-08-18
 
 The write tier. `maintain reconcile` can now propose an edit to a project in this
 format, `transform apply` can write it, and a human's edit during review is
