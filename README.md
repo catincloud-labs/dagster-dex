@@ -52,12 +52,24 @@ be a dbt project first.
 | `FingerprintedProject` | `fingerprint()` | it can be a drift baseline |
 | `EditableProject` | `propose_edits()` | its source of truth can receive an edit |
 
-`DagsterProject` implements tiers 1 and 2, and **not** tier 3 - not by setting a
-flag, but by not having the method. `isinstance(project, EditableProject)` is
-False, so a caller finds out by asking rather than by receiving an empty result
-that looks like success. A generated project is safe from stray writes today
-only where a naming convention happens not to match; declining a tier makes that
-structural.
+**Which tier you get depends on how the project was built, and that is the
+point.** `DagsterProject` reaches tier 2. `EditableDagsterProject` reaches tier
+3, and the factory returns one only when the project was reduced from a live
+graph *and* points at a declarations directory on disk. Read one from an
+`artifact:` and you get tier 2, because an artifact is a JSON file with no
+directory behind it and nowhere for an edit to land.
+
+The split is a class, not a flag, and it has to be. `EditableProject` is
+`runtime_checkable`, so it matches on the method being present: put
+`propose_edits` on the shared class and every project claims the write tier and
+then refuses at call time. `isinstance(project, EditableProject)` is the truth
+for each instance, so a caller finds out by asking rather than by receiving an
+empty result that looks like success.
+
+What can receive an edit is the **declarations**, never the models. The models
+are a reduction of a running asset graph, whose source of truth is the code that
+built it; the declared keys and joins are hand-written YAML that nothing
+regenerates. Those are different claims about different files.
 
 ## Four model decisions worth arguing about
 
@@ -102,16 +114,21 @@ cover. A format that reports none silently narrows its own blast radius.
 model.py         the neutral model          stdlib only
 protocol.py      the tiered seam            stdlib only
 declarations.py  input parsing              + pyyaml
-project.py       the Dagster reduction      + dagster, lazily
+project.py       the reduction, the writer  stdlib only
 conformance.py   the importable contract    + pytest
 dex.py           the dex-core boundary      + exmergo-dex-core, lazily
 ```
 
 The engine coupling is one file. Everything else, including the conformance
-suite, runs with dex-core uninstalled, which is what keeps the design from
-being shaped by whatever the engine happens to look like today. `dex.py` imports
-**public API only**; `tests/test_dex_bridge.py` asserts that with an AST walk
-rather than trusting it.
+suite and the whole write path, runs with dex-core uninstalled, which is what
+keeps the design from being shaped by whatever the engine happens to look like
+today. `dex.py` imports **public API only**; `tests/test_dex_bridge.py` asserts
+that with an AST walk rather than trusting it.
+
+The write path is in `project.py` rather than at the boundary for that reason.
+The conflict handshake is the one part of this package where getting it wrong
+costs somebody their work rather than an inaccurate report, so it is asserted in
+the step that runs with no engine installed - `tests/test_write_tier.py`.
 
 ## Running it
 

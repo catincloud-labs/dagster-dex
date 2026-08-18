@@ -966,3 +966,277 @@ class TestTheArtifactPath:
     def test_a_relative_artifact_with_no_repo_root_is_refused(self):
         with pytest.raises(ValueError, match="repo_root"):
             project_from_context(_context(artifact="some/relative/demo_project.json"))
+
+
+def _editable(tmp_path, files=None):
+    """The format built the way a host builds it, with declarations on disk.
+
+    Through `project_from_context` rather than by constructing the class, because
+    which class gets built IS the decision under test. Reaching for
+    `EditableDexProject` directly would assert that the class works and say
+    nothing about whether anything ever returns one.
+    """
+
+    directory = tmp_path / "declarations"
+    directory.mkdir(exist_ok=True)
+    files = {"orders.yml": a_single_key_declaration(model="dim_date")} if files is None else files
+    for name, text in files.items():
+        (directory / name).write_text(text, encoding="utf-8", newline="\n")
+
+    return project_from_context(
+        _context(assets=f"{__name__}:FACTORY_ASSETS", declarations=str(directory))
+    )
+
+
+class TestWhichClassTheFactoryBuilds:
+    """The write tier is per instance, and the factory is where that is decided.
+
+    Both dex-core protocols are `runtime_checkable`, so they match on methods
+    being present. That makes the decision structural: it cannot be a flag, and
+    it cannot be a refusal at call time, because a caller finding out by
+    receiving an empty result that looks like success is what the tiers exist to
+    prevent. So the assertions come in pairs - a build that reaches the tier, and
+    a build that must not.
+    """
+
+    def test_declarations_on_disk_reach_the_write_tier(self, tmp_path):
+        from exmergo_dex_core.adapters.project import (
+            EditableProject,
+            PlacingProject,
+            tier_of,
+        )
+
+        project = _editable(tmp_path)
+
+        assert tier_of(project) == 3
+        assert isinstance(project, EditableProject)
+        assert isinstance(project, PlacingProject)
+
+    def test_no_declaration_directory_stays_at_tier_two(self):
+        """A project with nowhere for the one kind this format places should
+        decline, which upstream says more directly than answering None for every
+        kind would."""
+
+        from exmergo_dex_core.adapters.project import (
+            EditableProject,
+            PlacingProject,
+            tier_of,
+        )
+
+        project = project_from_context(_context(assets=f"{__name__}:FACTORY_ASSETS"))
+
+        assert tier_of(project) == 2
+        assert not isinstance(project, EditableProject)
+        assert not isinstance(project, PlacingProject)
+
+    def test_an_artifact_built_project_stays_at_tier_two(self, tmp_path):
+        """The half that rots, and the reason the class is split at all.
+
+        An artifact is a JSON file carrying `{name: text}` with no directory
+        behind it. Put `write_edits` on the shared class and this instance claims
+        the write tier, then has to refuse every edit it is handed.
+        """
+
+        from exmergo_dex_core.adapters.project import (
+            EditableProject,
+            PlacingProject,
+            tier_of,
+        )
+
+        path = _write_artifact(tmp_path)
+        project = project_from_context(_context(artifact=str(path)))
+
+        assert tier_of(project) == 2
+        assert not isinstance(project, EditableProject)
+        assert not isinstance(project, PlacingProject)
+
+
+class TestPlacement:
+    def test_one_kind_resolves_and_the_rest_decline(self, tmp_path):
+        """`None` per kind is the answer this seam was built to allow.
+
+        A model here is a node in a running asset graph, so an authored
+        `MODEL_SQL` would be regenerated away; the declared keys are hand-written
+        YAML that nothing regenerates. One path and several `None`s is a
+        complete, honest answer rather than a partial implementation.
+        """
+
+        from exmergo_dex_core.transform.plans import EditKind
+
+        project = _editable(tmp_path)
+
+        placed = {
+            kind: project.edit_path(kind, "orders")
+            for kind in EditKind
+            if project.edit_path(kind, "orders") is not None
+        }
+
+        assert placed == {EditKind.SCHEMA_YML: "declarations/orders.yml"}
+
+    def test_every_placement_lands_inside_the_declared_surface(self, tmp_path):
+        """The two answers have to describe the same project.
+
+        Containment is checked against `editing_surface()` at plan time whatever
+        `edit_path` returned, so a placement outside it is an edit built and then
+        refused - and the refusal reads as dex declining rather than as this
+        format contradicting itself.
+        """
+
+        from exmergo_dex_core.transform.plans import EditKind, contained_key
+
+        project = _editable(tmp_path)
+        surface = project.editing_surface()
+
+        for kind in EditKind:
+            path = project.edit_path(kind, "orders")
+            if path is not None:
+                contained_key(path, surface)
+
+    def test_the_declared_surface_cannot_reach_outside_the_project(self, tmp_path):
+        from pathlib import PurePosixPath
+
+        for prefix in _editable(tmp_path).editing_surface():
+            candidate = PurePosixPath(str(prefix).replace("\\", "/"))
+            assert not candidate.is_absolute() and ".." not in candidate.parts
+
+
+class TestTheViewTheCallersActuallyRequire:
+    """`load()` is declared by no protocol upstream and required by two callers.
+
+    `transform.plans.plan` calls it to pin each edit against the file it would
+    change, and `maintain.commands` calls it before reconcile builds a proposal.
+    So a format can satisfy `EditableProject` and `PlacingProject` in full, pass
+    both shipped conformance contracts, and fail at the first real reconcile.
+    These assertions exist because the contract's do not.
+    """
+
+    def test_it_carries_the_files_and_their_hashes(self, tmp_path):
+        view = _editable(tmp_path).load()
+
+        assert set(view.files) == {"declarations/orders.yml"}
+        entry = view.files["declarations/orders.yml"]
+        assert entry.content and entry.sha256
+
+    def test_it_is_not_a_dbt_view_which_is_what_routes_the_neutral_branch(
+        self, tmp_path
+    ):
+        """`plans.plan` asks the VIEW whether dbt's checks apply, rather than
+        asking the class that produced it - deliberately, so the seam does not
+        become the `isinstance(project, DbtProject)` gate it replaced. Handing
+        back a dbt view would opt this format into dbt's macro-path and
+        root-manifest rules and then be refused by them."""
+
+        from exmergo_dex_core.dbt_project import DbtProjectView
+
+        assert not isinstance(_editable(tmp_path).load(), DbtProjectView)
+
+    def test_the_root_is_what_the_keys_are_relative_to(self, tmp_path):
+        from pathlib import Path
+
+        view = _editable(tmp_path).load()
+
+        assert (Path(view.root) / "declarations/orders.yml").is_file()
+
+
+class TestWriteEditsAcrossTheBoundary:
+    """dex-core's write tier, translated. Both arms, because neither is worth
+    much alone: the refusal is satisfied by a writer that never writes."""
+
+    def _an_edit(self, project, content="models: []\n"):
+        from exmergo_dex_core.dbt_project import Edit
+
+        current = project.load().files["declarations/orders.yml"]
+        return Edit(
+            path="declarations/orders.yml",
+            new_content=content,
+            old_content_hash=current.sha256,
+        )
+
+    def test_a_clean_apply_reports_what_it_wrote(self, tmp_path):
+        project = _editable(tmp_path)
+        result = project.write_edits([self._an_edit(project)], tmp_path)
+
+        assert result.written == ["declarations/orders.yml"]
+        assert result.conflicts == []
+
+    def test_an_unconfirmed_apply_refuses_a_target_that_moved(self, tmp_path):
+        project = _editable(tmp_path)
+        edit = self._an_edit(project)
+
+        target = tmp_path / "declarations/orders.yml"
+        target.write_text("models: [{name: edited_by_a_human}]\n", encoding="utf-8")
+        before = target.read_text(encoding="utf-8")
+
+        result = project.write_edits([edit], tmp_path)
+
+        assert target.read_text(encoding="utf-8") == before
+        assert result.written == []
+        # `transform apply` reads exactly these two to tell a refusal from an
+        # apply, and they fail closed in opposite directions.
+        assert [c.path for c in result.conflicts] == ["declarations/orders.yml"]
+        assert result.conflicts[0].expected_sha256 != result.conflicts[0].found_sha256
+
+    def test_a_confirmed_apply_overrides(self, tmp_path):
+        project = _editable(tmp_path)
+        edit = self._an_edit(project)
+
+        target = tmp_path / "declarations/orders.yml"
+        target.write_text("models: [{name: edited_by_a_human}]\n", encoding="utf-8")
+
+        result = project.write_edits([edit], tmp_path, confirmed=True)
+
+        assert result.written == ["declarations/orders.yml"]
+        assert target.read_text(encoding="utf-8") == "models: []\n"
+
+    def test_a_delete_crosses_as_a_delete(self, tmp_path):
+        """`op` is orthogonal to `kind` upstream, and a delete carries no
+        content. Reading `new_content` alone would turn every delete into an
+        upsert of `None`, which the neutral model refuses."""
+
+        from exmergo_dex_core.dbt_project import Edit, EditOp
+
+        project = _editable(tmp_path)
+        current = project.load().files["declarations/orders.yml"]
+        result = project.write_edits(
+            [
+                Edit(
+                    path="declarations/orders.yml",
+                    op=EditOp.DELETE,
+                    old_content_hash=current.sha256,
+                )
+            ],
+            tmp_path,
+        )
+
+        assert result.written == ["declarations/orders.yml"]
+        assert not (tmp_path / "declarations/orders.yml").exists()
+
+    def test_the_callers_directory_wins_over_the_configured_one(self, tmp_path):
+        """The plan is the authority on where its own hashes came from.
+
+        This instance points wherever the engine was configured when it was
+        built; the plan points where it was pinned. The two agreeing is the
+        common case rather than a guarantee, and the disagreement is silent - so
+        `transform apply` passes the plan's directory and it has to win.
+        """
+
+        project = _editable(tmp_path)
+        edit = self._an_edit(project)
+
+        elsewhere = tmp_path / "elsewhere"
+        (elsewhere / "declarations").mkdir(parents=True)
+        (elsewhere / "declarations/orders.yml").write_text(
+            (tmp_path / "declarations/orders.yml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+            newline="\n",
+        )
+
+        result = project.write_edits([edit], elsewhere)
+
+        assert result.written == ["declarations/orders.yml"]
+        assert (elsewhere / "declarations/orders.yml").read_text(
+            encoding="utf-8"
+        ) == "models: []\n"
+        assert (tmp_path / "declarations/orders.yml").read_text(
+            encoding="utf-8"
+        ) != "models: []\n"
