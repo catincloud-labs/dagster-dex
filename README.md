@@ -254,6 +254,8 @@ smaller and checkable by anyone:
 | The reduction works on real Dagster objects | reduction step |
 | The annotations type-check at the floor | type check |
 | The built wheel imports, declares its entry point, ships `py.typed` | release workflow |
+| A reconcile proposal becomes a plan, is written through this format, and changes what the project declares | release workflow |
+| A second plan is refused over a human's edit rather than written | release workflow |
 
 Everything above runs from a clean checkout with two commands and no access to
 anything private, which is the property the old sentence did not have.

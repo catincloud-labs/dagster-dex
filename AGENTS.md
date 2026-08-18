@@ -187,6 +187,36 @@ until that step existed.
 on `No module named 'dagster_dex'`. Never `uv run --python X` without
 `--no-project`; it recreates a `.venv` here.
 
+## The two drivers, and why passing the contracts is not enough
+
+`scripts/drive_dex_against_the_wheel.py` proves dex can READ a project through
+the published distribution. `scripts/drive_the_write_path_against_the_wheel.py`
+proves a `maintain reconcile` proposal reaches the write path, becomes a stored
+plan, is written through this format, changes what the project declares, and is
+REFUSED when a human edited the file behind a second plan. Both run in
+`publish.yml`'s `build` job, which runs on every pull request.
+
+**Neither is redundant with the conformance contracts.** Measured, not
+assumed: five defects were introduced one at a time into `propose_edits`, and
+dex-core's `EditableProjectContract` and `PlacingProjectContract` caught **two**.
+All-or-nothing, a create whose pin is `None`, and segment-wise containment all
+pass the shipped contracts in full. They are honest about being behavioural
+rather than exhaustive; treating them as proof is the caller's mistake.
+
+Run either by hand:
+
+```bash
+uv run --no-project --with-editable . \
+  --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
+  python scripts/drive_the_write_path_against_the_wheel.py
+```
+
+**The write-path driver bails after leg 1 when the tier is not reached**, on
+purpose. Every leg below it calls a method the write tier adds, so pressing on
+against a tier-2 project reports an `AttributeError` traceback instead of naming
+the leg. Found by running it against the tree from before the write tier
+existed, which is also the run that proves the legs can fail at all.
+
 ## The Python floor
 
 `requires-python = ">=3.10"`, matching Dagster's own supported range. Verified
