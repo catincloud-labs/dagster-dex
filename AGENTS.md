@@ -174,8 +174,17 @@ uv run --no-project --with-editable . --with mypy==1.14.1 --with types-PyYAML \
   python -m mypy
 
 # the reduction against REAL dagster objects -- no other step installs it
-uv run --no-project --with-editable . --with 'dagster>=1.13' python -c "..."
+uv run --no-project --with-editable . --with 'dagster>=1.13' \
+  python examples/reduce_asset_graph.py
 ```
+
+The second line used to end `python -c "..."`, with the ellipsis standing in for
+a script. **That is a command that runs, exits 0, and checks nothing** -
+`...` is a bare `Ellipsis`, so Python evaluates it and succeeds. A reader
+copying it saw the same exit code CI produces and had installed an orchestrator
+to evaluate a constant. => **An elided command is worse than a missing one: it
+returns the answer you were looking for.** Every command in this file is
+runnable verbatim now, which was checked by running all of them.
 
 **The Dagster step exists because everything else uses fakes.** That is
 deliberate - the suite must run without an orchestrator - but it means nothing

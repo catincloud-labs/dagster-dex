@@ -87,7 +87,10 @@ EXPECTED: dict[str, dict[str, int]] = {
     # fourth command is the write-path driver's, in the section on the two
     # drivers.
     "AGENTS.md": {"==": 4, "~=": 1},
-    "CONTRIBUTING.md": {"==": 2},
+    # Four: the two runnable suite commands, plus the two end-to-end drivers
+    # added when the write path landed. Both drivers run in CI, and a reader
+    # running one against a different engine than CI is not reproducing CI.
+    "CONTRIBUTING.md": {"==": 4},
     # Three `==` and one `~=`: the two runnable commands, plus the two-pins
     # paragraph, which named both versions without naming the package until
     # 2026-08-15 and so stated the tested version from outside this scan. It
