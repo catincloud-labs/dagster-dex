@@ -171,7 +171,7 @@ about it.
 
 ## Running the suite
 
-Three steps, matching CI exactly. From the repository root:
+Three steps. From the repository root:
 
 ```bash
 # 1. the control -- no orchestrator, no engine
@@ -286,6 +286,59 @@ the core rather than by the heaviest extra.** Do not raise it to match the extra
 **`DEX_UPSTREAM_CONTRACT_REQUIRED=1` is what makes step 3 a signal.** Without
 it the file skips itself when the upstream contract is unimportable - right at a
 desk, wrong in CI, where an unrun file and a passing file look identical.
+
+**These three used to be described as "matching CI exactly", and since
+2026-08-18 they do not.** CI runs two axes these three commands do not: the
+engine-free control on every interpreter in `requires-python`, and the boundary
+plus the upstream contract at both ENDS of the published `[dex]` range rather
+than at the demonstrated pin alone. The three above are still the right thing to
+run at a desk - they are the fastest path to the same failures - but a green
+local run is now a weaker claim than a green pipeline, which is the opposite of
+what the old sentence implied.
+
+To reproduce an axis locally, resolve the ends the way CI does rather than typing
+versions in, and substitute one into steps 2 and 3:
+
+```bash
+python scripts/resolve_engine_range.py
+```
+
+## What CI runs that these three do not
+
+**Two promises were asserted in prose and measured only when somebody
+remembered.** `requires-python = ">=3.10"` and the `[dex]` extra's
+compatible-release range were both verified by a hand-run matrix at each
+release. A step that has to be remembered is not a control, so both are now jobs.
+
+- **`python-floor`** runs the engine-free control on 3.10, 3.11, 3.12 and 3.13.
+  The list is written out on purpose: `>=3.10` is open-ended, so there is nothing
+  to resolve, and adding an interpreter is a decision about what is claimed.
+- **`engine-ends`** runs the boundary suite and the upstream contract at the
+  floor and the ceiling of the published range, **resolved rather than listed**.
+  A hand-written list of versions is a registry making a claim about a moving
+  set: upstream publishes a patch, the promise widens, the matrix does not, and
+  nothing goes red. `scripts/resolve_engine_range.py` reads the specifier out of
+  `pyproject.toml` and asks a resolver, so it holds no version literal - the same
+  argument `tests/test_pin_coherence.py` makes for itself.
+- **`suite`** keeps the exactly-pinned steps. It is not folded into
+  `engine-ends`, because the exact pin and the published range are two different
+  claims - see the two-pins section below. Folding them would delete one.
+  It also keeps the literal `exmergo-dex-core==` strings where
+  `test_pin_coherence.py` can see them; a `${{ matrix.version }}` expression is
+  not a pin, so templating those steps would have shrunk that guard's corpus by
+  two sites with no count changing to show it.
+
+**The cross-product is deliberately not run**, and the workflow says so: the
+Python axis runs the engine-free suite only, the engine axis runs one
+interpreter only, so "the floor of the range on the newest interpreter" is
+untested. Stated rather than left for a green matrix to imply.
+
+**The job named `tests` is an aggregate, and the name is load-bearing.** It is a
+required status check on an organisation ruleset, matched by context string. A
+`strategy.matrix` on a job called `tests` renames its contexts to `tests (3.10)`
+and so on, at which point the required context never reports - and a check that
+never reports never blocks a merge. The gate would go quiet rather than red.
+Renaming it means editing the organisation ruleset in the same change.
 
 ## The dependency pin, and why there are two of them
 
