@@ -953,19 +953,183 @@ class TestTheArtifactPath:
                 _context(artifact=str(path), assets=f"{__name__}:FACTORY_ASSETS")
             )
 
-    @pytest.mark.parametrize("option", ["declarations", "semantics", "sources", "name"])
+    @pytest.mark.parametrize("option", ["semantics", "sources", "name"])
     def test_options_the_artifact_answers_for_itself_are_refused(self, tmp_path, option):
-        """Refused rather than ignored or honored. A `declarations:` beside an
-        `artifact:` modifies nothing while reading as the live source, and a
-        `name:` would lose to the file without saying so."""
+        """Refused rather than ignored or honored: each of these modifies nothing
+        while reading as the live source, and a `name:` would lose to the file
+        without saying so.
+
+        **The assertion here was `match=option`, and it could not discriminate.**
+        The refusal sentence carries the literal words "declarations" and "name"
+        whichever option fired, so every arm passed on prose. That hid a real
+        change: when `declarations` was admitted beside `artifact:`, this test
+        stayed green on `_resolve_dir`'s "is not a directory" instead, for an
+        option that is no longer refused at all. Matched on the phrase that names
+        the option now, which is the part that can only come from this branch.
+        """
 
         path = _write_artifact(tmp_path)
-        with pytest.raises(ValueError, match=option):
+        with pytest.raises(ValueError, match=f"cannot honor {option} alongside"):
             project_from_context(_context(**{"artifact": str(path), option: "x"}))
+
+    def test_the_refused_set_is_exactly_the_one_parametrized_above(self):
+        """The coherence arm, and the reason the parametrize can be trusted.
+
+        That list was a hand-copied duplicate of the frozenset with nothing tying
+        the two together, so a member added to one and not the other was untested
+        and silent. Pinned from the outside, the way `_KNOWN_OPTIONS` already is.
+        """
+
+        import dagster_dex.dex as dex_module
+
+        assert dex_module._ARTIFACT_INAPPLICABLE == {"semantics", "sources", "name"}
 
     def test_a_relative_artifact_with_no_repo_root_is_refused(self):
         with pytest.raises(ValueError, match="repo_root"):
             project_from_context(_context(artifact="some/relative/demo_project.json"))
+
+
+def _artifact_with_a_directory(tmp_path, *, artifact_declares=True):
+    """An artifact and a declarations directory that DISAGREE, on purpose.
+
+    The two have to differ in BOTH directions or "the directory superseded the
+    artifact" is indistinguishable from "the artifact was read as usual" and from
+    "nothing parsed at all". `stale_only` is carried only by the artifact and is
+    on no file; `fact_orders` is on a file and in no artifact.
+
+    The artifact's key is a bare stem, which is what a real one carries and the
+    fact the whole design turns on -- see `_project_from_artifact`.
+    """
+
+    directory = tmp_path / "declarations"
+    directory.mkdir(exist_ok=True)
+    (directory / "fact_orders.yml").write_text(
+        a_single_key_declaration(model="fact_orders", column="order_id"),
+        encoding="utf-8",
+        newline="\n",
+    )
+    sources = (
+        {"dim_date": a_single_key_declaration(model="dim_date", column="stale_only")}
+        if artifact_declares
+        else {}
+    )
+    path = _write_artifact(tmp_path, declaration_sources=sources)
+    return path, directory
+
+
+class TestAnArtifactWithADeclarationsDirectory:
+    """The one option admitted beside `artifact:`, and why it supersedes.
+
+    An artifact keys declarations by a bare stem and must keep doing so; a bare
+    stem is inside no editing surface; so an edit view built from the artifact's
+    text is empty and every apply against it is a conflict on a file that plainly
+    exists. The directory therefore has to be read, which makes it the
+    declarations rather than merely a place -- and the artifact's copy is what
+    loses. That is a supersession, so it is disclosed rather than silent.
+    """
+
+    def test_it_reaches_the_write_tier(self, tmp_path):
+        from exmergo_dex_core.adapters.project import (
+            EditableProject,
+            PlacingProject,
+            tier_of,
+        )
+
+        path, directory = _artifact_with_a_directory(tmp_path)
+        project = project_from_context(
+            _context(artifact=str(path), declarations=str(directory))
+        )
+
+        assert tier_of(project) == 3
+        assert isinstance(project, EditableProject)
+        assert isinstance(project, PlacingProject)
+
+    def test_the_directory_supersedes_the_artifacts_declarations(self, tmp_path):
+        """The loud arm. The artifact's tracer is gone and the directory's own
+        declaration is there, so this is supersession rather than either side
+        being dropped."""
+
+        path, directory = _artifact_with_a_directory(tmp_path)
+        project = project_from_context(
+            _context(artifact=str(path), declarations=str(directory))
+        )
+
+        keys = {(k.model, k.column) for k in project.definitions().declared_keys}
+        assert keys == {("fact_orders", "order_id")}
+
+    def test_the_artifact_alone_still_declares_what_it_carries(self, tmp_path):
+        """The quiet arm, and the one that makes the loud one mean anything.
+
+        Without it, an empty result above is equally consistent with an artifact
+        whose declarations never parsed in the first place.
+        """
+
+        path, _directory = _artifact_with_a_directory(tmp_path)
+        project = project_from_context(_context(artifact=str(path)))
+
+        keys = {(k.model, k.column) for k in project.definitions().declared_keys}
+        assert keys == {("dim_date", "stale_only")}
+
+    def test_the_supersession_is_disclosed(self, tmp_path):
+        """Asserted on the PROJECT, never on whatever computes the note.
+
+        This package got that wrong once and guards it now: a check reading the
+        source of a value cannot see the value failing to arrive. `notes` is the
+        channel a lossy mapping discloses itself through, and dropping the
+        artifact's declaration text without saying so is exactly a lossy mapping.
+        """
+
+        path, directory = _artifact_with_a_directory(tmp_path)
+        project = project_from_context(
+            _context(artifact=str(path), declarations=str(directory))
+        )
+
+        assert any("superseded" in note for note in project.notes())
+
+    def test_nothing_is_claimed_when_there_is_nothing_to_supersede(self, tmp_path):
+        """The disclosure's own quiet arm. An artifact carrying no declarations
+        loses nothing, and reporting a loss that did not happen is the same
+        defect as hiding one that did, pointing the other way."""
+
+        from exmergo_dex_core.adapters.project import tier_of
+
+        path, directory = _artifact_with_a_directory(tmp_path, artifact_declares=False)
+        project = project_from_context(
+            _context(artifact=str(path), declarations=str(directory))
+        )
+
+        assert not any("superseded" in note for note in project.notes())
+        assert tier_of(project) == 3
+
+    def test_a_missing_directory_is_refused_rather_than_declining_the_tier(
+        self, tmp_path
+    ):
+        """Read as "nothing is editable", a typo here would decline the write
+        tier -- and a declined tier is indistinguishable from a format that never
+        had one. Same reasoning as a missing artifact, and it bites harder."""
+
+        path = _write_artifact(tmp_path)
+        with pytest.raises(ValueError, match="is not a directory"):
+            project_from_context(
+                _context(artifact=str(path), declarations=str(tmp_path / "nope"))
+            )
+
+    def test_the_edit_lands_in_the_directory_that_was_named(self, tmp_path):
+        """Placement has to name the directory given here, not the one an
+        `assets:` project would have had. The key it returns is what the surface
+        check then admits, so the two agreeing is the write path working."""
+
+        from exmergo_dex_core.transform.plans import EditKind
+
+        path, directory = _artifact_with_a_directory(tmp_path)
+        project = project_from_context(
+            _context(artifact=str(path), declarations=str(directory))
+        )
+
+        assert project.edit_path(EditKind.SCHEMA_YML, "dim_date") == (
+            "declarations/dim_date.yml"
+        )
+        assert project.editing_surface() == ["declarations"]
 
 
 def _editable(tmp_path, files=None):
@@ -1032,7 +1196,7 @@ class TestWhichClassTheFactoryBuilds:
     def test_an_artifact_built_project_stays_at_tier_two(self, tmp_path):
         """The half that rots, and the reason the class is split at all.
 
-        An artifact is a JSON file carrying `{name: text}` with no directory
+        An artifact ALONE is a JSON file carrying `{name: text}` with no directory
         behind it. Put `write_edits` on the shared class and this instance claims
         the write tier, then has to refuse every edit it is handed.
         """
@@ -1049,6 +1213,33 @@ class TestWhichClassTheFactoryBuilds:
         assert tier_of(project) == 2
         assert not isinstance(project, EditableProject)
         assert not isinstance(project, PlacingProject)
+
+    def test_an_artifact_told_where_the_declarations_are_reaches_the_write_tier(
+        self, tmp_path
+    ):
+        """The fourth arm, and the one that makes the third arm's reason exact.
+
+        "An artifact has no directory behind it" was true of every artifact-built
+        project and is now true only of one built from an artifact ALONE. The
+        decision is still which class gets built, and it still turns on a
+        declarations directory being present -- what changed is that the live
+        graph is no longer the only way to have one.
+        """
+
+        from exmergo_dex_core.adapters.project import (
+            EditableProject,
+            PlacingProject,
+            tier_of,
+        )
+
+        path, directory = _artifact_with_a_directory(tmp_path)
+        project = project_from_context(
+            _context(artifact=str(path), declarations=str(directory))
+        )
+
+        assert tier_of(project) == 3
+        assert isinstance(project, EditableProject)
+        assert isinstance(project, PlacingProject)
 
 
 class TestPlacement:

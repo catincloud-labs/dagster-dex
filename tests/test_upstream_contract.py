@@ -205,6 +205,91 @@ def _editable_wrapped(*, declaring: bool = False) -> DexProject:
     )
 
 
+def _artifact_backed(*, declaring: bool = False) -> DexProject:
+    """The same format over the transport production actually configures.
+
+    An `artifact:` for the graph and a `declarations:` directory beside it. Built
+    through `project_from_context` rather than by constructing the classes,
+    because WHICH class the artifact route returns is the thing this shape is
+    about: reaching for `EditableDexProject` here would assert that the class
+    works and say nothing about whether that route ever returns one.
+
+    Empty by default for the same reason `_editable_wrapped` is - the tier-1
+    assertions need a project that declares nothing and says so. The artifact
+    carries no declarations either, so there is nothing to supersede and no
+    disclosure note, which keeps that note out of the tier-2 assertions.
+    """
+
+    import tempfile as _tempfile
+    from pathlib import Path
+
+    from dagster_dex.artifact import dumps
+    from dagster_dex.dex import ProjectContext, project_from_context
+
+    root = Path(_tempfile.mkdtemp())
+    directory = root / "declarations"
+    directory.mkdir()
+    if declaring:
+        (directory / f"{_PLACEABLE_TABLE}.yml").write_text(
+            a_single_key_declaration(_PLACEABLE_TABLE, "date"),
+            encoding="utf-8",
+            newline="\n",
+        )
+
+    (root / "project.json").write_text(
+        dumps(
+            name="demo_project",
+            models=MODELS,
+            generated_at="2026-01-01T00:00:00Z",
+        ),
+        encoding="utf-8",
+    )
+
+    # Relative, which is the form a real `.dex/config.yml` carries and the form
+    # that exercises resolution against `repo_root`.
+    return project_from_context(
+        ProjectContext(
+            repo_root=str(root),
+            options={"artifact": "project.json", "declarations": "declarations"},
+        )
+    )
+
+
+def _an_edit_against_a_changed_target(project):
+    """Upstream's conflict hook, over whatever project it is handed.
+
+    Shared by both write-tier classes rather than copied into each: the two
+    differ only in how the project was built, which is the entire point of
+    running the contracts twice, and a second copy of the hook would be free to
+    drift into exercising something else.
+    """
+
+    from pathlib import Path
+
+    from exmergo_dex_core.dbt_project import Edit
+
+    view = project.load()
+    root = Path(view.root)
+    key = f"declarations/{_PLACEABLE_TABLE}.yml"
+    target = root / key
+
+    edits = [
+        Edit(
+            path=key,
+            new_content="models: []\n",
+            old_content_hash=view.files[key].sha256,
+        )
+    ]
+
+    # The human, arriving mid-review. Everything above is the proposal, and this
+    # line is the state the write tier exists to notice.
+    target.write_text(
+        "models: [{name: edited_by_a_human}]\n", encoding="utf-8", newline="\n"
+    )
+
+    return project, root, edits, lambda: target.read_text(encoding="utf-8")
+
+
 class TestDagsterProjectAgainstDexCore(
     conformance.DeclaringProjectContract,
     conformance.SemanticProjectContract,
@@ -637,31 +722,31 @@ class TestTheWriteTierAgainstDexCore(
         return _PLACEABLE_TABLE
 
     def an_edit_against_a_changed_target(self):
-        from pathlib import Path
+        return _an_edit_against_a_changed_target(_editable_wrapped(declaring=True))
 
-        from exmergo_dex_core.dbt_project import Edit
 
-        project = _editable_wrapped(declaring=True)
-        view = project.load()
-        root = Path(view.root)
-        key = f"declarations/{_PLACEABLE_TABLE}.yml"
-        target = root / key
+class TestTheWriteTierOverTheArtifactTransport(TestTheWriteTierAgainstDexCore):
+    """The same contracts again, over the transport production configures.
 
-        edits = [
-            Edit(
-                path=key,
-                new_content="models: []\n",
-                old_content_hash=view.files[key].sha256,
-            )
-        ]
+    **Not padding on the class above.** Until `declarations:` was admitted beside
+    `artifact:`, no contract in this file judged an artifact-built project at all:
+    all three shapes came from in-memory text or from `assets:`, and the
+    `_DECLINED` gate below counts CONTRACTS rather than shapes, so the hole was
+    invisible to it. This is the route with the one thing the others do not have -
+    two keyspaces meeting, the artifact keying declarations by a bare stem and the
+    directory by `<dir>/<file>` - and upstream's write assertions are exactly what
+    notices a surface and a view that disagree.
 
-        # The human, arriving mid-review. Everything above is the proposal, and
-        # this line is the state the write tier exists to notice.
-        target.write_text(
-            "models: [{name: edited_by_a_human}]\n", encoding="utf-8", newline="\n"
-        )
+    Inherits rather than repeats, so every read assertion runs here too: this
+    route reaches the same classes by a different path, and a path that quietly
+    built them wrong would otherwise be judged only on the write.
+    """
 
-        return project, root, edits, lambda: target.read_text(encoding="utf-8")
+    def make_project(self) -> DexProject:
+        return _artifact_backed()
+
+    def an_edit_against_a_changed_target(self):
+        return _an_edit_against_a_changed_target(_artifact_backed(declaring=True))
 
 
 #: **This is empty, and it was two entries until 2026-08-18.** Every conformance

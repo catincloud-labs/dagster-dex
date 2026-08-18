@@ -62,10 +62,16 @@ _KNOWN_OPTIONS = frozenset(
 _SOURCE_OPTIONS = frozenset({"assets", "artifact"})
 
 #: Options an artifact already answers for itself. Refused beside ``artifact``
-#: rather than allowed to override it or to lose to it silently: the three
+#: rather than allowed to override it or to lose to it silently: these two
 #: directory options would modify nothing while reading as the live source, and
 #: ``name`` is written into the artifact by the side that knew the graph.
-_ARTIFACT_INAPPLICABLE = frozenset({"declarations", "semantics", "sources", "name"})
+#:
+#: ``declarations`` used to be in here and is the one honest exception, admitted
+#: for the reason the others are not: it is the only directory an edit can land
+#: in, so beside an ``artifact`` it does not read from nowhere - it *is* the live
+#: source, and the artifact's copy of the same text is the one that loses. See
+#: :func:`_project_from_artifact` for why the artifact cannot keep that job.
+_ARTIFACT_INAPPLICABLE = frozenset({"semantics", "sources", "name"})
 
 
 @dataclass(frozen=True)
@@ -655,7 +661,11 @@ class EditableDexProject(DexProject):
     """
 
     def __init__(
-        self, project: EditableDagsterProject, *, declarations_prefix: str
+        self,
+        project: EditableDagsterProject,
+        *,
+        declarations_prefix: str,
+        extra_notes: tuple[str, ...] = (),
     ) -> None:
         super().__init__(project)
         # Narrowed for the type checker, and named separately rather than by
@@ -664,6 +674,21 @@ class EditableDexProject(DexProject):
         # the base what it holds. The two always refer to the same object.
         self._editable = project
         self._declarations_prefix = declarations_prefix
+        # Disclosures the DECLARATIONS cannot carry, because they are about how
+        # the project was assembled rather than about what it says. The artifact
+        # path uses this to report that a directory superseded the declarations
+        # the artifact shipped: `parse_declarations` never sees the text that
+        # lost, so it has no way to mention it.
+        self._extra_notes = extra_notes
+
+    def notes(self) -> tuple[str, ...]:
+        """The two layers' notes, plus what construction itself had to disclose.
+
+        Appended rather than prepended: the layer notes describe the project a
+        caller is looking at, and an assembly note is context for them.
+        """
+
+        return (*super().notes(), *self._extra_notes)
 
     def load(self) -> Any:
         """The editable files and the place their keys are relative to.
@@ -853,12 +878,43 @@ def _project_from_artifact(repo_root: str | None, options: Mapping[str, Any]) ->
     "no project" is an ordinary state of the repository. It is wrong here: an
     artifact path is configured explicitly, so naming one that is not there is
     always a mistake somewhere, never a description of the warehouse.
+
+    **A ``declarations:`` directory named beside the artifact SUPERSEDES the
+    declaration text the artifact carries, and reaches the write tier.** Both
+    halves of that need saying, because the obvious reading of the option - the
+    artifact still declares, and the directory only says where an edit may land -
+    cannot be built:
+
+    * An artifact keys its declarations by a **bare stem**, and must keep doing
+      so. It has no directory to have come from, and inventing one would be the
+      fabricated provenance ``ExternalSource.declared_in`` exists to avoid.
+    * An editing surface is checked **segment-wise**, so ``declarations`` admits
+      ``declarations/dim_date.yml`` and refuses a bare ``dim_date``. A bare stem
+      is inside no surface.
+    * So an edit view built from the artifact's text is **empty**, every edit
+      pins against a file it believes absent, and every apply is then a conflict
+      on a file that plainly exists. Refused on every write, forever, which is
+      worse than declining the tier.
+
+    The directory has to be read, so it is the declarations. That costs nothing
+    the artifact was protecting: ``artifact`` exists because reducing a live graph
+    imports a code location (~2.6 s), and hand-written YAML needs neither an
+    import nor an orchestrator. What the artifact still answers for is the graph -
+    models, name, semantics and sources.
+
+    A missing directory is refused here for the same reason a missing artifact
+    is, and it matters more: read as "nothing is editable" it would decline the
+    write tier on a typo, and a declined tier looks exactly like a format that
+    never had one.
     """
 
     from pathlib import Path  # noqa: PLC0415 - stdlib, kept local for symmetry
 
     from .artifact import ArtifactError, loads  # noqa: PLC0415 - deferred on purpose
-    from .project import DagsterProject  # noqa: PLC0415 - deferred on purpose
+    from .project import (  # noqa: PLC0415 - deferred on purpose
+        DagsterProject,
+        EditableDagsterProject,
+    )
 
     inapplicable = sorted(set(options) & _ARTIFACT_INAPPLICABLE)
     if inapplicable:
@@ -906,14 +962,48 @@ def _project_from_artifact(repo_root: str | None, options: Mapping[str, Any]) ->
     except ArtifactError as exc:
         raise ValueError(f"project artifact {str(path)!r} is unusable: {exc}") from exc
 
-    return DexProject(
-        DagsterProject(
+    if "declarations" not in options:
+        return DexProject(
+            DagsterProject(
+                parsed.models,
+                name=parsed.name,
+                declaration_sources=parsed.declaration_sources,
+                semantic_sources=parsed.semantic_sources,
+                source_declarations=parsed.source_declarations,
+            )
+        )
+
+    directory = _resolve_dir(repo_root, "declarations", options["declarations"])
+    declarations = _read_yaml_dir(directory)
+
+    # The disclosure, and it has a quiet arm. An artifact carrying no
+    # declarations has nothing to supersede, and claiming a supersession there
+    # would report a loss that did not happen - which is the same defect as
+    # staying silent about one that did, pointing the other way.
+    superseded: tuple[str, ...] = ()
+    if parsed.declaration_sources:
+        superseded = (
+            f"{len(parsed.declaration_sources)} declaration source(s) carried by "
+            f"the artifact were superseded by the {str(directory)!r} directory, "
+            f"which is the live source and the one an edit lands in; the "
+            f"artifact's copy was not read",
+        )
+
+    return EditableDexProject(
+        EditableDagsterProject(
             parsed.models,
+            root=directory.parent,
+            # One entry, not the three the graph path can offer: this is the only
+            # directory named here, and a surface is a claim about where an edit
+            # may land rather than a list of what was read.
+            surface=(directory.name,),
             name=parsed.name,
-            declaration_sources=parsed.declaration_sources,
+            declaration_sources=declarations,
             semantic_sources=parsed.semantic_sources,
             source_declarations=parsed.source_declarations,
-        )
+        ),
+        declarations_prefix=directory.name,
+        extra_notes=superseded,
     )
 
 
@@ -958,10 +1048,16 @@ def project_from_context(context: Any) -> DexProject:
     silently preferring one would make a host read a project the operator did
     not ask for and could not see they had not asked for.
 
-    **The three directory options are refused alongside ``artifact``.** An
-    artifact carries its declarations, so a ``declarations:`` beside it modifies
-    nothing while reading as though the files on disk were live. That is the
-    ordinary shape of a config that is quietly a day out of date.
+    **``semantics:``, ``sources:`` and ``name:`` are refused alongside
+    ``artifact``.** An artifact carries all three, so one of them beside it
+    modifies nothing while reading as though the files on disk were live. That is
+    the ordinary shape of a config quietly a day out of date.
+
+    **``declarations:`` is admitted, and it supersedes what the artifact
+    carries.** It is the one directory an edit can land in, so it is the one that
+    cannot be reading from nowhere; naming it is how a host on the artifact
+    transport reaches the write tier at all. The supersession is disclosed
+    through :meth:`DexProject.notes`. See :func:`_project_from_artifact`.
 
     **Unknown options are refused by name.** Upstream's own factory contract
     checks for this, and the reasoning is the same one that makes a declined tier
