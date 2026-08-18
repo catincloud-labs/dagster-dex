@@ -492,9 +492,13 @@ def test_the_tier_we_reach_is_two_and_three_is_declined():
     baseline, and losing either layer method would silently drop it back to tier 1
     where `maintain` stops asking. Declining tier 3 is a live decision rather than a
     permanent one: the models cannot receive an edit, but the declarations are
-    hand-written files that can, and the tier stays declined only because dex cannot
-    route an edit to them yet. See `dex.DexProject` for the two upstream blockers.
-    When they move, this assertion is the one that has to change deliberately.
+    hand-written files that can.
+
+    **The blockers moved on 2026-08-11**, so this is now the assertion that has to
+    change deliberately rather than the one waiting for them. Both closed together
+    under `exmergo/dex#263`, which shipped `PlacingProject` in dex-core 1.6.4; this
+    suite runs against 1.6.6. What holds tier 3 declined today is that the write
+    path is unimplemented here.
 
     This assertion previously read `== 1` and was named
     `..._and_that_is_deliberate`, describing the gap as a finding about a tier
@@ -538,15 +542,26 @@ def test_the_format_name_is_forwarded_not_duplicated():
 #: Contracts upstream ships that this format deliberately does NOT mix in, with
 #: the reason each one is declined. The value is prose because it is the whole
 #: point: a decline that cannot say why is indistinguishable from an oversight.
+#:
+#: BOTH REASONS HERE WERE STALE, AND ONE HAD BEEN RETRACTED IN THE CODE. This
+#: mapping said tier 3 was declined "structurally" because a reduction has no
+#: source of truth that can receive an edit - the exact claim `DexProject`'s
+#: docstring withdrew on 2026-08-09, before this mapping was last touched. A
+#: decline that cannot say why is indistinguishable from an oversight; a decline
+#: saying something the code beside it has already denied is worse, because it
+#: reads as a second opinion rather than as a stale copy.
+#: => A prose field is not exempt from the rule about two copies of a claim.
 _DECLINED = {
     "EditableProjectContract": (
-        "tier 3 is declined structurally - a project reduced from a running "
-        "graph has no source of truth that can receive an edit, so the method "
-        "is absent rather than present and empty"
+        "the write path is unimplemented here. The models cannot receive an "
+        "edit, but the hand-written declarations can, and dex has been able to "
+        "route one to a non-dbt format since dex-core 1.6.4 (exmergo/dex#263, "
+        "closing #257 and #258). So this is work outstanding, not a limit"
     ),
     "PlacingProjectContract": (
-        "placement is declined for the same reason: an edit path into a "
-        "reduction would name a file regenerated from something else"
+        "placement is declined while the write tier is: a format saying where "
+        "an edit lands while unable to receive one has described a path to "
+        "nowhere. These two move together or not at all"
     ),
 }
 

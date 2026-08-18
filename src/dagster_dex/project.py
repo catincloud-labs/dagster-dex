@@ -11,9 +11,16 @@ next run, and misleading in review in the meantime.
 That reasoning does not extend to the declarations, and this docstring implied
 it did until 2026-08-09. ``declaration_sources``, ``semantic_sources`` and
 ``source_declarations`` arrive as hand-written text that nothing regenerates, and
-they are a real editable source of truth. The tier stays declined because dex
-cannot yet route an edit to it (see ``dex.DexProject`` for the two upstream
-blockers), which is a different claim from being unable to receive one.
+they are a real editable source of truth. The tier stayed declined because dex
+could not route an edit to it, which is a different claim from being unable to
+receive one.
+
+**That reason expired on 2026-08-11.** Both upstream blockers are closed, and
+the write path is open to a second format in the dex-core version this package
+pins - see ``dex.DexProject``, which carries the detail and the two further
+gates the fix uncovered. The tier is still declined, and the decline is now a
+statement about work this package has not done rather than about a door dex
+holds shut.
 
 **The core takes plain data.** :class:`DagsterProject` is constructed from
 models and declaration text, so it needs neither an orchestrator nor an engine

@@ -523,15 +523,34 @@ class DexProject:
     from somewhere else; check what that somewhere is before declining on the
     graph's behalf.*
 
-    **So the tier is declined because dex cannot route an edit here yet, not
-    because we could not receive one.** Two blockers upstream, both filed:
-    ``maintain reconcile`` gates its write path on ``isinstance(editable,
-    DbtProject)`` and downgrades every other format to advisory regardless of tier,
-    and its proposed edit paths are hardcoded ``models/staging/stg_<table>.{sql,yml}``
-    literals naming files this project does not have. Implementing ``write_edits``
-    before those move would satisfy the conformance contract and receive nothing,
-    which repeats the lesson recorded against this package's own entry point in
-    ``pyproject.toml``: an extension point declared before anything exercised it.
+    **So the tier was declined because dex could not route an edit here, not
+    because we could not receive one.** That held until 2026-08-11 and no longer
+    does. Two blockers were filed - ``exmergo/dex#257``, where ``maintain
+    reconcile`` gated its write path on ``isinstance(editable, DbtProject)`` and
+    downgraded every other format to advisory regardless of tier, and
+    ``exmergo/dex#258``, where the proposed edit paths were hardcoded
+    ``models/staging/stg_<table>.{sql,yml}`` literals naming files this project
+    does not have. Both are closed, resolved together by ``exmergo/dex#263``,
+    which shipped ``PlacingProject`` in dex-core **1.6.4**. This package pins
+    1.6.6, so the door is open in the version it is tested against.
+
+    **The two issues were one seam, and filing them as two is the part worth
+    keeping.** The paths reconcile builds are not filesystem paths; they are keys
+    into the view the format's own ``load()`` returned. So a format that can say
+    where an edit of a given kind lands has answered *whether* as well as
+    *where*, and the class check becomes "did the format place it". Building the
+    fix also found two further gates neither issue described: plan-time
+    containment validated every edit against dbt's ``model_paths`` whatever
+    produced it, and ``transform apply`` wrote every plan through
+    ``dbt_project.write_edits``. => *Two independent-looking blockers sharing a
+    caller are usually one, and building the fix is what finds out.*
+
+    **The tier is still declined here, and that is now a statement about this
+    package rather than about dex.** Implementing the write path remains the
+    work; what changed is that doing it would no longer satisfy the conformance
+    contract and receive nothing, which is the lesson recorded against this
+    package's own entry point in ``pyproject.toml``: an extension point declared
+    before anything exercised it.
 
     **History worth keeping, because the mistake was nearly sent to the engine's
     authors.** This docstring once said we *could not* serve ``semantic_layer()``,
