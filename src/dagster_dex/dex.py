@@ -130,17 +130,24 @@ def to_transform_layer(declarations: ProjectDeclarations) -> Any:
     something the engine's own model already permits, and its only real
     consumers are on the write path this format does not implement.
 
-    **``path`` is optional on every source, and we pass ``None``.** Since 1.6.0
-    ``SourceTable.path`` is ``str | None`` defaulting to ``None``, so a project
-    with no files states that natively. This package passed ``""`` until then -
-    an undocumented sentinel, named as one by the release that removed the
-    requirement (``exmergo/dex#193``, which this package's own reduction
-    prompted). The field is read in exactly one place, as the ``declared_in``
-    provenance shown to an analyst on a ``dangling_source`` finding, and that
-    finding now omits the key entirely rather than showing a blank one. The
-    original reasoning still holds and simply has a better expression: a
-    fabricated path reads as evidence, and ``None`` reads as no provenance
-    without relying on a reader knowing what an empty string meant.
+    **``path`` is optional on every source, and we pass what we honestly have.**
+    Since 1.6.0 ``SourceTable.path`` is ``str | None`` defaulting to ``None``, so
+    a project with no files states that natively. This package passed ``""``
+    until then - an undocumented sentinel, named as one by the release that
+    removed the requirement (``exmergo/dex#193``, which this package's own
+    reduction prompted). The field is read in exactly one place, as the
+    ``declared_in`` provenance shown to an analyst on a ``dangling_source``
+    finding, and that finding omits the key entirely rather than showing a blank
+    one.
+
+    **This said "and we pass ``None``" until 2026-08-18, and it was true because
+    nothing ever set ``declared_in``.** The provenance was in the reader's hand
+    and discarded one line later, so the field existed, the mapping carried it,
+    and the value was always absent - a limitation this package's own parser
+    created, which is a shape recorded elsewhere in this file. A source read out
+    of a directory now names the file it was declared in; one handed over as text
+    still passes ``None``, because a bare model name is not a place and inventing
+    one is the fabricated evidence the original reasoning refused.
 
     **The disclosure has a home now.** ``TransformLayer.notes`` arrived in the
     same release, so a lossy tier-2 mapping can disclose itself in its own
@@ -607,13 +614,41 @@ class DexProject:
 
 
 def _load_yaml_dir(repo_root: str | None, option: str, value: object) -> dict[str, str]:
-    """Read ``*.yml`` / ``*.yaml`` out of a directory into ``{stem: text}``.
+    """Read ``*.yml`` / ``*.yaml`` out of a directory into ``{key: text}``.
 
     Missing directory is an error rather than an empty mapping. A declaration
     directory that silently reads as empty produces a project with no declared
     keys, which is a *valid* project reporting nothing - indistinguishable from
     one that genuinely declares nothing, and it would quietly widen every grain
     finding dex makes.
+
+    **The key is ``<directory name>/<file name>``, and it was the bare stem
+    until 2026-08-18.** The stem threw away the directory and the suffix, which
+    cost nothing while nothing wrote: the parsers use the key as an origin label
+    in notes, and ``'orders'`` reads about as well as ``'declarations/orders.yml'``
+    to a human - slightly worse, since it names something a reader then has to
+    go looking for.
+
+    It costs something the moment an edit has to land. dex asks a format where an
+    edit of a given kind goes and checks the answer against the surface that
+    format declares it owns, and both are keys into whatever the format's own
+    view returned rather than filesystem paths. **A bare stem is inside no
+    surface**, so a format keyed by one can name no honest region of itself: the
+    only prefix admitting ``orders`` is one admitting everything.
+
+    **Relative to the directory rather than to ``repo_root``**, deliberately.
+    ``repo_root`` is nullable and the option may be absolute, so a key derived
+    from it exists only sometimes - and a keyspace whose shape depends on how
+    the caller was configured is one that cannot be reasoned about. The
+    directory's own name is always there. This is the format's keyspace, not the
+    filesystem's, which is the distinction upstream's placement seam is built
+    on.
+
+    One consequence, stated rather than discovered: two options pointed at
+    directories sharing a name produce keys that look alike across two separate
+    mappings. They cannot collide - each mapping comes from exactly one
+    directory - but an edit placed by name alone would be ambiguous between them,
+    which is a constraint on placement rather than on reading.
     """
 
     from pathlib import Path  # noqa: PLC0415 - stdlib, kept local for symmetry
@@ -635,7 +670,7 @@ def _load_yaml_dir(repo_root: str | None, option: str, value: object) -> dict[st
         raise ValueError(f"project option {option!r} names {str(directory)!r}, which is not a directory")
 
     return {
-        path.stem: path.read_text(encoding="utf-8")
+        f"{directory.name}/{path.name}": path.read_text(encoding="utf-8")
         for path in sorted(directory.iterdir())
         if path.suffix in (".yml", ".yaml")
     }
