@@ -75,7 +75,12 @@ _PIN = re.compile(r"exmergo-dex-core(?:\[[^\]]*\])?\s*(==|~=)\s*([0-9][^\s\"',\]
 #: prose kept the operator alive after the guarantee had gone.
 EXPECTED: dict[str, dict[str, int]] = {
     ".github/dependabot.yml": {"~=": 1},
-    ".github/workflows/checks.yml": {"==": 2},
+    # Three as of the whole-loop example: the suite step, the upstream-contract
+    # step, and the step that runs `examples/walk_the_whole_loop.py`. That last
+    # one installs the orchestrator, the engine and DuckDB together, which no
+    # other step does, so it carries its own engine pin rather than inheriting
+    # one.
+    ".github/workflows/checks.yml": {"==": 3},
     # Three: the suite step, and the two end-to-end steps that drive dex through
     # the built wheel - one for the read path, one for the write path. Each was
     # added after this guard existed and caught on its first run, which is the
@@ -86,11 +91,11 @@ EXPECTED: dict[str, dict[str, int]] = {
     # put the one sentence stating the tested version outside this scan. The
     # fourth command is the write-path driver's, in the section on the two
     # drivers.
-    "AGENTS.md": {"==": 4, "~=": 1},
+    "AGENTS.md": {"==": 5, "~=": 1},
     # Four: the two runnable suite commands, plus the two end-to-end drivers
     # added when the write path landed. Both drivers run in CI, and a reader
     # running one against a different engine than CI is not reproducing CI.
-    "CONTRIBUTING.md": {"==": 4},
+    "CONTRIBUTING.md": {"==": 5},
     # Three `==` and one `~=`: the two runnable commands, plus the two-pins
     # paragraph, which named both versions without naming the package until
     # 2026-08-15 and so stated the tested version from outside this scan. It
@@ -105,6 +110,11 @@ EXPECTED: dict[str, dict[str, int]] = {
     # The by-hand command in each end-to-end driver's docstring. Runnable
     # commands, so they are held like every other one: a reader who runs one
     # against a different engine than CI does is not reproducing CI.
+    # The whole-loop example names the engine in its own run command, the same
+    # way the two drivers do. It is the example AND the CI step, so the command
+    # in its docstring has to be the command CI runs - a reader running it
+    # against a different engine is not reproducing CI.
+    "examples/walk_the_whole_loop.py": {"==": 1},
     "scripts/drive_dex_against_the_wheel.py": {"==": 1},
     "scripts/drive_the_write_path_against_the_wheel.py": {"==": 1},
 }
