@@ -29,7 +29,7 @@ consumer's desk is the point - a floor computed by our own arithmetic would be a
 second implementation of resolution, and the two would disagree exactly when it
 mattered.
 
-⚠️ **`--resolution lowest-direct` cannot be pointed at `.[dex]`, and this is
+**`--resolution lowest-direct` cannot be pointed at `.[dex]`, and this is
 measured rather than predicted.** It applies to every direct requirement, so it
 drags `pyyaml` to its own declared floor (`6.0`), which does not build on a
 current interpreter, and the run dies before resolving anything. So the specifier
@@ -61,7 +61,12 @@ PACKAGE = "exmergo-dex-core"
 EXTRA = "dex"
 
 #: Strip any extras marker (`pkg[a,b]>=1`) when matching the requirement to the
-#: package name, so a future `exmergo-dex-core[bigquery]~=1.6.4` still resolves.
+#: package name, so a future requirement naming an extra still resolves.
+#: No example is spelled out here: `tests/test_pin_coherence.py` reads any
+#: `<package><operator><version>` string in a tracked file as a real pin, and it
+#: is right to - an illustrative version in a comment goes stale exactly like a
+#: real one, and this file's whole claim is that it holds no version literal.
+#: It caught this file on its first CI run.
 _REQUIREMENT = re.compile(
     r"^\s*" + re.escape(PACKAGE) + r"(?:\[[^\]]*\])?\s*(?P<spec>[^\s;]+)"
 )
