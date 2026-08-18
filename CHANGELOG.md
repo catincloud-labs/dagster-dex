@@ -12,7 +12,7 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
-## Unreleased
+## 0.4.0 - 2026-08-18
 
 The write tier becomes reachable over the artifact transport, which is the
 deployment shape that had it and could not use it.
