@@ -34,8 +34,20 @@ name: publish
 #   - `pypi` environment: required reviewer, deployments restricted to `v*` TAGS.
 #                `prevent_self_review` is off deliberately -- with a single
 #                reviewer, on would mean no release can ever be approved.
-#   - `testpypi` environment: deployments restricted to `main`, no reviewer,
-#                because the dispatch is already a deliberate human act.
+#   - `testpypi` environment: deployments restricted to `main`, AND a required
+#                reviewer as of 2026-08-21.
+#                THIS USED TO READ "no reviewer, because the dispatch is already
+#                a deliberate human act". That reason EXPIRED rather than having
+#                been wrong: `workflow_dispatch` requires WRITE, so while the
+#                only actor with write was the repository owner, the dispatch
+#                really was a deliberate act by the person the reviewer would
+#                have been. The moment write can be held by somebody else, a
+#                dispatch on `main` reaches this publisher identity with no
+#                reviewer, no merge and no tag -- the rehearsal namespace, but
+#                under the estate's real TestPyPI publisher stamp.
+#                The reviewer costs one click per rehearsal. Unlike `pypi`'s it
+#                never sits on the pull-request path, because this job is
+#                `workflow_dispatch`-only -- see the `rehearse` job's `if:`.
 # A publisher matches on owner AND repo. `catincloudlabs` (no hyphen) is a
 # DIFFERENT organisation holding other repositories in this estate, and naming it
 # by mistake fails at upload -- after a tag is cut, having built and tested green.
