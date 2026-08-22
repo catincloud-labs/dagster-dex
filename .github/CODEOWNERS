@@ -1,0 +1,15 @@
+# Code owners for this repository.
+#
+# `@catincloudlabs` is a USER account, not the `catincloud-labs` organization
+# that owns this repository. CODEOWNERS resolves users and teams; an
+# organization name on its own is not a valid owner, and this organization has
+# no teams, so a `@catincloud-labs/<team>` entry would resolve to nothing
+# silently.
+#
+# An entry here is inert unless the account it names has write access to this
+# repository. When it does not, the entry is reported as "Unknown owner" rather
+# than failing loudly, and `GET /repos/{owner}/{repo}/codeowners/errors` is what
+# says so. That error does not distinguish a misspelled name from a real account
+# that is simply missing the grant, so check both.
+
+* @catincloudlabs
