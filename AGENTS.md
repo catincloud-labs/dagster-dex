@@ -406,6 +406,17 @@ found.
 - **Branch per change** off `main`. Never commit to `main` directly.
 - **Conventional commits** (`feat:`, `fix:`, `docs:`, `test:`, `chore:`) with a
   body explaining *why*.
+- **A title is a git artifact. PR and issue titles take the commit form:**
+  `type(scope): summary` - lowercase after the colon, one clause, at most 100
+  characters, no trailing period. A PR title becomes the merge commit history
+  cites as `#N`; the full sentence belongs in the body. Issues take the type
+  their fix would take; an issue arguing a fork rather than naming work is
+  `argument:`. Probe PRs say `probe:` - a type, not an exemption.
+  - The estate's `pr-title` guard cannot run here: a public repository cannot
+    resolve an action in a private one (the same measured property that put
+    the vendored-copy drift check in `workbench`). The rule is held by this
+    text and by review - stated, so the gap is a decision rather than an
+    accident.
 - **Never put a `close` / `fix` / `resolve` verb immediately before `#N`** in a
   commit message or PR body unless you mean it - including inside backticks, and
   including in a sentence warning against it. Only *adjacency* fires, so "part of
