@@ -11,5 +11,11 @@
 # than failing loudly, and `GET /repos/{owner}/{repo}/codeowners/errors` is what
 # says so. That error does not distinguish a misspelled name from a real account
 # that is simply missing the grant, so check both.
+#
+# Two owners on one pattern means a review from EITHER satisfies the
+# code-owner requirement. GitHub forbids approving your own pull request, so
+# a single-owner file leaves the requirement unsatisfiable for that owner --
+# they can only bypass it. The second entry is what makes the requirement
+# satisfiable in both directions, and it is deliberate, not a courtesy.
 
-* @catincloudlabs
+* @catincloudlabs @marcociav-exmergo
