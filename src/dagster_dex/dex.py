@@ -553,7 +553,7 @@ class DexProject:
     ``models/staging/stg_<table>.{sql,yml}`` literals naming files this project
     does not have. Both are closed, resolved together by ``exmergo/dex#263``,
     which shipped ``PlacingProject`` in dex-core **1.6.4**. This package pins
-    1.6.6, so the door is open in the version it is tested against.
+    1.7.0, so the door is open in the version it is tested against.
 
     **The two issues were one seam, and filing them as two is the part worth
     keeping.** The paths reconcile builds are not filesystem paths; they are keys
