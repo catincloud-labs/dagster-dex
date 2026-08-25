@@ -163,7 +163,7 @@ turns it red at collection.
 The engine is pinned to `exmergo-dex-core==1.7.0` here and in CI, which is
 **not** what the `[dex]` extra publishes. The extra is
 `exmergo-dex-core~=1.7`, so consumers are not forced onto
-one patch release; the exact pin is where the demonstration lives, because a
+one release; the exact pin is where the demonstration lives, because a
 claim about what passed should name the version it passed against.
 
 ### Against dex-core's own contract

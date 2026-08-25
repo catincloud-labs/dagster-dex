@@ -336,7 +336,7 @@ jobs:
           enable-cache: true
 
       # The engine is pinned EXACTLY here, which is deliberately not what the
-      # `[dex]` extra publishes (`~=1.6.4`). Consumers should not be forced onto
+      # `[dex]` extra publishes (`~=1.7`). Consumers should not be forced onto
       # one patch release; the demonstration should name the version it ran
       # against. `sqlglot` is pinned for determinism only.
       - name: Boundary runs against the real engine

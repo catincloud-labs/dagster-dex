@@ -20,9 +20,9 @@ the engine floor did, which is why this is a minor and not a patch.
 
 **Changed.**
 
-- **The `[dex]` extra is `~=1.7`, from `~=1.6.4`.** dex-core
-  1.7.0 shipped the fix for exmergo/dex#328 -- the issue this package's write
-  tier prompted -- in exmergo/dex#336: `load()` declared on `PlacingProject`,
+- **The `[dex]` extra is `~=1.7`, from `~=1.6.4`.** dex-core 1.7.0 shipped
+  the fix for exmergo/dex#328 -- the issue this package's write tier prompted --
+  in exmergo/dex#336: `load()` declared on `PlacingProject`,
   six mutants from that report now failing in the shipped conformance suite,
   containment re-checked at apply. `~=1.6.4` meant `==1.6.*` and refused the
   resolver that release; the whole suite passes against it with
