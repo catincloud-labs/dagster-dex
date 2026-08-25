@@ -12,6 +12,41 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
+## 0.5.0 - 2026-08-25
+
+The range moves to the release that fixed our contract gap, and the strongest
+of its new assertions is given the oracle it asks for. The seam did not move;
+the engine floor did, which is why this is a minor and not a patch.
+
+**Changed.**
+
+- **The `[dex]` extra is `~=1.7`, from `~=1.6.4`.** dex-core 1.7.0 shipped
+  the fix for exmergo/dex#328 -- the issue this package's write tier prompted --
+  in exmergo/dex#336: `load()` declared on `PlacingProject`,
+  six mutants from that report now failing in the shipped conformance suite,
+  containment re-checked at apply. `~=1.6.4` meant `==1.6.*` and refused the
+  resolver that release; the whole suite passes against it with
+  `DEX_UPSTREAM_CONTRACT_REQUIRED=1` (zero contract skips), so the range was
+  the only thing saying otherwise. Still a compatible-release range, per the
+  *two pins* rule -- and `~=1.7`, not `~=1.6`: the latter would publish a floor
+  of 1.6.0, three releases below the `PlacingProject` this write tier needs,
+  so the range resolver would test a floor the package never claimed.
+- **The tested pin is 1.7.0** at every site the coherence guard scans.
+
+**Added.**
+
+- **`a_clean_edit` on the write-tier contract class.** Upstream's optional
+  hook. Without it `test_a_refused_apply_leaves_every_target_alone` checks what
+  `write_edits` *reported*; with it the clean target is read directly, so a
+  writer that lands half a mixed edit set while reporting nothing written is
+  caught by the shipped contract rather than only by this repository's own
+  six-leg driver. A create inside the surface, pinned to absence.
+
+**Cost to a consumer.** None at the seam. **The engine floor rises to 1.7.0**:
+a consumer on 1.6.x stays on 0.4.0, which is exactly as tested; one on 1.7.0
+can now install `dagster-dex[dex]` at all. That floor is the breaking half and
+the reason for the minor.
+
 ## 0.4.0 - 2026-08-18
 
 The write tier becomes reachable over the artifact transport, which is the

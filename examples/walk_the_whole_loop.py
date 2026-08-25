@@ -5,7 +5,7 @@
 Run it:
 
     uv run --no-project --with-editable . --with 'dagster>=1.13' \\
-        --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 --with duckdb \\
+        --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 --with duckdb \\
         python examples/walk_the_whole_loop.py
 
 `reduce_asset_graph.py` beside this one runs real Dagster and stops at the

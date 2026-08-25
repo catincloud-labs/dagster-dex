@@ -122,7 +122,7 @@ jobs:
           DEX_UPSTREAM_CONTRACT_REQUIRED: "1"
         run: |
           uv run --no-project --with-editable . \
-            --with pytest==8.4.1 --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
+            --with pytest==8.4.1 --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
             python -m pytest tests
 
       - name: Build sdist + wheel
@@ -169,7 +169,7 @@ jobs:
         run: |
           WHEEL=$(ls dist/*.whl)
           uv run --no-project --with "./${WHEEL}" \
-            --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
+            --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
             python scripts/drive_dex_against_the_wheel.py
 
       # The step above proves dex can READ a project through the wheel. It says
@@ -190,7 +190,7 @@ jobs:
         run: |
           WHEEL=$(ls dist/*.whl)
           uv run --no-project --with "./${WHEEL}" \
-            --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
+            --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
             python scripts/drive_the_write_path_against_the_wheel.py
 
       - uses: actions/upload-artifact@v7

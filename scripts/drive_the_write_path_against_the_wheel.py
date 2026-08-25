@@ -90,7 +90,7 @@ warehouse can produce one.
 Run it by hand against an installed wheel:
 
     uv run --no-project --with "./dist/<wheel>" \\
-        --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \\
+        --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \\
         python scripts/drive_the_write_path_against_the_wheel.py
 
 Exit 0 means a reconcile proposal became a stored plan, was written through this

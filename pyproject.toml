@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dagster-dex"
-version = "0.4.0"
+version = "0.5.0"
 # Leads with the use case rather than the design argument, because this is the
 # COLDEST surface the package has: it renders under the name in PyPI search
 # results, above the README. The framing the README and the repo carry -- an
@@ -95,11 +95,19 @@ Changelog = "https://github.com/catincloud-labs/dagster-dex/blob/main/CHANGELOG.
 dagster = ["dagster>=1.13"]
 # The engine, needed only by dagster_dex.dex.
 #
-# `~=1.6.4` is `>=1.6.4, ==1.6.*`: patches move freely, the minor boundary does
-# not. That is where the evidence puts the danger -- dex-core 1.6.0, a MINOR,
+# `~=1.7` is `>=1.7, ==1.*`: minors and patches move freely, the major boundary does
+# not. The evidence says a MINOR is where the danger lives -- dex-core 1.6.0
 # began resolving this entry-point group and the pointer below failed on first
-# contact. The floor is load-bearing too: below 1.6.0 the group is not resolved
-# at all, so the package would install and silently never be found.
+# contact -- and until 0.5.0 the range was `~=1.6.4`, which pinned the minor for
+# exactly that reason. It was widened because `==1.6.*` refused 1.7.0, the
+# release that fixed exmergo/dex#328, and a range that excludes the fix to the
+# gap it reported is the wrong shape. What now stands guard where the pinned
+# minor did is `scripts/resolve_engine_range.py`: the `engine-ends` matrix runs
+# the suite at the range's floor AND its ceiling, so the day a new 1.x minor
+# publishes, CI exercises it -- the pointer failing on first contact would be a
+# red job, not a consumer's surprise. The floor is load-bearing too: below 1.6.0
+# the group is not resolved at all, and below 1.6.4 there is no `PlacingProject`
+# for the write tier, so the package would install and silently never be found.
 #
 # An exact `==` pin was considered and rejected. This package is a PLUGIN
 # whose host is the pinned dependency -- dex-core resolves it through the entry
@@ -114,7 +122,7 @@ dagster = ["dagster>=1.13"]
 # an `==` here would be a promise to every consumer's resolver. A restatement
 # would also be a second copy of a version that moves. See the "two pins"
 # section of AGENTS.md, which names it and is inside the coherence scan.
-dex = ["exmergo-dex-core~=1.6.4"]
+dex = ["exmergo-dex-core~=1.7"]
 test = ["pytest>=8.4"]
 
 [project.entry-points."exmergo_dex_core.projects"]

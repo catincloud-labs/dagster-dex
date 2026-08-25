@@ -336,13 +336,13 @@ jobs:
           enable-cache: true
 
       # The engine is pinned EXACTLY here, which is deliberately not what the
-      # `[dex]` extra publishes (`~=1.6.4`). Consumers should not be forced onto
+      # `[dex]` extra publishes (`~=1.7`). Consumers should not be forced onto
       # one patch release; the demonstration should name the version it ran
       # against. `sqlglot` is pinned for determinism only.
       - name: Boundary runs against the real engine
         run: |
           uv run --no-project --with-editable . \
-            --with pytest==8.4.1 --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
+            --with pytest==8.4.1 --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
             python -m pytest tests --ignore=tests/test_upstream_contract.py
 
       # This package ships a PEP 561 `py.typed` marker and the `Typing :: Typed`
@@ -405,7 +405,7 @@ jobs:
       - name: The whole loop works against a real warehouse
         run: |
           uv run --no-project --with-editable . --with 'dagster>=1.13' \
-            --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 --with duckdb \
+            --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 --with duckdb \
             python examples/walk_the_whole_loop.py
 
       # `DEX_UPSTREAM_CONTRACT_REQUIRED=1` turns a missing upstream contract from
@@ -417,7 +417,7 @@ jobs:
           DEX_UPSTREAM_CONTRACT_REQUIRED: "1"
         run: |
           uv run --no-project --with-editable . \
-            --with pytest==8.4.1 --with exmergo-dex-core==1.6.6 --with sqlglot==30.13.0 \
+            --with pytest==8.4.1 --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
             python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
 
   # ---------------------------------------------------------------------------

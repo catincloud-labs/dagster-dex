@@ -290,6 +290,37 @@ def _an_edit_against_a_changed_target(project):
     return project, root, edits, lambda: target.read_text(encoding="utf-8")
 
 
+def _a_clean_edit(project):
+    """Upstream's optional oracle (1.7.0, their #336): a clean edit and its reader.
+
+    Without this hook `test_a_refused_apply_leaves_every_target_alone` can only ask
+    what `write_edits` *reported*, so a writer that lands half a mixed edit set and
+    says it wrote nothing still passes. With it the clean target is read directly
+    and the all-or-nothing claim is checked against the project rather than the
+    report -- the over-reporting writer this repository's own six-leg driver caught
+    at leg 6, now asserted by the shipped contract instead of by a local harness.
+
+    A CREATE inside the declared surface, pinned truthfully to absence
+    (`old_content_hash=None`): the staged project holds only the conflict target,
+    so a clean edit against an existing file would be the conflict itself. The
+    reader returns the file's content or `None`, and a refused apply must leave it
+    `None`.
+    """
+
+    from pathlib import Path
+
+    from exmergo_dex_core.dbt_project import Edit
+
+    view = project.load()
+    target = Path(view.root) / "declarations" / "dex_conformance_clean_probe.yml"
+    edit = Edit(
+        path="declarations/dex_conformance_clean_probe.yml",
+        new_content="models: []\n",
+        old_content_hash=None,
+    )
+    return edit, lambda: target.read_text(encoding="utf-8") if target.exists() else None
+
+
 class TestDagsterProjectAgainstDexCore(
     conformance.DeclaringProjectContract,
     conformance.SemanticProjectContract,
@@ -723,6 +754,9 @@ class TestTheWriteTierAgainstDexCore(
 
     def an_edit_against_a_changed_target(self):
         return _an_edit_against_a_changed_target(_editable_wrapped(declaring=True))
+
+    def a_clean_edit(self, project):
+        return _a_clean_edit(project)
 
 
 class TestTheWriteTierOverTheArtifactTransport(TestTheWriteTierAgainstDexCore):
