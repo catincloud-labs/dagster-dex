@@ -181,12 +181,12 @@ uv run --no-project --with-editable . --with pytest==8.4.1 \
 
 # 2. the boundary, against the real engine
 uv run --no-project --with-editable . --with pytest==8.4.1 \
-  --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
+  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
   python -m pytest tests --ignore=tests/test_upstream_contract.py
 
 # 3. dex-core's own project contract
 DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
-  --with pytest==8.4.1 --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
+  --with pytest==8.4.1 --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
   python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
 ```
 
@@ -204,7 +204,7 @@ uv run --no-project --with-editable . --with 'dagster>=1.13' \
 # the WHOLE loop against a real (DuckDB) warehouse -- the only command that
 # installs the orchestrator, the engine and a warehouse at once
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
-  --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 --with duckdb \
+  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 --with duckdb \
   python examples/walk_the_whole_loop.py
 ```
 
@@ -246,7 +246,7 @@ Run either by hand:
 
 ```bash
 uv run --no-project --with-editable . \
-  --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
+  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
   python scripts/drive_the_write_path_against_the_wheel.py
 ```
 
@@ -348,12 +348,15 @@ Renaming it means editing the organisation ruleset in the same change.
 
 ## The dependency pin, and why there are two of them
 
-- **Published** (`pyproject.toml`, the `[dex]` extra): `exmergo-dex-core~=1.7`,
-  i.e. `>=1.7, ==1.*`. Minors and patches move, the major boundary does not.
-  **Was `~=1.6.4` until 0.5.0**: 1.7.0 shipped the fix for our exmergo/dex#328
-  and `==1.6.*` refused it. Raising the floor to 1.7 is the reason 0.5.0 is a
-  minor, not a patch -- a 1.6.x consumer stays on 0.4.0.
-- **Tested** (CI and the commands above): `exmergo-dex-core==1.7.0`, exactly.
+- **Published** (`pyproject.toml`, the `[dex]` extra): `exmergo-dex-core~=1.8`,
+  i.e. `>=1.8, ==1.*`. Minors and patches move, the major boundary does not.
+  **Was `~=1.6.4` until 0.5.0** (1.7.0 shipped the fix for our exmergo/dex#328
+  and `==1.6.*` refused it) **and `~=1.7` until 0.6.0** (1.8.0 shipped the fix
+  for our exmergo/dex#337, and the whole-loop legs that demonstrate it need
+  the floor to admit nothing older). Each floor raise is why its release is a
+  minor, not a patch -- a consumer on the older engine stays on the older
+  package.
+- **Tested** (CI and the commands above): `exmergo-dex-core==1.8.0`, exactly.
   - This line used to read ``==1.6.4``, naming the version without naming the
     package. That put it **outside** `tests/test_pin_coherence.py`, which
     matches on the package name - so the one sentence in this file that states

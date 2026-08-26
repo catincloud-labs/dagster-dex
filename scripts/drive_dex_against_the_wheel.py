@@ -42,7 +42,7 @@ it removed from the README. Nothing here reaches the network or a credential.
 Run it by hand against an installed wheel:
 
     uv run --no-project --with "./dist/<wheel>" \\
-        --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \\
+        --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \\
         python scripts/drive_dex_against_the_wheel.py
 
 Exit 0 means dex read a project through the distribution. Anything else prints

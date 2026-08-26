@@ -5,7 +5,7 @@
 Run it:
 
     uv run --no-project --with-editable . --with 'dagster>=1.13' \\
-        --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 --with duckdb \\
+        --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 --with duckdb \\
         python examples/walk_the_whole_loop.py
 
 `reduce_asset_graph.py` beside this one runs real Dagster and stops at the
@@ -55,6 +55,21 @@ WHAT EACH LEG IS FOR
  12. `maintain semantic` after a measure is redefined. `definition_changed` is
      drift that no amount of warehouse inspection finds, because nothing in the
      warehouse changed.
+ 13. `maintain grain` against DECLARED COMPOSITE grains, both directions in one
+     run. dex-core 1.8.0's own writeup names the blind spot this closes: the
+     grain axis never verified a grain the project DECLARES (`candidate_keys`
+     is measurement-only), so `declared_grain_not_unique` needs no baseline -
+     the combination comes from the project, and a failure means the
+     declaration is false rather than that anything changed. One composite the
+     data violates FIRES; one the data satisfies is SILENT in the same call.
+     Without the silent half, "a declared grain was checked" and "a finding is
+     always emitted" look identical.
+ 14. `explore relationships --infer-by-overlap` - a join proposed from measured
+     value containment where NO NAME connects the columns, and the exclusion
+     that keeps it honest: a column that is only a composite-grain member,
+     fully contained in the same parent, is NOT proposed, because probing one
+     member of a composite measures a different relationship than the whole
+     key would.
 
 WHAT THIS COVERS OF THE ONE-LINE CLAIM
 
@@ -62,10 +77,12 @@ The README says a Dagster graph is read for "keys, joins, sources, semantics,
 drift". All five are exercised here against a real warehouse:
 
   keys      leg 6 to 8 - `declared_keys` moves across the apply
+            leg 13 - a declared COMPOSITE grain is verified, not just carried
   joins     the `relationships:` in the fact declaration, read as a foreign key
+            leg 14 - and one proposed from measured overlap, no name involved
   sources   leg 3 and 11 - into the baseline, then a dangling one, with provenance
   semantics leg 3 and 12 - into the baseline, then a definition that moved
-  drift     leg 5, 11, 12 - grain, schema and semantic axes, all real
+  drift     leg 5, 11, 12, 13 - grain (measured and declared), schema, semantic
 
 This section replaced one headed NOT COVERED HERE, DELIBERATELY, which named
 sources and semantics as the two surfaces this file did not reach. It was true
@@ -184,6 +201,50 @@ metrics:
     type: simple
     type_params:
       measure: amount
+"""
+
+#: Leg 13's FIRING half. The model-level combination is the only dbt shape that
+#: can state a multi-column grain, and dim_date still carries leg 4's duplicated
+#: row - identical in BOTH columns - so the declared combination is false in the
+#: warehouse. The column-level `unique` (leg 7's applied edit) is kept
+#: deliberately: the parser prefers the combination and says so, and that
+#: disclosure is asserted rather than assumed.
+DIM_DATE_COMPOSITE_YML = """\
+models:
+  - name: dim_date
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - date_key
+            - day_name
+    columns:
+      - name: date_key
+        tests:
+          - not_null
+          - unique
+"""
+
+#: Leg 13's SILENT half. fact_sales is deduplicated first, so this combination
+#: holds in the warehouse and must produce NO finding - the control that stops
+#: "a declared grain was checked" and "a finding is always emitted" reading the
+#: same.
+FACT_SALES_COMPOSITE_YML = """\
+models:
+  - name: fact_sales
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns:
+            - sale_id
+            - date_key
+    columns:
+      - name: sale_id
+        tests:
+          - not_null
+      - name: date_key
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
 """
 
 CONFIG_YML = """\
@@ -350,8 +411,77 @@ def redefine_the_measure(root: Path) -> None:
     target.write_bytes(changed.encode("utf-8"))
 
 
-def declared_keys(root: Path) -> set:
-    """What the project declares right now, read through the graph in-process."""
+def dedupe_fact_sales(path: Path) -> None:
+    """Remove leg 4's duplicate, so leg 13's fact_sales combination HOLDS."""
+
+    import duckdb
+
+    con = duckdb.connect(str(path))
+    try:
+        con.execute(
+            "CREATE OR REPLACE TABLE analytics.fact_sales AS "
+            "SELECT DISTINCT * FROM analytics.fact_sales"
+        )
+    finally:
+        con.close()
+
+
+def declare_composite_grains(root: Path) -> None:
+    """Rewrite both declarations to state model-level composite grains."""
+
+    (root / "declarations" / "dim_date.yml").write_bytes(
+        DIM_DATE_COMPOSITE_YML.encode("utf-8")
+    )
+    (root / "declarations" / "fact_sales.yml").write_bytes(
+        FACT_SALES_COMPOSITE_YML.encode("utf-8")
+    )
+
+
+def seed_overlap_tables(path: Path) -> None:
+    """Three tables for leg 14, keyed by strings no other fixture uses.
+
+    String keys with a disjoint prefix, deliberately: fact_sales.sale_id is
+    0..499 and any small-integer key here would be CONTAINED in it, so the
+    sweep would propose a cross-family join that is measurement-true and
+    meaning-false - a real hazard for a real warehouse, and exactly the noise
+    this calibration leg must not depend on.
+
+      customers    customer_key 'C000'..'C039', unique - the parent.
+      orders       buyer_ref, same 40 values, unique - key-shaped, contained,
+                   and NO NAME connects it to customer_key. The sweep's target.
+      order_lines  (order_ref, line_no) composite; order_ref repeats 3x, so it
+                   is key-shaped only as a member - contained in the SAME
+                   parent, and must NOT be proposed.
+    """
+
+    import duckdb
+
+    con = duckdb.connect(str(path))
+    try:
+        con.execute(
+            "CREATE TABLE analytics.customers AS "
+            "SELECT 'C' || lpad(i::VARCHAR, 3, '0') AS customer_key, "
+            "'tier' || (i % 3)::VARCHAR AS tier "
+            "FROM range(0, 40) t(i)"
+        )
+        con.execute(
+            "CREATE TABLE analytics.orders AS "
+            "SELECT 'O' || lpad(i::VARCHAR, 3, '0') AS order_key, "
+            "'C' || lpad(i::VARCHAR, 3, '0') AS buyer_ref "
+            "FROM range(0, 40) t(i)"
+        )
+        con.execute(
+            "CREATE TABLE analytics.order_lines AS "
+            "SELECT 'C' || lpad((i % 40)::VARCHAR, 3, '0') AS order_ref, "
+            "(i // 40)::INTEGER AS line_no "
+            "FROM range(0, 120) t(i)"
+        )
+    finally:
+        con.close()
+
+
+def project_definitions(root: Path):
+    """The project's definitions, read through the graph in-process."""
 
     sys.path.insert(0, str(root))
     try:
@@ -373,12 +503,17 @@ def declared_keys(root: Path) -> set:
                 },
             ),
         )
-        definitions = project.definitions()
-        return {(k.model, k.column) for k in definitions.declared_keys}
+        return project.definitions()
     finally:
         sys.path.remove(str(root))
         for name in [m for m in sys.modules if m == "demo_assets"]:
             del sys.modules[name]
+
+
+def declared_keys(root: Path) -> set:
+    """What the project declares right now, read through the graph in-process."""
+
+    return {(k.model, k.column) for k in project_definitions(root).declared_keys}
 
 
 def main() -> int:
@@ -714,9 +849,115 @@ def main() -> int:
             ),
             "warnings were {}".format(semantic.get("warnings")),
         )
-        announce(
+        if not announce(
             "leg 12 ok         : definition_changed, and sales.amount reported "
             "as uncheckable"
+        ):
+            return report()
+
+        # -- leg 13: a DECLARED composite grain is verified, both directions ---
+        #
+        # 1.8.0 closed the axis's own blind spot: `candidate_keys` is
+        # measurement-only, so a grain the project DECLARES was never checked.
+        # `declared_grain_not_unique` has no baseline because the combination
+        # comes from the project - a failure means the declaration is false,
+        # not that anything changed.
+        #
+        # Both directions in one call: dim_date still carries leg 4's duplicate
+        # (identical in both declared columns), so its combination FIRES;
+        # fact_sales is deduplicated first, so its combination is checked and
+        # SILENT. Without the silent half, "a declared grain was checked" and
+        # "a finding is always emitted" are the same observation.
+        dedupe_fact_sales(root / "warehouse.duckdb")
+        declare_composite_grains(root)
+        grain2 = dex(root, "maintain", "grain", "--confirm")
+        declared_findings = {
+            f["identifier"].rsplit(".", 1)[-1]: f
+            for f in grain2["data"]["findings"]
+            if f["code"] == "declared_grain_not_unique"
+        }
+        check(
+            "leg 13: the violated declaration fired, and ONLY that one",
+            set(declared_findings) == {"dim_date"},
+            "declared findings on {}".format(sorted(declared_findings)),
+        )
+        fired = declared_findings.get("dim_date")
+        if fired is not None:
+            check(
+                "leg 13: the finding names the whole combination, in order",
+                (fired.get("data") or {}).get("columns") == ["date_key", "day_name"],
+                "columns were {}".format((fired.get("data") or {}).get("columns")),
+            )
+            check(
+                "leg 13: and says the grain was DECLARED, not measured",
+                (fired.get("data") or {}).get("declared") is True,
+                "data was {}".format(fired.get("data")),
+            )
+        # The authoring conflict is disclosed, not swallowed: dim_date's file
+        # still carries leg 7's column-level `unique` beside the combination,
+        # and the format says which one it read. The note travels on
+        # `ProjectDefinitions.notes` - the format's channel - so it is read
+        # there; whether a given dex command surfaces that channel in its
+        # envelope is the engine's affair, not this format's.
+        definition_notes = list(project_definitions(root).notes)
+        check(
+            "leg 13: the composite-wins-over-single conflict was disclosed",
+            any("composite" in n and "dim_date" in n for n in definition_notes),
+            "definition notes were {}".format(definition_notes),
+        )
+        if not announce(
+            "leg 13 ok         : declared grain (date_key, day_name) refuted on "
+            "dim_date; fact_sales's holds, silently"
+        ):
+            return report()
+
+        # -- leg 14: a join proposed from OVERLAP, and the member exclusion ----
+        #
+        # `--infer-by-overlap` proposes an edge from measured value containment
+        # where no naming convention connects the columns - buyer_ref to
+        # customer_key. The half that keeps it honest: order_ref is contained
+        # in the SAME parent, but it is unique only as a member of a composite
+        # grain, and probing one member of a composite measures a different
+        # relationship than the whole key would - so it must NOT be proposed.
+        seed_overlap_tables(root / "warehouse.duckdb")
+        dex(root, "explore", "map", "--refresh", "--confirm")
+        inferred = dex(
+            root, "explore", "relationships", "--infer-by-overlap", "--confirm"
+        )
+        edges = [
+            e
+            for e in (inferred["data"].get("relationships") or [])
+            if "overlap" in str(e.get("kind", "")).lower()
+        ]
+        edge_shapes = [
+            (
+                e.get("from_dataset"), e.get("from_columns"),
+                e.get("to_dataset"), e.get("to_columns"),
+            )
+            for e in edges
+        ]
+        edge_columns = {
+            column
+            for e in edges
+            for column in (e.get("from_columns") or []) + (e.get("to_columns") or [])
+        }
+        check(
+            "leg 14: an edge was proposed where NO NAME connects the columns",
+            any(
+                {"buyer_ref", "customer_key"}
+                == set((e.get("from_columns") or []) + (e.get("to_columns") or []))
+                for e in edges
+            ),
+            "overlap-inferred edges were {}".format(edge_shapes),
+        )
+        check(
+            "leg 14: and the composite-member column, equally contained, was NOT",
+            "order_ref" not in edge_columns,
+            "overlap-inferred edges were {}".format(edge_shapes),
+        )
+        announce(
+            "leg 14 ok         : buyer_ref->customer_key inferred from overlap; "
+            "order_ref (composite member) excluded"
         )
 
     return report()
@@ -732,8 +973,11 @@ def report() -> int:
     print("")
     print("OK - a real graph, a real warehouse, and real drift on three axes:")
     print("     an edit that travelled to a second checkout and landed there, a")
-    print("     dangling source that named the file declaring it, and a semantic")
-    print("     definition that moved without the warehouse changing.")
+    print("     dangling source that named the file declaring it, a semantic")
+    print("     definition that moved without the warehouse changing, a DECLARED")
+    print("     composite grain refuted by the data beside one that held, and a")
+    print("     join proposed from measured overlap where no name connects the")
+    print("     columns - with a composite member, equally contained, excluded.")
     return 0
 
 

@@ -44,12 +44,12 @@ uv run --no-project --with-editable . --with pytest==8.4.1 \
 
 # 2. the boundary, against the real engine
 uv run --no-project --with-editable . --with pytest==8.4.1 \
-  --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
+  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
   python -m pytest tests --ignore=tests/test_upstream_contract.py
 
 # 3. dex-core's own project contract
 DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
-  --with pytest==8.4.1 --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
+  --with pytest==8.4.1 --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
   python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
 ```
 
@@ -66,7 +66,7 @@ uv run --no-project --with-editable . --with 'dagster>=1.13' \
 
 # the whole loop against a real warehouse: real graph, real drift, real edit
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
-  --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 --with duckdb \
+  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 --with duckdb \
   python examples/walk_the_whole_loop.py
 ```
 
@@ -93,11 +93,11 @@ request, against the built wheel rather than the source tree:
 
 ```bash
 uv run --no-project --with-editable . \
-  --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
+  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
   python scripts/drive_dex_against_the_wheel.py
 
 uv run --no-project --with-editable . \
-  --with exmergo-dex-core==1.7.0 --with sqlglot==30.13.0 \
+  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
   python scripts/drive_the_write_path_against_the_wheel.py
 ```
 
