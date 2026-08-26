@@ -26,9 +26,10 @@ and not a patch (the same reasoning as 0.5.0, one release later).
   declaration now declines with the combination named, where it silently
   discarded the edit before -- and `maintain grain` now verifies grains the
   project *declares* (`declared_grain_not_unique`), reading exactly the
-  `declared_composite_keys` this package has supplied since 0.5.0. The old
-  range admitted 1.8.0 already; the floor bump makes the demonstration below
-  honest, per the coherence guard's minor-alignment rule.
+  `declared_composite_keys` this package has supplied since 0.1.0 -- a field
+  the engine read for nothing until now. The old range admitted 1.8.0 already;
+  the floor bump makes the demonstration below honest, per the coherence
+  guard's minor-alignment rule.
 - **The tested pin is 1.8.0** at every site the coherence guard scans.
 
 **Added.**
@@ -47,6 +48,11 @@ and not a patch (the same reasoning as 0.5.0, one release later).
   reference tree carried no composite grain at all before this: the composite
   case lived only in the conformance builder, which is a fixture, not a
   demonstration.
+
+**Cost to a consumer.** None at the seam. **The engine floor rises to 1.8.0**:
+a consumer on 1.7.x stays on 0.5.0, which is exactly as tested; one already on
+1.8.0 loses nothing and gains a range whose floor matches what was verified.
+That floor is the breaking half and the reason for the minor.
 
 ## 0.5.0 - 2026-08-25
 
