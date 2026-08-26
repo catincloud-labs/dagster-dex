@@ -4,7 +4,7 @@ updates:
   # GitHub Actions only.
   #
   # `pip` is deliberately absent, and this is a decision rather than an
-  # omission. This package's `[dex]` extra pins `exmergo-dex-core~=1.7`, and
+  # omission. This package's `[dex]` extra pins `exmergo-dex-core~=1.8`, and
   # that pin is not housekeeping -- the mapping in `dex.py` targets dex-core's own
   # model, and the version is part of what the package claims to have been
   # verified against. A bot raising that pin would be editing a guarantee, and it

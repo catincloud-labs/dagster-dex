@@ -12,6 +12,42 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
+## 0.6.0 - unreleased
+
+The engine floor moves to the release that closed the grain axis's own blind
+spot, and the whole-loop example gains the two legs that demonstrate what it
+shipped. The seam did not move; the floor did, which is why this is a minor
+and not a patch (the same reasoning as 0.5.0, one release later).
+
+**Changed.**
+
+- **The `[dex]` extra is `~=1.8`, from `~=1.7`.** dex-core 1.8.0 shipped the
+  fix for exmergo/dex#337 -- our filing: a reconcile against a composite-grain
+  declaration now declines with the combination named, where it silently
+  discarded the edit before -- and `maintain grain` now verifies grains the
+  project *declares* (`declared_grain_not_unique`), reading exactly the
+  `declared_composite_keys` this package has supplied since 0.5.0. The old
+  range admitted 1.8.0 already; the floor bump makes the demonstration below
+  honest, per the coherence guard's minor-alignment rule.
+- **The tested pin is 1.8.0** at every site the coherence guard scans.
+
+**Added.**
+
+- **Whole-loop legs 13 and 14** (`examples/walk_the_whole_loop.py`), the first
+  demonstrations of 1.8.0's arrivals against a real warehouse. Leg 13: a
+  declared composite grain the data violates FIRES
+  (`declared_grain_not_unique`, no baseline needed) while one the data
+  satisfies is SILENT in the same call -- and the composite-wins-over-single
+  authoring conflict is read off `ProjectDefinitions.notes`, where this format
+  discloses it. Leg 14: `--infer-by-overlap` proposes a join between columns
+  no name connects, and a column that is only a composite-grain member --
+  equally contained in the same parent -- is NOT proposed. Both legs were run
+  red first against 1.7.0 (leg 13 fails with zero declared findings there),
+  so they demonstrably test the new engine rather than the harness. The
+  reference tree carried no composite grain at all before this: the composite
+  case lived only in the conformance builder, which is a fixture, not a
+  demonstration.
+
 ## 0.5.0 - 2026-08-25
 
 The range moves to the release that fixed our contract gap, and the strongest
