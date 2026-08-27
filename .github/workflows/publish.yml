@@ -13,11 +13,17 @@ name: publish
 #      on PyPI, and an index refuses a version it already holds. A tag cut
 #      without a bump stops at the match gate below, which is the cheap place to
 #      discover it.
-#   2. Tag the merged bump, and push the tag:
-#        git tag v0.1.1 && git push origin v0.1.1
+#   2. Tag the merged bump -- ANNOTATED, with the one-line summary -- and push:
+#        git tag -a v0.1.1 -m "dagster-dex 0.1.1: <summary>; see CHANGELOG.md"
+#        git push origin v0.1.1
 #      `build` runs, then `publish` WAITS on the `pypi` environment's required
 #      reviewer. That pause is the last moment at which nothing has been
 #      uploaded; everything after it is irreversible.
+#      The annotation is load-bearing, not decoration: after the upload the
+#      `release` job below creates the GitHub Release for the tag, and the
+#      annotation's first line is the Release's summary. A lightweight tag
+#      publishes fine and then fails that job, because there is no hand-written
+#      summary to use and a generated one is a claim nobody wrote.
 #
 # REHEARSE FIRST IF THIS FILE CHANGED. `Actions => publish => Run workflow` puts
 # a `.dev<run number>` build on TestPyPI and reads its provenance back. Cheap,
@@ -411,3 +417,92 @@ jobs:
           print(f"verified   : {count} attestation(s) naming this workflow")
           PY
           echo "${INDEX}/project/dagster-dex/" >> "$GITHUB_STEP_SUMMARY"
+
+  # A Release is decoration on a shipped version, not a parallel claim that one
+  # shipped -- so this runs only after `publish` has uploaded AND read the
+  # provenance back. All seven existing Releases (v0.1.0-v0.6.1) were created by
+  # hand in one sitting on 2026-08-27; this job exists so the next one is not a
+  # remembered step (#62). The rehearsal path structurally cannot reach it:
+  # `workflow_dispatch` skips `publish`, and a skipped dependency skips this job
+  # with it -- fitting, since a `.dev` rehearsal has no tag and no changelog
+  # entry to release.
+  #
+  # If this job goes red over a green `publish`, the version IS on PyPI and the
+  # Releases page is one behind: the honest state, same as the provenance
+  # check's. The remedy is a re-run (an existing Release reads as satisfied) or
+  # the by-hand `gh release create` the seven backfilled Releases used.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # The one job in this workflow that may write to the repository, and the
+      # only write it performs is a Release on a tag that already exists
+      # (--verify-tag below refuses to mint one). Scoped here, never on the
+      # workflow block: every other job keeps `contents: read`.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create the Release for this tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+
+          # A re-fired run must treat an existing Release as satisfied rather
+          # than as an error: the contract is "the tag has a Release", which a
+          # previous attempt may already have delivered.
+          if gh release view "$TAG" --json name >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists - satisfied."
+            exit 0
+          fi
+
+          # checkout fetched the commit; the annotation lives on the TAG
+          # OBJECT, so fetch the tag itself before reading it.
+          git fetch --force --depth=1 origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          if [ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]; then
+            echo "::error::${TAG} is a lightweight tag, so no hand-written summary exists for the Release body. Annotate future tags (see the header); for this one, create the Release by hand."
+            exit 1
+          fi
+          SUMMARY="$(git tag -l --format='%(contents:subject)' "$TAG")"
+          if [ -z "$SUMMARY" ]; then
+            echo "::error::${TAG}'s annotation is empty; there is nothing hand-written to use as the summary."
+            exit 1
+          fi
+
+          # The changelog anchor is derived from the real heading, not assumed:
+          # the heading carries the release date, which the tag does not know.
+          # The packaging tests pin the heading's existence before any tag
+          # builds green, so an absence here is a defect, not a race.
+          HEADING="$(grep -m1 "^## ${VERSION} " CHANGELOG.md | sed 's/^## //')"
+          if [ -z "$HEADING" ]; then
+            echo "::error::CHANGELOG.md has no '## ${VERSION} ...' heading to link to."
+            exit 1
+          fi
+          ANCHOR="$(printf '%s' "$HEADING" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9 -]//g; s/ /-/g')"
+
+          # The body LINKS the changelog, never copies it: the changelog is the
+          # living record, and this repository has already corrected an entry
+          # after its release (the 0.6.0 heading date, refs #45) -- a pasted
+          # copy would have frozen the error. Same shape as the seven
+          # hand-created Releases, which state this rule in their own bodies.
+          {
+            printf '%s\n\n' "$SUMMARY"
+            printf 'Full entry: [CHANGELOG.md](https://github.com/%s/blob/main/CHANGELOG.md#%s). Linked on main rather than copied here, so a post-release correction to the entry is reflected rather than frozen.\n\n' "$GITHUB_REPOSITORY" "$ANCHOR"
+            printf 'On PyPI: https://pypi.org/project/dagster-dex/%s/\n' "$VERSION"
+          } > release-body.md
+
+          # --verify-tag: on a missing tag `gh release create` would PUSH one,
+          # and a pushed tag triggers this very workflow. The tag exists (it
+          # started this run), so the flag costs nothing and refuses the one
+          # path that could recurse.
+          if ! gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release-body.md; then
+            if gh release view "$TAG" --json name >/dev/null 2>&1; then
+              echo "Release ${TAG} appeared concurrently - satisfied."
+              exit 0
+            fi
+            echo "::error::Could not create the Release for ${TAG}. ${VERSION} IS published; the Releases page is one behind until this job is re-run or the Release is created by hand."
+            exit 1
+          fi
