@@ -1292,13 +1292,15 @@ class TestPlacement:
 
 
 class TestTheViewTheCallersActuallyRequire:
-    """`load()` is declared by no protocol upstream and required by two callers.
+    """`load()` was declared by no protocol until dex-core 1.7.0 put it on
+    `PlacingProject` (our `exmergo/dex#328`), while two callers required it.
 
     `transform.plans.plan` calls it to pin each edit against the file it would
     change, and `maintain.commands` calls it before reconcile builds a proposal.
-    So a format can satisfy `EditableProject` and `PlacingProject` in full, pass
-    both shipped conformance contracts, and fail at the first real reconcile.
-    These assertions exist because the contract's do not.
+    Before the declaration a format could satisfy `EditableProject` and
+    `PlacingProject` in full, pass both shipped conformance contracts, and fail
+    at the first real reconcile. These assertions predate the contract's and
+    stay: they pin OUR view's shape, which the contract does not.
     """
 
     def test_it_carries_the_files_and_their_hashes(self, tmp_path):

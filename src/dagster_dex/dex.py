@@ -697,13 +697,14 @@ class EditableDexProject(DexProject):
     def load(self) -> Any:
         """The editable files and the place their keys are relative to.
 
-        **Nothing in dex-core's project protocols declares this method**, and two
-        of its callers require it: ``transform.plans.plan`` calls it to pin each
-        edit against the file it would change, and ``maintain.commands`` calls it
-        before reconcile builds a proposal. So a format can satisfy
-        ``EditableProject`` and ``PlacingProject`` in full, pass both shipped
-        conformance contracts, and fail at the first real reconcile. Implemented
-        here because the callers need it, not because the contract asked.
+        **Declared by no protocol until dex-core 1.7.0**, while two callers
+        required it: ``transform.plans.plan`` calls it to pin each edit against
+        the file it would change, and ``maintain.commands`` calls it before
+        reconcile builds a proposal. So a format could satisfy ``EditableProject``
+        and ``PlacingProject`` in full, pass both shipped conformance contracts,
+        and fail at the first real reconcile - filed as ``exmergo/dex#328``, and
+        1.7.0 declared ``load()`` on ``PlacingProject``. This implementation
+        predates the declaration: it exists because the callers need it.
 
         Returns our own :class:`~.protocol.ProjectFileView` rather than dex-core's
         ``DbtProjectView``, which is what routes both callers down their
