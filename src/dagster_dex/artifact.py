@@ -5,11 +5,12 @@ reads it need not be the same process.
 
 **Why this exists at all.** :meth:`~.project.DagsterProject.from_asset_graph`
 reduces a live orchestrator graph, which means the process calling it must be
-able to import that graph. Measured on the real project, that import costs
-**~2.6 s** against a host whose fast commands have a p50 of 0.300 s, and none of
-it is the reduction: it is the orchestrator plus the code location, so neither
-laziness nor caching reaches it (a host that builds a project per command, as
-this seam's contract asks, never holds one long enough to amortize it).
+able to import that graph. That import builds every asset definition in the
+code location, so it costs whole seconds where a file read costs milliseconds,
+and none of it is the reduction: it is the orchestrator plus the code location,
+so neither laziness nor caching reaches it (a host that builds a project per
+command, as this seam's contract asks, never holds one long enough to amortize
+it).
 
 The split this module makes is the answer: **the side that already has the graph
 reduces it once and writes the result down; the side that answers requests reads
@@ -19,7 +20,7 @@ is what the contract asked for in the first place.
 **What it carries, and why so little.** :class:`~.project.DagsterProject` is
 constructed from plain data - reduced models plus three mappings of declaration
 *text*. So that is exactly what an artifact holds. It does **not** hold a
-:class:`~.model.ProjectDeclarations`: parsing is cheap (~21 ms), and a project
+:class:`~.model.ProjectDeclarations`: parsing is cheap, and a project
 rebuilt from its own inputs runs the same parsers, the same cross-checks and the
 same notes as one built from a graph. An artifact of the *outputs* would instead
 be a second implementation of the reduction, free to disagree with the first.

@@ -528,7 +528,8 @@ class DexProject:
     channel, plus ``transform_layer()`` and ``semantic_layer()`` for Maintain, so
     ``tier_of()`` reports 2 and this format can be a drift baseline.
 
-    **Tier 3 is declined, and the reason is narrower than it used to read.** The
+    **Tier 3 is declined on this class, and the reason is narrower than it used
+    to read.** The
     models cannot receive an edit: they are a reduction of a running asset graph,
     whose source of truth is the code that produced it, so writing into the
     reduction would edit something regenerated on the next run. That much stands.
@@ -552,8 +553,9 @@ class DexProject:
     ``exmergo/dex#258``, where the proposed edit paths were hardcoded
     ``models/staging/stg_<table>.{sql,yml}`` literals naming files this project
     does not have. Both are closed, resolved together by ``exmergo/dex#263``,
-    which shipped ``PlacingProject`` in dex-core **1.6.4**. This package pins
-    1.7.0, so the door is open in the version it is tested against.
+    which shipped ``PlacingProject`` in dex-core **1.6.4** - inside every engine
+    version this package has published against since, so the door is open across
+    the supported range.
 
     **The two issues were one seam, and filing them as two is the part worth
     keeping.** The paths reconcile builds are not filesystem paths; they are keys
@@ -566,12 +568,14 @@ class DexProject:
     ``dbt_project.write_edits``. => *Two independent-looking blockers sharing a
     caller are usually one, and building the fix is what finds out.*
 
-    **The tier is still declined here, and that is now a statement about this
-    package rather than about dex.** Implementing the write path remains the
-    work; what changed is that doing it would no longer satisfy the conformance
-    contract and receive nothing, which is the lesson recorded against this
-    package's own entry point in ``pyproject.toml``: an extension point declared
-    before anything exercised it.
+    **The tier is declined here and implemented one class down.** 0.4.0 shipped
+    the write path as :class:`EditableDexProject`, reached when the
+    configuration names a ``declarations:`` directory - somewhere an edit can
+    land. This class stays the read-only arm, so the decline is now a statement
+    about what an artifact alone can honestly offer for editing - nothing -
+    rather than about work not done. The lesson recorded against this package's
+    own entry point in ``pyproject.toml`` still binds either way: an extension
+    point declared before anything exercised it earns nothing.
 
     **History worth keeping, because the mistake was nearly sent to the engine's
     authors.** This docstring once said we *could not* serve ``semantic_layer()``,
@@ -898,7 +902,7 @@ def _project_from_artifact(repo_root: str | None, options: Mapping[str, Any]) ->
 
     The directory has to be read, so it is the declarations. That costs nothing
     the artifact was protecting: ``artifact`` exists because reducing a live graph
-    imports a code location (~2.6 s), and hand-written YAML needs neither an
+    imports a code location, and hand-written YAML needs neither an
     import nor an orchestrator. What the artifact still answers for is the graph -
     models, name, semantics and sources.
 
@@ -1068,7 +1072,7 @@ def project_from_context(context: Any) -> DexProject:
     command rather than holding one, because a stale read is a wrong drift
     report. Reading an artifact is a file read and a YAML parse. Reducing a graph
     means importing a code location, which builds every asset definition in it -
-    measured at ~2.6 s on a real project, which is what ``artifact`` exists to
+    the cost ``artifact`` exists to
     avoid. The import is deferred to this call rather than to module scope.
     """
 

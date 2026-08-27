@@ -109,23 +109,25 @@ regardless. Then it stayed declined because dex could not route an edit to a
 non-dbt format; both blockers this package filed (`exmergo/dex#257`, `#258`)
 closed on 2026-08-11 under our own merged `exmergo/dex#263`.
 
-## `load()` is required by two callers and declared by no protocol
+## `load()` was required by two callers and declared by no protocol - fixed upstream, lesson kept
 
 `transform.plans.plan` calls it to pin each edit against the file it would
 change, and `maintain.commands` calls it before reconcile builds a proposal.
-Neither `EditableProject` nor `PlacingProject` declares it, and neither shipped
-conformance contract exercises it.
+Until dex-core 1.7.0 neither `EditableProject` nor `PlacingProject` declared
+it and no shipped conformance contract exercised it; this package filed that
+as `exmergo/dex#328`, and 1.7.0 declared `load()` on `PlacingProject` (their
+argument: both call sites reach it only for a placing format).
 
-=> **A format can pass every assertion upstream ships and fail at the first real
-reconcile.** `EditableDexProject.load()` exists because the callers need it, not
-because the contract asked. Do not delete it on the grounds that nothing
-declares it.
+=> **The lesson stands even though the gap is closed: a format can pass every
+assertion upstream ships and fail at the first real reconcile.**
+`EditableDexProject.load()` predates the declaration - it exists because the
+callers need it, not because the contract asked.
 
-The conformance suite asserts the decline **negatively** - `not isinstance(project,
-EditableProject)` - so reaching tier 3 by accident is caught rather than
-congratulated. `PlacingProject` is declined the same way and separately, because
-it sits *beside* the tiers rather than inside them: `tier_of() == 2` says nothing
-about it.
+The suite asserts the read-only arm's decline **negatively** - `not
+isinstance(project, EditableProject)` - so reaching tier 3 by accident is caught
+rather than congratulated. `PlacingProject` is declined the same way on that arm
+and separately, because it sits *beside* the tiers rather than inside them:
+`tier_of() == 2` says nothing about it.
 
 ## Sharp edges
 

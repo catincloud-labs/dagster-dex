@@ -879,11 +879,11 @@ def _write_artifact(directory, **overrides):
 class TestTheArtifactPath:
     """Reading a project somebody else reduced.
 
-    The reason this option exists is latency: reducing the real graph costs
-    ~2.6 s because it imports a code location, and a host that builds a project
-    per command pays that on every request. These assertions are about the
-    contract, not the timing -- the timing is measured on the box, by
-    `scripts/measure_project_construction.py`.
+    The reason this option exists is latency: reducing a real graph imports a
+    code location, which builds every asset definition in it, and a host that
+    builds a project per command pays that on every request. These assertions
+    are about the contract, not the timing -- timing is a deployment's own
+    measurement, made where the graph lives.
     """
 
     def test_it_builds_the_same_project_the_graph_would(self, tmp_path):
