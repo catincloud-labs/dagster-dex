@@ -12,6 +12,42 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
+## 0.6.1 - 2026-08-27
+
+Documentation only: no code path changed, the seam did not move, and nothing
+here is breaking. A patch exists because an index is immutable - the
+corrections below landed on `main` the day after 0.6.0 shipped, and an
+installed copy only sees them as a new version.
+
+**Changed.**
+
+- **The shipped docstrings no longer quote private measurements.** `artifact.py`
+  and `dex.py` carried ~2.6 s timings taken against a deployment nobody outside
+  this project can reach. The figures are replaced by the property they
+  illustrated - a live-graph reduction costs an import, whole seconds against a
+  file read's milliseconds - and by where to take the number so it is true:
+  time `dagster definitions list` against your own code location. The README
+  had already made this move; the docstrings had not.
+- **The distribution stopped describing the write tier as declined by
+  design.** The write path shipped in 0.4.0; docstrings and the comment
+  justifying the Alpha classifier in `pyproject.toml` still carried the older
+  claim. Each site is retired in place with a date rather than deleted
+  (#52, #60). The decline that remains - the artifact-only, read-only arm -
+  is real and documented as exactly that.
+- **The README states the format's boundary up front** - one orchestrated
+  asset graph, never a sibling project in another format; where two projects
+  meet, the warehouse is the join - and documents two contracts of the
+  `artifact:` + `declarations:` combination: an empty declarations directory
+  is accepted, because a consumer's provisioning order can create it before
+  its first content, and the directory's parent becoming the project root is
+  a guarantee, stable at least until 1.0.
+- **The artifact-writer sketch in the README is executed by CI**
+  (`examples/write_project_artifact.py` runs the same op body), so its old
+  disclosure that "nothing runs it" is retired along with the gap it
+  described. The schedule *values* stay placeholders on purpose: scheduling
+  is a decision, and a library that made it for you would be wrong in every
+  deployment that differs.
+
 ## 0.6.0 - 2026-08-26
 
 The engine floor moves to the release that closed the grain axis's own blind

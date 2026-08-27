@@ -41,7 +41,7 @@ from .protocol import (
     tier_of,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 # What the write tier needs is here beside what the read tiers need. `tier_of`
 # and `EditableProject` were already exported, so a consumer could ask whether a
