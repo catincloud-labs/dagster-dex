@@ -70,6 +70,13 @@ WHAT EACH LEG IS FOR
      fully contained in the same parent, is NOT proposed, because probing one
      member of a composite measures a different relationship than the whole
      key would.
+ 15. `transform apply` against a TAMPERED stored plan - an edit whose path was
+     rewritten to leave the surface the format declares. The plan store trusts
+     the file it loads (the id is a filename, not a verified digest), so this
+     is exactly the input dex-core 1.7.0's apply-time containment re-check
+     exists for: a hard refusal naming the surface, with `--confirm` on the
+     command line and not a way past it. The quiet arm is leg 7, where the
+     same apply path wrote a contained edit cleanly.
 
 WHAT THIS COVERS OF THE ONE-LINE CLAIM
 
@@ -955,9 +962,63 @@ def main() -> int:
             "order_ref" not in edge_columns,
             "overlap-inferred edges were {}".format(edge_shapes),
         )
-        announce(
+        if not announce(
             "leg 14 ok         : buyer_ref->customer_key inferred from overlap; "
             "order_ref (composite member) excluded"
+        ):
+            return report()
+
+        # -- leg 15: a tampered stored edit is refused AT APPLY, hard ---------
+        #
+        # dex-core 1.7.0 made containment dex's own re-check at apply time: a
+        # stored plan is an artifact that sat through a human review, and what
+        # it was validated against at plan time is not what it is being written
+        # into. The plan store trusts the file it loads - the id is a filename,
+        # not a verified digest - so a stored edit whose path was rewritten to
+        # leave the declared surface is exactly the input the re-check exists
+        # for. A hard refusal, and `--confirm` is not a way past it: that flag
+        # is the handshake for a human edit someone can look at and accept, and
+        # nobody accepts a write outside the surface the format itself
+        # declared. The quiet arm is leg 7 - this same apply path wrote a
+        # CONTAINED edit cleanly - so the gate discriminates rather than
+        # refusing everything.
+        plans_dir = root / ".dex" / "plans"
+        stored = json.loads(
+            (plans_dir / (plan_id + ".json")).read_text(encoding="utf-8")
+        )
+        tampered_id = plan_id[:-4] + (
+            "beef" if not plan_id.endswith("beef") else "f00d"
+        )
+        stored["plan_id"] = tampered_id
+        stored["applied_at"] = None
+        for edit in stored["edits"]:
+            edit["path"] = "declarations_backup/" + edit["path"].rsplit("/", 1)[-1]
+        (plans_dir / (tampered_id + ".json")).write_text(
+            json.dumps(stored), encoding="utf-8"
+        )
+
+        refused = dex(
+            root, "transform", "apply", tampered_id, "--confirm", expect_ok=False
+        )
+        envelope_text = json.dumps(refused)
+        check(
+            "leg 15: the apply refused, with `--confirm` on the command line",
+            refused.get("status") != "ok",
+            "envelope was {}".format(envelope_text[:500]),
+        )
+        check(
+            "leg 15: and the refusal names the SURFACE, not a hash conflict",
+            "outside the editing surface" in envelope_text,
+            "envelope was {}".format(envelope_text[:500]),
+        )
+        check(
+            "leg 15: nothing was written where the tampered path pointed",
+            not (root / "declarations_backup").exists(),
+            "declarations_backup/ exists",
+        )
+        announce(
+            "leg 15 ok         : a stored edit tampered off the surface was "
+            "refused at apply; --confirm was no bypass"
         )
 
     return report()
@@ -977,7 +1038,9 @@ def report() -> int:
     print("     definition that moved without the warehouse changing, a DECLARED")
     print("     composite grain refuted by the data beside one that held, and a")
     print("     join proposed from measured overlap where no name connects the")
-    print("     columns - with a composite member, equally contained, excluded.")
+    print("     columns - with a composite member, equally contained, excluded -")
+    print("     and a stored edit tampered off the declared surface, refused at")
+    print("     the apply gate with confirmation on the command line.")
     return 0
 
 
