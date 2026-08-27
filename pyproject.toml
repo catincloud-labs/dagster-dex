@@ -48,9 +48,12 @@ keywords = ["dagster", "dex", "dbt", "data-quality", "drift", "project-format"]
 #
 # `Development Status :: 3 - Alpha` rather than 4/Beta: the format is verified
 # end to end against a real Dagster graph and passes dex-core's own conformance
-# suite, but it has never been installed by anyone outside this repository and
-# tier 3 is declined by design. Alpha is what "the contract may still move"
-# looks like on a project page.
+# suite, but nothing outside this repository is known to depend on it, and the
+# seam is still a proposal. Alpha is what "the contract may still move" looks
+# like on a project page. (This comment said "tier 3 is declined by design"
+# until 2026-08-27, which had been false since 0.4.0 shipped the write path --
+# the truth pass that retired that claim's four other sites did not reach this
+# file. The Alpha claim never rested on it.)
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
