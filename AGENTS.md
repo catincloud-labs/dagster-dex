@@ -65,6 +65,17 @@ the deployment shape that had it and could not use it. The tier still turns on
 having somewhere for an edit to land; what changed is that the graph is not the
 only way to have one.
 
+**Two directory contracts, stated because consumers build on them.** A missing
+directory is refused by name and an EMPTY one is accepted at the full tier -
+the asymmetry is deliberate (a provisioning order can create the directory
+before its first content arrives; a missing directory means a wrong path, an
+empty one a true state), and tightening the empty arm is a breaking change to
+that order, not a tidier default. And the directory's PARENT is the project
+root - keys are `<directory-name>/<file>` relative to it, downstream tooling
+stores plans relative to it, so changing the derivation relocates every stored
+plan's `project_dir`. Both are pinned in `tests/test_dex_bridge.py`; the pins
+are the guarantee's home, so a change goes red here rather than in a consumer.
+
 **The directory SUPERSEDES the declaration text the artifact carries, and it
 has to. Do not "fix" this into the artifact keeping its declarations.** That was
 proposed first and cannot be built:

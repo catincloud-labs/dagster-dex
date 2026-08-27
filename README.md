@@ -353,6 +353,22 @@ prevent. A missing directory is refused rather than read as "nothing is
 editable": a declined write tier is indistinguishable from a format that never
 had one, so a typo would be silent.
 
+**An empty directory is accepted, and the asymmetry is a contract rather than
+an accident.** A consumer's provisioning order can legitimately create the
+directory before its first content arrives, so first boot depends on empty
+being admitted; the project reaches the write tier with an empty editing view,
+and the view fills as files do. A missing directory means a wrong path; an
+empty one means a true state. Tightening the empty arm into a refusal would be
+a breaking change to that provisioning order, not a tidier default.
+
+**The directory's parent becomes the project root, and that derivation is a
+guarantee (stable at least until 1.0).** Keys are `<directory-name>/<file>`,
+relative to the parent, and downstream tooling stores plans relative to that
+root - so a plan made against one checkout applies against another only
+because both derive the same root from the same configured path. A change here
+relocates every stored plan's `project_dir`; it is pinned by a test in this
+repository so the rule goes red where it lives.
+
 ### Writing one, from the side that has the graph
 
 `dagster_dex.artifact.dump` writes the file. It is deliberately

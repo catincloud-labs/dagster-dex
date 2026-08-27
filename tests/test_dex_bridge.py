@@ -1114,6 +1114,46 @@ class TestAnArtifactWithADeclarationsDirectory:
                 _context(artifact=str(path), declarations=str(tmp_path / "nope"))
             )
 
+    def test_an_empty_directory_is_accepted_at_the_full_tier(self, tmp_path):
+        """The other arm of the refusal above, and it is a CONTRACT, not a gap.
+
+        A consumer's provisioning order can legitimately create the directory
+        before its first content arrives, so first boot depends on empty being
+        admitted: the project reaches the tier with an empty editing view, and
+        the view fills as files do. A missing directory means a wrong path; an
+        empty one means a true state. Tightening this into a refusal is a
+        breaking change to that provisioning order - this test going red is the
+        signal that a consumer's deploy-order argument needs rewriting with it.
+        """
+
+        from exmergo_dex_core.adapters.project import tier_of
+
+        path = _write_artifact(tmp_path)
+        directory = tmp_path / "declared"
+        directory.mkdir()
+        project = project_from_context(
+            _context(artifact=str(path), declarations=str(directory))
+        )
+        assert tier_of(project) == 3
+        assert project.load().files == {}
+
+    def test_the_directory_parent_is_the_project_root(self, tmp_path):
+        """The derivation is a guarantee, stable at least until 1.0.
+
+        Keys are `<directory-name>/<file>` relative to the parent, and
+        downstream tooling stores plans relative to that root - a plan made
+        against one checkout applies against another only because both derive
+        the same root from the same configured path. Changing the derivation
+        relocates every stored plan's project_dir; this pin is where the rule
+        goes red.
+        """
+
+        path, directory = _artifact_with_a_directory(tmp_path)
+        project = project_from_context(
+            _context(artifact=str(path), declarations=str(directory))
+        )
+        assert project.load().root == str(directory.parent)
+
     def test_the_edit_lands_in_the_directory_that_was_named(self, tmp_path):
         """Placement has to name the directory given here, not the one an
         `assets:` project would have had. The key it returns is what the surface
