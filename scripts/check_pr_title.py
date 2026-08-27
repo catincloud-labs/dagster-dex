@@ -3,26 +3,32 @@
 
 WHY THIS EXISTS. A pull-request title is a git artifact: the estate merges with
 merge commits, so the title is what `git log` and every future `#N` citation
-resolve to. The convention (`type(scope): summary`) held unwritten across 250 of
-the estate's first 270 pull requests, then vanished inside one day -- gs #106-#108
-and const #120 shipped full-sentence titles with no type. An unwritten convention
-holds exactly as long as the sessions that remember it, and a rule that lives
-only in prose is not a control; this file is the control.
+resolve to. The convention (`type(scope): summary`) held unwritten across almost
+every early pull request, then vanished inside one day once nothing but memory
+carried it. An unwritten convention holds exactly as long as the sessions that
+remember it, and a rule that lives only in prose is not a control; this file is
+the control.
 
-WHAT IT ASSERTS, each calibrated against the 250-title good corpus (2026-08-23)
-so history's legitimate shapes stay legal:
+WHAT IT ASSERTS, each rule calibrated against the estate's pre-guard title
+corpus so history's legitimate shapes stay legal. The corpus -- its dates, its
+numbers and the titles themselves -- lives in CALIBRATION.md beside this file's
+canonical copy and deliberately does NOT travel with it: this file is vendored
+byte-identical into public repositories, and a measurement a stranger cannot
+re-run stays where it was taken. Do not tighten a rule here without re-running
+that calibration:
 
   1. The title starts `type(scope): ` -- type one of TYPES, scope optional
      lowercase [a-z0-9._-], an optional `!` for a breaking change.
   2. The summary does not open with a CAPITALIZED ORDINARY WORD (`^[A-Z][a-z]+$`).
-     Strict lowercase would refuse eleven legitimate corpus titles that open with
-     identifiers -- `RATION_DEPLOY_KEY's`, `ADR-0026`, `.github-private`, bare
-     `I` -- so the rule refuses sentence case specifically, which is what the
-     drift actually looked like. One corpus title fails it: Dependabot's `Bump`,
-     and Dependabot is exempted BY AUTHOR below, not by teaching the rule that
-     capitalized words are fine.
-  3. At most 100 characters. The corpus runs median 69, p90 85, max 105; the cap
-     admits everything but the one outlier, which is history, not precedent.
+     Strict lowercase would refuse legitimate corpus titles that open with
+     identifiers -- an ALL_CAPS name and its possessive, an `ADR-0001`-style
+     reference, a dotfile, bare `I` -- so the rule refuses sentence case
+     specifically, which is what the drift actually looked like. Dependabot's
+     `Bump` shape fails it, and Dependabot is exempted BY AUTHOR below, not by
+     teaching the rule that capitalized words are fine.
+  3. At most 100 characters -- a cap set from the corpus's length distribution,
+     generous to every real shape and refusing only headline-plus-sentence
+     titles.
   4. No trailing period. The title is a headline, not a sentence; the sentence
      belongs in the body.
 
@@ -37,7 +43,7 @@ can see applied is indistinguishable from a gate that did not fire:
     without that author is refused.
 
 WHAT IT DELIBERATELY DOES NOT DO. It does not judge the summary's content, and
-"one clause" stays prose: the good corpus is full of comma-joined clauses that
+"one clause" stays prose: history is full of comma-joined clauses that
 read fine, so a mechanical clause count would refuse history to no gain. Issue
 titles carry the same convention in AGENTS.md but nothing gates issue creation;
 this guard binds the surface CI can reach.
@@ -63,7 +69,7 @@ PREFIX = re.compile(
 )
 
 #: A capitalized ordinary word: sentence case, the drift's actual shape.
-#: `RATION_DEPLOY_KEY's` / `ADR-0026` / `.github-private` / bare `I` all miss
+#: `CI_DEPLOY_KEY's` / `ADR-0001` / `.gitattributes` / bare `I` all miss
 #: this pattern on purpose -- an identifier is not a sentence opener.
 SENTENCE_CASE = re.compile(r"^[A-Z][a-z]+$")
 
@@ -96,7 +102,7 @@ def judge(title: str, author: str = "") -> list[str]:
         if SENTENCE_CASE.fullmatch(first):
             problems.append(
                 f"the summary opens with a capitalized ordinary word ('{first}') -- sentence case. "
-                "Lowercase it; identifiers (RATION_DEPLOY_KEY, ADR-0026, .github-private) are fine as they are."
+                "Lowercase it; identifiers (CI_DEPLOY_KEY, ADR-0001, .gitattributes) are fine as they are."
             )
         if summary.rstrip().endswith("."):
             problems.append(
@@ -104,7 +110,7 @@ def judge(title: str, author: str = "") -> list[str]:
             )
     if len(title) > MAX_LEN:
         problems.append(
-            f"{len(title)} characters; the cap is {MAX_LEN}. The corpus runs median 69 -- "
+            f"{len(title)} characters; the cap is {MAX_LEN} -- "
             "move the second clause into the body."
         )
     return problems
@@ -133,30 +139,32 @@ def main() -> int:
 
 
 def self_test() -> int:
-    """Calibrate both polarities. Every fixture below is verbatim from the cited
-    pull request, except the four marked (constructed) -- each of those exists to
-    pin a rule no historical title happens to exercise."""
+    """Calibrate both polarities. Every fixture below is constructed to pin one
+    rule. The historical titles the rules were originally calibrated against --
+    including the verbatim fixtures this list once carried -- are recorded in
+    CALIBRATION.md beside this file's canonical copy; each historical shape is
+    still pinned here by a constructed equivalent."""
     passes = [
         # (title, author) -- the identifier shapes strict-lowercase would refuse:
-        ("docs: RATION_DEPLOY_KEY's needed-on-every-run claim died with its consumer", ""),   # gs #100
-        ("docs: .github-private is designated, and that setting cannot be verified", ""),     # const #7
-        ("docs: I corrected the same claim in three places and left the fourth", ""),         # const (I is not sentence case)
-        ("chore(deps): bump packaging from 24.0 to 26.3 in /tests/canary", ""),               # gs #102
-        ("probe: move the catalyst published image path, to be reverted immediately", ""),    # gs #24
-        ("fix(env): the writer names the identity it authenticates as", ""),                  # gs 41765d1
-        ('Revert "feat(role): watch the role from outside the process that announces it"', ""),  # (constructed) GitHub's shape
-        ("build(deps-dev): Bump pytest from 8.4.1 to 9.0.3", "dependabot[bot]"),              # wb, exempt BY AUTHOR
+        ("docs: CI_DEPLOY_KEY's rotation is recorded where it happens", ""),          # ALL_CAPS possessive opener
+        ("docs: .gitattributes is the enforcement, not the convention", ""),          # dotfile opener
+        ("docs: I corrected the claim in three places", ""),                          # bare I is not sentence case
+        ("chore(deps): bump packaging from 24.0 to 26.3 in /tests", ""),              # scoped, ordinary lowercase
+        ("probe: move the published image path, to be reverted immediately", ""),     # probe type, comma-joined clause
+        ("fix(env): the writer logs the identity it authenticates as", ""),           # plain fix with scope
+        ('Revert "feat(ci): judge the title from the environment"', ""),              # GitHub's own revert shape
+        ("build(deps-dev): Bump pytest from 8.4.1 to 9.0.3", "dependabot[bot]"),      # exempt BY AUTHOR
     ]
     refusals = [
         # (title, author, a word the refusal must NAME) -- cause named, not just red:
-        ("The wait reads its population from the target commit too, parsed not sourced", "", "prefix"),  # gs #108
-        ("Workbench pin sweep to 15cf988", "", "prefix"),                                     # gs #106
-        ("Nineteen claims lose their present tense, and the drift check arrives", "", "prefix"),  # const #120
-        ("build(deps-dev): Bump pytest from 8.4.1 to 9.0.3", "", "capitalized"),              # same title, NO exempt author
-        ("docs: The claims lose their present tense", "", "capitalized"),                     # (constructed) sentence case behind a prefix
-        ("fix: the trailing period arrives.", "", "period"),                                  # (constructed)
-        ("feat(adr-preconditions): a scope list is compared against the computed population, red in both directions, again", "", "characters"),  # (constructed) 112 chars, measured
-        ("Fix: the type must be lowercase", "", "prefix"),                                    # (constructed via case)
+        ("The title rule was held by prose alone", "", "prefix"),                     # full-sentence drift shape
+        ("Pin sweep to a new baseline", "", "prefix"),                                # short headline, no type
+        ("Sentence case arrived and nothing refused it", "", "prefix"),               # the drift, verbatim in spirit
+        ("build(deps-dev): Bump pytest from 8.4.1 to 9.0.3", "", "capitalized"),      # same title, NO exempt author
+        ("docs: The summary opens with sentence case", "", "capitalized"),            # sentence case behind a prefix
+        ("fix: the trailing period arrives.", "", "period"),
+        ("feat(adr-preconditions): a scope list is compared against the computed population, red in both directions, again", "", "characters"),  # 112 chars, measured
+        ("Fix: the type must be lowercase", "", "prefix"),                            # capitalized type
     ]
 
     failed = 0
