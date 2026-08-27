@@ -426,7 +426,10 @@ Four things in that sketch are not incidental:
   stale artifact, and a stale project is a wrong drift report rather than an
   absent one.
 
-**This snippet is prose and nothing runs it**, which is a real cost and is
-stated rather than hidden: `examples/reduce_asset_graph.py` is executed by CI and
-this is not. It is here because scheduling is a decision, and a library that made
-it for you would be wrong in every deployment that differs.
+**The sketch's mechanics are executed by CI** -
+`examples/write_project_artifact.py` runs the same op body against a real
+graph, executes the job in process, reads the artifact back, and constructs
+the schedule, so the code above cannot silently rot. What CI deliberately does
+not decide is the schedule *values*: scheduling is a decision, and a library
+that made it for you would be wrong in every deployment that differs - which
+is why the sketch stays here, with placeholders, as user code.

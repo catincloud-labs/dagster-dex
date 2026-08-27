@@ -149,7 +149,8 @@ against its source.
 - Bug fixes with a test that fails without them.
 - A new leg in `examples/walk_the_whole_loop.py` for a case the loop does not
   reach yet. (This bullet used to say a runnable example was the clearest gap;
-  `examples/` now holds two, both executed by CI.)
+  every file in `examples/` is now executed by CI - and briefly said "two",
+  a count the next example moved.)
 - Support for asset-graph shapes the reduction handles badly.
 - Arguments, in an issue, about the tier boundaries. Where the write tier's
   scope sits - hand-written declarations can receive an edit, reduced models
