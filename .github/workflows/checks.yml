@@ -194,13 +194,16 @@ jobs:
   # a human running a matrix by hand at each release and remembering to. A step
   # that has to be remembered is not a control.
   #
-  # WHAT IS DELIBERATELY *NOT* RUN, so a green matrix does not imply it: the
-  # CROSS-PRODUCT. The Python axis runs the engine-free suite only, and the
-  # engine axis runs one interpreter only. So "the floor of the engine range on
-  # the newest interpreter" is untested here. That is a cost, stated, not an
-  # oversight - the two axes cover the two promises independently, and the
-  # product would quadruple the job count to cover combinations no consumer has
-  # reported needing.
+  # THE CROSS-PRODUCT IS ONE NAMED CELL, NOT A MATRIX. The engine axis below
+  # runs on the NEWEST CLAIMED interpreter - `--python` on its steps, moved
+  # together with the `python-floor` list when a version is added there - so
+  # its cells are "the ends of the published range on the newest interpreter",
+  # which is the cell this header used to name as deliberately untested. The
+  # REST of the product is still not run, stated rather than left for a green
+  # matrix to imply: the intermediate interpreters never meet the engine here
+  # (3.10 cannot at all - dex-core's own floor is 3.11), and quadrupling the
+  # job count for combinations no consumer has reported needing is still the
+  # wrong trade.
   # ---------------------------------------------------------------------------
 
   # The engine range, resolved rather than listed. See the long docstring in
@@ -302,9 +305,12 @@ jobs:
         with:
           enable-cache: true
 
+      # `--python 3.13` is the cross-product cell: the newest interpreter the
+      # `python-floor` list claims, named here rather than inherited from
+      # whatever the runner resolves. Move it when that list gains a version.
       - name: Boundary runs against this end of the range
         run: |
-          uv run --no-project --with-editable . \
+          uv run --no-project --python 3.13 --with-editable . \
             --with pytest==8.4.1 \
             --with exmergo-dex-core==${{ matrix.version }} --with sqlglot==30.13.0 \
             python -m pytest tests --ignore=tests/test_upstream_contract.py
@@ -317,7 +323,7 @@ jobs:
         env:
           DEX_UPSTREAM_CONTRACT_REQUIRED: "1"
         run: |
-          uv run --no-project --with-editable . \
+          uv run --no-project --python 3.13 --with-editable . \
             --with pytest==8.4.1 \
             --with exmergo-dex-core==${{ matrix.version }} --with sqlglot==30.13.0 \
             python -m pytest tests/test_upstream_contract.py -p no:cacheprovider

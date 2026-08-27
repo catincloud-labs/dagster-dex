@@ -334,10 +334,13 @@ release. A step that has to be remembered is not a control, so both are now jobs
   not a pin, so templating those steps would have shrunk that guard's corpus by
   two sites with no count changing to show it.
 
-**The cross-product is deliberately not run**, and the workflow says so: the
-Python axis runs the engine-free suite only, the engine axis runs one
-interpreter only, so "the floor of the range on the newest interpreter" is
-untested. Stated rather than left for a green matrix to imply.
+**The cross-product is one named cell, not a matrix**: the engine axis runs on
+the newest claimed interpreter (`--python` on its steps, moved together with
+the `python-floor` list), so "the floor of the range on the newest
+interpreter" - the cell this paragraph used to name as deliberately untested -
+runs on every push. The rest of the product stays not run: the intermediate
+interpreters never meet the engine here, stated rather than left for a green
+matrix to imply.
 
 **The job named `tests` is an aggregate, and the name is load-bearing.** It is a
 required status check on an organisation ruleset, matched by context string. A
