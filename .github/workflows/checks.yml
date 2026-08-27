@@ -388,6 +388,17 @@ jobs:
           uv run --no-project --with-editable . --with 'dagster>=1.13' \
             python examples/reduce_asset_graph.py
 
+      # The README's scheduled-artifact sketch used to be prose nothing ran,
+      # and said so as a stated cost. This is that sketch's mechanics executed:
+      # the op body against a real graph, the job in process, the artifact read
+      # back, the schedule constructed. The schedule VALUES stay the reader's
+      # decision - which is why the sketch remains in the README and this runs
+      # beside it rather than replacing it.
+      - name: The scheduled-artifact sketch's mechanics execute
+        run: |
+          uv run --no-project --with-editable . --with 'dagster>=1.13' \
+            python examples/write_project_artifact.py
+
       # The step above stops at the reduction, and the two drivers under
       # `scripts/` reach the write tier with FAKE asset objects and a fabricated
       # drift finding. So until this step existed, nothing here put a real graph
