@@ -434,11 +434,13 @@ found.
   cites as `#N`; the full sentence belongs in the body. Issues take the type
   their fix would take; an issue arguing a fork rather than naming work is
   `argument:`. Probe PRs say `probe:` - a type, not an exemption.
-  - The estate's `pr-title` guard cannot run here: a public repository cannot
-    resolve an action in a private one (the same measured property that put
-    the vendored-copy drift check in `workbench`). The rule is held by this
-    text and by review - stated, so the gap is a decision rather than an
-    accident.
+  - The estate's `pr-title` guard could not run here as a shared action (a
+    public repository cannot resolve an action in a private one), so the rule
+    was held by this text alone until 2026-08-27. It is now vendored the same
+    way the other two checks crossed the boundary: `scripts/check_pr_title.py`
+    plus the `pr title` job in `checks.yml`, byte-compared from the private
+    side, advisory rather than ruleset-required. Do not edit the vendored copy
+    here.
 - **Never put a `close` / `fix` / `resolve` verb immediately before `#N`** in a
   commit message or PR body unless you mean it - including inside backticks, and
   including in a sentence warning against it. Only *adjacency* fires, so "part of
