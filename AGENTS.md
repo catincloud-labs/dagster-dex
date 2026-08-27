@@ -490,12 +490,15 @@ say it better. Use `=>` for an arrow and `...` for an ellipsis.
   `MD013` (line length) and `MD041` (first line must be a top-level heading) -
   `MD041` because the GitHub templates under `.github/` correctly do not start
   with an H1.
-  - **`MD024` is ON, and it collides with a changelog.** `siblings_only` is not
-    set, so a second release section carrying `### Added` is an error even though
-    every changelog convention repeats it. Only `0.3.0` uses `###` sub-headings;
-    every section since uses bold lead-ins instead. Fixing it properly means a
-    local `.markdownlint.json`, and a local file **outranks** the shared one
-    entirely - so it would have to restate `MD013` and `MD041` too, which is two
-    copies of a decision. Left as a known cost rather than paid that way.
+  - **`MD024` collided with a changelog until 2026-08-27, when the estate
+    default paid it at the source.** `siblings_only` is now set in the shared
+    config and in this vendored copy, so a second release section carrying
+    `### Added` lints clean while the same heading twice under ONE parent
+    still fires. The fix deliberately did not go through a local root
+    `.markdownlint.json`: a local file **outranks** the shared one entirely,
+    so it would have had to restate `MD013` and `MD041` too - two copies of a
+    decision, which is why this sat as a known cost instead. Historical
+    changelog sections keep their bold lead-ins (history does not change);
+    new entries may use real sub-headings again.
 - **Never put a number in a document that something else can change.** A test
   count, an export count, a timing - cite the command instead.
