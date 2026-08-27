@@ -44,6 +44,13 @@ design argument concrete enough to disagree with: an asset graph is a perfectly
 good source of project truth, and reading one does not require it to pretend to
 be a dbt project first.
 
+One boundary, stated up front: this format describes **one orchestrated asset
+graph**. It does not describe, and will not absorb, a sibling project in
+another format - two formats each describing the same warehouse table is
+exactly the duplication this package's design argument rejects. Where
+two projects meet, the warehouse is the join: each describes what it builds,
+and lineage across them is read from the tables, not from either project.
+
 ## The seam, in three tiers
 
 | Tier | Adds | A format implements it when |

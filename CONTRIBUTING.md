@@ -147,10 +147,13 @@ against its source.
 ## What is likely to be accepted
 
 - Bug fixes with a test that fails without them.
-- A runnable example - there currently isn't one, and it is the clearest gap.
+- A new leg in `examples/walk_the_whole_loop.py` for a case the loop does not
+  reach yet. (This bullet used to say a runnable example was the clearest gap;
+  `examples/` now holds two, both executed by CI.)
 - Support for asset-graph shapes the reduction handles badly.
-- Arguments, in an issue, about the tier boundaries. Tier 3 is declined for a
-  stated reason, and the reason is arguable.
+- Arguments, in an issue, about the tier boundaries. Where the write tier's
+  scope sits - hand-written declarations can receive an edit, reduced models
+  cannot - is a stated position, and positions are arguable.
 
 ## What to discuss first
 

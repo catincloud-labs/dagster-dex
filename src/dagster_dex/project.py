@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """A project whose source of truth is an orchestrated asset graph.
 
-This implements tiers 1 and 2 and deliberately not tier 3. For the MODELS the
-reason is structural rather than a preference: the source of truth is the Python
+This implements all three tiers, and the write tier is scoped to what can
+honestly receive an edit. For the MODELS that is nothing, and the reason is
+structural rather than a preference: the source of truth is the Python
 that builds the graph, so an edit written back into this project's reduction
 would be an edit to something regenerated from elsewhere - overwritten on the
 next run, and misleading in review in the meantime.
@@ -15,12 +16,14 @@ they are a real editable source of truth. The tier stayed declined because dex
 could not route an edit to it, which is a different claim from being unable to
 receive one.
 
-**That reason expired on 2026-08-11.** Both upstream blockers are closed, and
-the write path is open to a second format in the dex-core version this package
-pins - see ``dex.DexProject``, which carries the detail and the two further
-gates the fix uncovered. The tier is still declined, and the decline is now a
-statement about work this package has not done rather than about a door dex
-holds shut.
+**That reason expired on 2026-08-11, and the work landed in 0.4.0.** Both
+upstream blockers are closed - see ``dex.DexProject``, which carries the detail
+and the two further gates the fix uncovered - and :class:`EditableDagsterProject`
+in this module is the write path: it exists when the hand-written declarations
+exist as files on disk, somewhere an edit can land. The decline survives only
+where it was always structural: a project whose declarations arrive as text
+with no directory behind them stays :class:`DagsterProject`, tier 2, because
+an edit with nowhere to land is a promise, not a capability.
 
 **The core takes plain data.** :class:`DagsterProject` is constructed from
 models and declaration text, so it needs neither an orchestrator nor an engine

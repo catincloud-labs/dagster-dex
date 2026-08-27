@@ -879,11 +879,11 @@ def _write_artifact(directory, **overrides):
 class TestTheArtifactPath:
     """Reading a project somebody else reduced.
 
-    The reason this option exists is latency: reducing the real graph costs
-    ~2.6 s because it imports a code location, and a host that builds a project
-    per command pays that on every request. These assertions are about the
-    contract, not the timing -- the timing is measured on the box, by
-    `scripts/measure_project_construction.py`.
+    The reason this option exists is latency: reducing a real graph imports a
+    code location, which builds every asset definition in it, and a host that
+    builds a project per command pays that on every request. These assertions
+    are about the contract, not the timing -- timing is a deployment's own
+    measurement, made where the graph lives.
     """
 
     def test_it_builds_the_same_project_the_graph_would(self, tmp_path):
@@ -1292,13 +1292,15 @@ class TestPlacement:
 
 
 class TestTheViewTheCallersActuallyRequire:
-    """`load()` is declared by no protocol upstream and required by two callers.
+    """`load()` was declared by no protocol until dex-core 1.7.0 put it on
+    `PlacingProject` (our `exmergo/dex#328`), while two callers required it.
 
     `transform.plans.plan` calls it to pin each edit against the file it would
     change, and `maintain.commands` calls it before reconcile builds a proposal.
-    So a format can satisfy `EditableProject` and `PlacingProject` in full, pass
-    both shipped conformance contracts, and fail at the first real reconcile.
-    These assertions exist because the contract's do not.
+    Before the declaration a format could satisfy `EditableProject` and
+    `PlacingProject` in full, pass both shipped conformance contracts, and fail
+    at the first real reconcile. These assertions predate the contract's and
+    stay: they pin OUR view's shape, which the contract does not.
     """
 
     def test_it_carries_the_files_and_their_hashes(self, tmp_path):
