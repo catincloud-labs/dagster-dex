@@ -12,7 +12,7 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
-## 0.6.0 - unreleased
+## 0.6.0 - 2026-08-26
 
 The engine floor moves to the release that closed the grain axis's own blind
 spot, and the whole-loop example gains the two legs that demonstrate what it
