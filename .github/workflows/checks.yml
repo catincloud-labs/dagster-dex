@@ -183,6 +183,37 @@ jobs:
           exit 1
 
 
+  # Vendored for the same reason as the two jobs above it: this public
+  # repository cannot resolve the private shared action, and the rulesets it
+  # answers to match on context strings a local job can carry. Unlike those
+  # two this context is NOT required by any ruleset -- the gate is advisory
+  # red, which is still more than the prose that held the rule alone until
+  # now (a convention held only by text died estate-wide in a day once, and
+  # that measurement is why the guard exists).
+  #
+  # `scripts/check_pr_title.py` is a byte-identical copy of the guard in the
+  # private shared repository, compared from the private side like the other
+  # vendored files -- do not edit it here. The self-test runs first, so a
+  # checker that silently stopped detecting anything cannot pass a title.
+  pr-title:
+    name: pr title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Guard fires and goes quiet
+        run: python scripts/check_pr_title.py --self-test
+
+      # The title reaches the script through the environment, never
+      # interpolated into shell -- a title is attacker-adjacent text on a
+      # public repository.
+      - name: Judge the title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR"
+
   # ---------------------------------------------------------------------------
   # THE JOB NAMED `tests` IS THE AGGREGATE AT THE BOTTOM OF THIS FILE, NOT A
   # SUITE. Read the note on it before renaming anything here.

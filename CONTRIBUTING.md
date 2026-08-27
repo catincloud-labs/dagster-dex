@@ -140,9 +140,11 @@ against its source.
   deliberate. Only *adjacency* fires - "part of #N" and "refs #N" are safe.
   CI checks the same thing over the PR body, so forgetting the hook is caught,
   just later.
-- **`scripts/check_closing_keywords.py` is a vendored copy** of a shared guard,
-  present so the hook works offline. CI diffs it against its source and fails on
-  drift, so please do not edit it here.
+- **`scripts/check_closing_keywords.py` and `scripts/check_pr_title.py` are
+  vendored copies** of shared guards - the first so the hook works offline, the
+  second because a public repository cannot call the private shared action.
+  Both are diffed against their sources from the private side, which fails on
+  drift, so please do not edit either here.
 
 ## What is likely to be accepted
 
