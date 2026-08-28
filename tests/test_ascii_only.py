@@ -52,6 +52,11 @@ VENDORED = frozenset(
     {
         "scripts/check_closing_keywords.py",
         "scripts/test_check_closing_keywords.py",
+        # The verification-section checker, vendored at the wb #23 step-4
+        # adoption. Same argument as the two above: compared byte-for-byte
+        # against its private source by the drift job, so reformatting it to
+        # ASCII here would be drift by construction.
+        "scripts/check_verification_section.py",
     }
 )
 
