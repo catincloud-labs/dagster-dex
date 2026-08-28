@@ -335,10 +335,43 @@ def extract_section(body: str) -> str | None:
 
 
 def _field(section: str, pattern: re.Pattern[str]) -> str | None:
-    for line in section.splitlines():
+    """The field's value: the label line's own remainder — or, when the label
+    stands alone on its line, the lines that follow it, up to the next label
+    or heading.
+
+    The follow-on half exists because the estate's PR templates preprint the
+    bare label (``**Dev:**``) and instruct pasting verbatim output BELOW it.
+    Reading the label line alone scored exactly that shape as missing — a
+    false red on a body full of evidence, observed live on an adopter's
+    first template-shaped body (2026-08-28; wb #52). The template-side
+    fixes both fail: a same-line placeholder substantial enough to satisfy
+    the gate lets an UNEDITED template pass (fail-open), and instructing
+    authors to keep the value on the label line trains one-line prose
+    summaries instead of verbatim output — the hollow compliance this
+    module's docstring warns against.
+
+    A line inside pasted output that itself looks like a heading or label
+    stops the collection early; the value gathered up to that point still
+    counts, so real evidence keeps passing and an empty section still fails.
+    """
+
+    lines = section.splitlines()
+    for i, line in enumerate(lines):
         m = pattern.match(line)
-        if m:
-            return m.group("value").strip()
+        if not m:
+            continue
+        value = m.group("value").strip()
+        if value:
+            return value
+        following: list[str] = []
+        for after in lines[i + 1 :]:
+            if _NEXT_HEADING_RE.match(after) or any(
+                label.match(after)
+                for label in (_DEV_RE, _PROD_RE, _DISCRIMINATOR_RE)
+            ):
+                break
+            following.append(after)
+        return "\n".join(following).strip()
     return None
 
 
@@ -443,9 +476,37 @@ _NA_WITH_REASON = """## Verification
 **Prod:** N/A - nothing is wired yet, so no route reaches this code and there is no wire-visible change to observe.
 """
 
+#: The shape every estate PR template propagates: the bare label on its own
+#: line, verbatim output pasted below it. Scored as missing until wb #52.
+_TEMPLATE_SHAPED = """## Verification
+
+**Dev:**
+
+```
+> uv run pytest -q
+864 passed in 0.31s
+```
+
+**Prod:** `GET /maintain/schema` 200 in 5.65s on the deployed image; ledger untouched.
+**Discriminator:** `maintain_in_process_enabled` logs the post-#436 wording, absent from the old image.
+"""
+
+#: The same shape with nothing pasted — an unedited template must still fail,
+#: which is why the fix lives here and not in a template placeholder.
+_UNEDITED_TEMPLATE = """## Verification
+
+**Dev:**
+
+## Issue references
+
+Part of #
+"""
+
 _CASES: list[tuple[str, str, list[str], bool]] = [
     ("complete", _GOOD, _RUNTIME, True),
     ("n/a with a reason", _NA_WITH_REASON, _RUNTIME, True),
+    ("template-shaped: evidence below the bare label", _TEMPLATE_SHAPED, _RUNTIME, True),
+    ("unedited template is still refused", _UNEDITED_TEMPLATE, _RUNTIME, False),
     ("docs-only change is not gated", "no section at all", _DOCS, True),
     ("test-only change is not gated", "no section at all", _TESTS, True),
     ("no section", "Some body text.", _RUNTIME, False),
@@ -488,6 +549,18 @@ _OPTIONAL_CASES: list[tuple[str, str, list[str], bool]] = [
         "## Verification\n\n**Dev:** ran the whole suite, 864 passed.\n",
         _RUNTIME,
         True,
+    ),
+    (
+        "dev-only, template-shaped: evidence below the bare label",
+        "## Verification\n\n**Dev:**\n\n```\n> uv run pytest -q\n864 passed in 0.31s\n```\n",
+        _RUNTIME,
+        True,
+    ),
+    (
+        "dev-only unedited template is still refused",
+        "## Verification\n\n**Dev:**\n",
+        _RUNTIME,
+        False,
     ),
     ("complete body still passes", _GOOD, _RUNTIME, True),
     ("n/a with a reason still passes", _NA_WITH_REASON, _RUNTIME, True),
