@@ -1,0 +1,67 @@
+name: pr-hygiene
+
+# A separate workflow for ONE reason, the same one every estate pr-hygiene
+# carries: `types:` is a workflow-level key, and this is the only job that must
+# re-run when a PR **body** changes -- the default `pull_request` types omit
+# `edited`, so a body edited after opening would never be re-scored.
+#
+# The job id below MUST stay `pr-hygiene`. A required-check context for an
+# Actions job is the JOB name; a rename does not fail -- the check simply never
+# reports, and a check that never reports never blocks a merge.
+#
+# VENDORED, not shared: this repository is public and the estate's shared
+# actions live in a private repository it cannot resolve, so the checker runs
+# from `scripts/check_verification_section.py` -- the same vendored-copy
+# pattern as `scripts/check_closing_keywords.py` beside it, and held unmodified
+# the same way: the private repository's `vendored copies` job diffs every
+# public copy against its canonical file and fails on drift. Do not edit the
+# copy here; fix the canonical file and re-vendor.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: pr-hygiene-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # Checkout is load-bearing here, unlike the shared-action callers: the
+      # vendored checker is read from this repository's tree.
+      - uses: actions/checkout@v4
+
+      # Self-test FIRST, and it must be able to go red: a verification gate
+      # that silently stopped matching is indistinguishable from a
+      # well-verified PR.
+      - name: Self-test the verification-section checker
+        run: python3 scripts/check_verification_section.py --self-test
+
+      # Dev-required / Prod-not-required: no box observes a library, and a
+      # field that is structurally always N/A trains the reflex of writing
+      # N/A. A `Prod:` line that IS present is still validated in full.
+      #
+      # Two separate `gh` calls, never a pipe into python3 -- a pipe reports
+      # the tail's exit code and would hide a failed `gh` behind a green
+      # check. GH_REPO names the target explicitly rather than relying on the
+      # checkout's remote.
+      - name: Assert the PR says how it was verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh pr view "$PR" --json body --jq '.body // ""' > "$RUNNER_TEMP/body.txt"
+          gh pr view "$PR" --json files --jq '.files[].path' > "$RUNNER_TEMP/files.txt"
+          echo "changed files:"; cat "$RUNNER_TEMP/files.txt"
+          python3 scripts/check_verification_section.py "$RUNNER_TEMP/body.txt" \
+            --changed-files "$RUNNER_TEMP/files.txt" --label "PR #$PR body" \
+            --no-require-prod
