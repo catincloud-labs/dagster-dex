@@ -783,25 +783,50 @@ class TestTheWriteTierOverTheArtifactTransport(TestTheWriteTierAgainstDexCore):
         return _an_edit_against_a_changed_target(_artifact_backed(declaring=True))
 
 
-#: **This is empty, and it was two entries until 2026-08-18.** Every conformance
-#: contract dex-core ships is now mixed in, so there is nothing left to excuse.
-#:
-#: Kept rather than deleted along with its entries, for the half of the test
-#: below the entries were never the point of: a contract upstream ADDS arrives
+#: **This was empty from 2026-08-18 until dex-core 1.9.0 shipped, and the guard
+#: below caught the new arrival on the release day** - which is the half of the
+#: test the entries were never the point of: a contract upstream ADDS arrives
 #: silently, because one nobody mixes in runs no assertions and is invisible to a
-#: suite that counts what ran. An empty mapping is the honest state, and the name
-#: still has to exist for the check to have something to read.
+#: suite that counts what ran. 1.6.4's `PlacingProjectContract` arrived exactly
+#: that way and was noticed by hand; 1.9.0's `SemanticCatalogContract` was
+#: noticed by this test going red, working as designed.
 #:
 #: History worth keeping, since it is the defect this repository names most
-#: often. Both entries were stale and one had been RETRACTED IN THE CODE: this
-#: mapping said tier 3 was declined "structurally" because a reduction has no
-#: source of truth that can receive an edit, which is the exact claim
-#: `DexProject`'s docstring withdrew on 2026-08-09. A decline that cannot say why
-#: is indistinguishable from an oversight; a decline contradicting the module it
-#: describes is worse, because it reads as a second opinion rather than as a
-#: stale copy. => A prose field is not exempt from the rule about two copies of a
-#: claim.
+#: often. The two pre-2026-08-18 entries were stale and one had been RETRACTED
+#: IN THE CODE: this mapping said tier 3 was declined "structurally" because a
+#: reduction has no source of truth that can receive an edit, which is the exact
+#: claim `DexProject`'s docstring withdrew on 2026-08-09. A decline that cannot
+#: say why is indistinguishable from an oversight; a decline contradicting the
+#: module it describes is worse, because it reads as a second opinion rather
+#: than as a stale copy. => A prose field is not exempt from the rule about two
+#: copies of a claim.
 _DECLINED: dict[str, str] = {}
+
+#: The entry is CONDITIONAL, and the condition is a cost worth stating rather
+#: than hiding. The engine range this suite runs against spans 1.8.x, which
+#: ships no `SemanticCatalogContract`, and 1.9.x, which does: an unconditional
+#: entry fails the floor leg's staleness arm below for a contract that
+#: legitimately is not there (mutation-checked at 1.8.0: `if True:` in place of
+#: the hasattr fails exactly there). The price is that for THIS entry the
+#: staleness arm cannot fire - if upstream removes the contract, the entry
+#: vanishes with it instead of being flagged - so the arm's rot detection is
+#: suspended exactly here. Collapse this to a plain entry in `_DECLINED` when
+#: the `[dex]` floor reaches `~=1.9`, which restores the arm.
+if hasattr(conformance, "SemanticCatalogContract"):
+    _DECLINED["SemanticCatalogContract"] = (
+        "declined as UNBUILT, not as structurally impossible - the distinction "
+        "the retracted tier-3 entry above failed to make. This format's "
+        "semantics are real: dimensions, measures and metrics reach the tier-2 "
+        "fingerprint through to_semantic_layer(). But 1.9.0's catalog channel "
+        "(SemanticCatalogProject.semantic_catalog()) is a different reduction "
+        "- types, labels, composition, groupable tokens - that nothing here "
+        "builds yet. Until something does, `explore semantic list --local` on "
+        "a dagster-dex project refuses by name through semantic_catalog_gap, "
+        "which is the answer upstream designed for a declining format; an "
+        "empty catalog reading as a layer with nothing in it is the failure "
+        "mode the protocol itself names. Implementing the reduction is "
+        "candidate work, not a foreclosed option."
+    )
 
 
 def test_every_contract_upstream_ships_is_mixed_in_or_explicitly_declined():
