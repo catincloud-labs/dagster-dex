@@ -71,7 +71,12 @@ _CLOSING = re.compile(rf"\b(?:{_VERBS})\b{_GAP}{_REF}", re.IGNORECASE)
 _TRAILER = re.compile(r"^[ \t]*Autoclose[ \t]*:[ \t]*(?P<refs>.+?)[ \t]*$", re.IGNORECASE)
 _TRAILER_REF = re.compile(r"#(\d+)")
 
-_FENCE = re.compile(r"^[ \t]*(?:```|~~~)")
+# A fence closes with the marker that opened it, at least as long, and with
+# nothing but whitespace after — CommonMark's rule, and the difference bit for
+# real (wb #47): a Python 3.11+ traceback's `~~~~~~^^^` caret line inside a
+# ``` fence used to toggle the state, so the true closing ``` re-opened it and
+# a well-formed trailer two lines later read as fenced documentation.
+_FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 _SCISSORS = re.compile(r"^[ \t]*#[ \t]*-+[ \t]*>8[ \t]*-+")
 
 
@@ -118,12 +123,20 @@ def find_acknowledged(text: str) -> set[int]:
     convention, so a fenced example of one is documentation, not a claim.
     """
     acknowledged: set[int] = set()
-    in_fence = False
+    fence_char = ""
+    fence_len = 0
     for line in text.splitlines():
-        if _FENCE.match(line):
-            in_fence = not in_fence
+        if fence_char:
+            # Inside a fence, only the opener's own marker can close it —
+            # same character, at least the opening length, nothing after but
+            # whitespace. Any other marker-shaped line (a tilde caret line,
+            # a shorter run, one with trailing text) is content.
+            if re.match(rf"^[ \t]*{fence_char}{{{fence_len},}}[ \t]*$", line):
+                fence_char, fence_len = "", 0
             continue
-        if in_fence:
+        opened = _FENCE_OPEN.match(line)
+        if opened:
+            fence_char, fence_len = opened.group(1)[0], len(opened.group(1))
             continue
         trailer = _TRAILER.match(line)
         if trailer:

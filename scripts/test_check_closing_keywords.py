@@ -79,6 +79,20 @@ expect(
     "Explaining the convention:\n\n```\nAutoclose: #99\n```\n\nNothing here closes anything.\n",
     0,
 )
+# The wb #47 pair. A fence closes with the marker that opened it, so content
+# that merely looks like the other marker — a Python 3.11+ traceback's tilde
+# caret line is the case that actually fired — must not toggle the state and
+# swallow a well-formed trailer written after the true close of the fence.
+expect(
+    "a tilde caret line inside a fence does not unfence the trailer",
+    "Closes #12\n\n```\nTypeError: boom\n    a + b\n    ~~~~~~^^^\n```\n\nAutoclose: #12\n",
+    0,
+)
+expect(
+    "a tilde fence is as good as a backtick one for documentation",
+    "Explaining:\n\n~~~\nAutoclose: #99\n~~~\n\nNothing here closes anything.\n",
+    0,
+)
 
 # --- it fires --------------------------------------------------------------
 # Every one of these is a shape that has actually happened somewhere in the
@@ -96,6 +110,14 @@ expect("the URL form", "Fixes https://github.com/catincloud-labs/constellation/i
 expect("the GH- form", "Closes GH-12\n", 1)
 expect("one acknowledged, one not", "Closes #12 and fixes #14.\n\nAutoclose: #12\n", 1)
 expect("a trailer that overclaims", "Nothing closes here.\n\nAutoclose: #12\n", 1)
+# The other direction of wb #47: a backtick line inside a tilde fence is
+# content too, so a trailer written there stays documentation and the real
+# close outside stays unacknowledged.
+expect(
+    "a trailer fenced by tildes is documentation even past a stray backtick line",
+    "Closes #12\n\n~~~\n```\nAutoclose: #12\n~~~\n",
+    1,
+)
 expect(
     "a second close introduced while paraphrasing the first",
     "The durable fix #12 has been waiting on.\n",
