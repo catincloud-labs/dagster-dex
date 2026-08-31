@@ -73,7 +73,11 @@ expect("a verb with no number", "This closes the argument.\n", 0)
 expect("verb and number on separate lines", "closes\n#12\n", 0)
 expect("acknowledged single", "Closes #12\n\nAutoclose: #12\n", 0)
 expect("acknowledged multiple, any order", "Fixes #14. Closes #12.\n\nAutoclose: #12, #14\n", 0)
-expect("acknowledged cross-repo form", "Closes catincloud-labs/constellation#9\n\nAutoclose: #9\n", 0)
+# The cross-repo spelling with NO verb is a reference, not a close - the
+# refusal is about the closing adjacency, never about citing another repo.
+expect("a cross-repo reference without a verb is a citation", "See catincloud-labs/constellation#9 for the record.\n", 0)
+expect("part of is safe for a cross-repo reference too", "part of catincloud-labs/constellation#9\n", 0)
+expect("refs is safe for a cross-repo reference too", "Refs catincloud-labs/constellation#9.\n", 0)
 expect(
     "a fenced example of the trailer is documentation, not a claim",
     "Explaining the convention:\n\n```\nAutoclose: #99\n```\n\nNothing here closes anything.\n",
@@ -106,8 +110,45 @@ expect("the hyphenated trailer spelling is itself a live close", "Auto-close: #1
 expect("a colon after the verb still links", "Closes: #12\n", 1)
 expect("uppercase", "FIXES #12\n", 1)
 expect("past tense", "Resolved #12\n", 1)
+# The URL form is refused as cross-repo-capable (wb #7): the guard cannot know
+# its own repository, so every URL spelling is refused, same-repo ones included.
 expect("the URL form", "Fixes https://github.com/catincloud-labs/constellation/issues/12\n", 1)
 expect("the GH- form", "Closes GH-12\n", 1)
+
+# --- the cross-repo spelling is refused, not acknowledged (wb #7) ----------
+# GitHub closes across repositories and reports it repo-qualified - measured
+# on crosslink PR #60 - but the trailer and the CI extraction speak bare
+# numbers, so no trailer can honestly acknowledge a cross-repo close. The
+# spelling is refused outright; 'part of' plus a manual close is the form.
+
+expect("a bare cross-repo close is refused", "Closes catincloud-labs/scaffold#19\n", 1)
+expect(
+    "a trailer cannot acknowledge a cross-repo close - this case flipped at wb #7",
+    "Closes catincloud-labs/constellation#9\n\nAutoclose: #9\n",
+    1,
+)
+expect(
+    "a URL close is refused even with a trailer naming its number",
+    "Fixes https://github.com/catincloud-labs/scaffold/issues/19\n\nAutoclose: #19\n",
+    1,
+)
+expect(
+    "a fenced cross-repo close is still a close, so still refused",
+    "```\nFixes catincloud-labs/scaffold#19\n```\n",
+    1,
+)
+
+# The refusal message accounts for the trailer entry itself: the number of a
+# refused spelling must not ALSO be reported as a trailer that overclaims -
+# one defect, one message, one fix.
+_code, _lines = check("Closes catincloud-labs/scaffold#19\n\nAutoclose: #19\n")
+if _code != 1:
+    FAILURES.append("refused-with-trailer: expected exit 1")
+if any("trailer claims" in line for line in _lines):
+    FAILURES.append(
+        "refused-with-trailer: the refused number was double-reported as an overclaim\n    "
+        + "\n    ".join(_lines)
+    )
 expect("one acknowledged, one not", "Closes #12 and fixes #14.\n\nAutoclose: #12\n", 1)
 expect("a trailer that overclaims", "Nothing closes here.\n\nAutoclose: #12\n", 1)
 # The other direction of wb #47: a backtick line inside a tilde fence is
@@ -183,6 +224,23 @@ expect_reconcile(
     "Closes #12 and fixes #14.\n\nAutoclose: #12\n",
     {12, 14},
     1,
+)
+# The measured false agreement (crosslink PR #60, 2026-09-01): GitHub reported
+# scaffold#19 and crosslink#59 as the bare numbers 19,59; the trailer named
+# both; the old guard printed "OK - GitHub agrees with the trailer" while #19
+# meant another repository's issue. Number agreement must not clear a
+# cross-repo spelling.
+expect_reconcile(
+    "agreement on bare numbers cannot clear a cross-repo spelling",
+    "Closes #59\nCloses catincloud-labs/scaffold#19\n\nAutoclose: #19, #59\n",
+    {19, 59},
+    1,
+)
+expect_reconcile(
+    "a cross-repo citation without a verb reconciles normally",
+    "part of catincloud-labs/scaffold#19\n",
+    set(),
+    0,
 )
 
 # GitHub's field arrives as a joined string, and empty is a valid answer rather
