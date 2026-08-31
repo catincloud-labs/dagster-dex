@@ -12,6 +12,20 @@ enumerates exactly the set GitHub will close.
 
     Autoclose: #12, #14
 
+One spelling is refused outright rather than acknowledged: a closing verb next
+to a reference that can reach ANOTHER repository (``owner/repo#N``, or a full
+issue URL). GitHub does close across repositories — measured, not assumed:
+``closingIssuesReferences`` on crosslink PR #60 reported a cross-repo
+reference on an unmerged pull request, repository-qualified, and the docs
+carry the syntax row. But every consumer of that field here reads bare
+numbers, and the trailer speaks bare ``#N``, so a cross-repo close cannot be
+honestly acknowledged — the trailer entry for it reads as a same-repo claim.
+Ruled on workbench #7 (2026-09-01, superseding the 2026-08-31 ruling whose
+reversal condition had already fired). The honest form is
+``part of owner/repo#N`` plus closing the other issue deliberately, by hand.
+Reversal condition: the trailer syntax and the reconcile comparison become
+repository-qualified, at which point the refusal relaxes to reconciliation.
+
 ⚠️  The trailer is spelled without a hyphen on purpose. A hyphen is a word
 boundary, so the hyphenated spelling contains a live closing verb — the
 acknowledgement would close the issues it names and then satisfy this checker
@@ -56,11 +70,15 @@ _VERBS = r"clos(?:e|es|ed)|fix(?:|es|ed)|resolv(?:e|es|ed)"
 _GAP = r"[ \t]*:?[ \t]*"
 
 # The three reference spellings that link: bare, cross-repo, and a full URL.
+# The `xrepo` and `url` groups mark the two spellings that can denote another
+# repository; a match carrying either is refused rather than scored as a close
+# — see `find_refused_spellings`. Bare `#N` and `GH-N` are same-repository by
+# construction.
 _REF = (
     r"(?:"
-    r"(?:[\w.-]+/[\w.-]+)?\#(?P<bare>\d+)"
+    r"(?P<xrepo>[\w.-]+/[\w.-]+)?\#(?P<bare>\d+)"
     r"|GH-(?P<gh>\d+)"
-    r"|https?://github\.com/[\w.-]+/[\w.-]+/issues/(?P<url>\d+)"
+    r"|(?P<url>https?://github\.com/[\w.-]+/[\w.-]+/issues/\d+)"
     r")"
 )
 
@@ -102,17 +120,80 @@ def strip_commit_cruft(text: str) -> str:
 
 
 def find_closes(text: str) -> dict[int, list[str]]:
-    """Issue numbers GitHub would close, mapped to the lines that do it.
+    """Same-repository issue numbers GitHub would close, mapped to their lines.
 
     Code spans and fences are scored. GitHub scores them, so this must too —
     "I put it in backticks" has already failed as a defence.
+
+    A match carrying a cross-repo-capable spelling is NOT scored here: its
+    number belongs to another repository, so counting it as a close of this
+    repository's ``#N`` was the conflation workbench #7 measured. Those
+    matches are `find_refused_spellings`' business, and they are refused.
     """
     found: dict[int, list[str]] = {}
     for line in text.splitlines():
         for match in _CLOSING.finditer(line):
-            number = int(match["bare"] or match["gh"] or match["url"])
+            if match["xrepo"] or match["url"]:
+                continue
+            number = int(match["bare"] or match["gh"])
             found.setdefault(number, []).append(line.strip())
     return found
+
+
+def find_refused_spellings(text: str) -> dict[str, list[str]]:
+    """Cross-repo-capable closing spellings, mapped to the lines carrying them.
+
+    ``owner/repo#N`` and the full-URL form can each denote another repository,
+    and GitHub honours both as closing keywords across repositories. The
+    trailer cannot honestly acknowledge such a close — it speaks bare ``#N``,
+    which every reader takes as this repository's — so the spelling itself is
+    refused. Scored inside fences for the same reason `find_closes` scores
+    them: GitHub does.
+    """
+    refused: dict[str, list[str]] = {}
+    for line in text.splitlines():
+        for match in _CLOSING.finditer(line):
+            if match["xrepo"]:
+                spelling = f"{match['xrepo']}#{match['bare']}"
+            elif match["url"]:
+                spelling = match["url"]
+            else:
+                continue
+            refused.setdefault(spelling, []).append(line.strip())
+    return refused
+
+
+def _refused_numbers(refused: dict[str, list[str]]) -> set[int]:
+    """The trailing issue numbers of refused spellings.
+
+    Used only to keep the overclaim message honest: a trailer entry naming a
+    refused spelling's number is part of the refused close, not a separate
+    stale claim, so it is reported once — in the refusal — rather than twice.
+    """
+    numbers: set[int] = set()
+    for spelling in refused:
+        tail = re.search(r"(\d+)$", spelling)
+        if tail:
+            numbers.add(int(tail.group(1)))
+    return numbers
+
+
+def _refusal_lines(refused: dict[str, list[str]]) -> list[str]:
+    """The printed block for refused spellings. ASCII, like everything printed."""
+    out = ["FAIL - a closing verb sits next to a reference that can reach another repository."]
+    out.append("")
+    for spelling in sorted(refused):
+        out.append(f"  {spelling}, from:")
+        for line in refused[spelling]:
+            out.append(f"    {line}")
+    out.append("")
+    out.append("  GitHub DOES close across repositories, and reports it in a field the")
+    out.append("  CI reconcile reads as bare numbers - so this close cannot be honestly")
+    out.append("  acknowledged: an Autoclose entry for it reads as a same-repo claim.")
+    out.append("  Write 'part of owner/repo#N' instead, drop any trailer entry naming")
+    out.append("  that number, and close the other issue deliberately, where it lives.")
+    out.append("  The rule and its evidence: workbench #7.")
+    return out
 
 
 def find_acknowledged(text: str) -> set[int]:
@@ -150,21 +231,28 @@ def check(text: str, *, commit_msg: bool = False) -> tuple[int, list[str]]:
         text = strip_commit_cruft(text)
 
     closes = find_closes(text)
+    refused = find_refused_spellings(text)
     acknowledged = find_acknowledged(text)
 
     unacknowledged = sorted(set(closes) - acknowledged)
-    overclaimed = sorted(acknowledged - set(closes))
+    # A trailer entry naming a refused spelling's number is part of the refused
+    # close — reported in the refusal block, not again as a stale trailer.
+    overclaimed = sorted(acknowledged - set(closes) - _refused_numbers(refused))
 
     # Everything below is printed, so it stays ASCII. This runs as a commit hook
     # on a Windows console, where a stray em dash is mangled at best and raises
     # at worst -- a guard that garbles its own verdict teaches people to ignore it.
-    if not unacknowledged and not overclaimed:
+    if not unacknowledged and not overclaimed and not refused:
         if closes:
             named = ", ".join(f"#{n}" for n in sorted(closes))
             return 0, [f"OK - acknowledged close of {named}."]
         return 0, ["OK - nothing here closes an issue."]
 
     out: list[str] = []
+    if refused:
+        out.extend(_refusal_lines(refused))
+    if refused and (unacknowledged or overclaimed):
+        out.append("")
     if unacknowledged:
         out.append("FAIL - this message closes an issue without acknowledging it.")
         out.append("")
@@ -230,12 +318,24 @@ def reconcile(text: str, reported: set[int]) -> tuple[int, list[str]]:
     implementation is how CI came to fail precisely the case this file's own
     test certifies as clean.
 
-    ⚠️  `reported` is same-repository only: GitHub's closing keywords do not
-    close an issue in another repository, so a cross-repo close that
-    `find_closes` scores reads here as a trailer that overclaims. That predates
-    this mode and is deliberately left as it was found. Changing it is a rule
-    change, not a refactor, and belongs in its own argument.
+    ⚠️  `reported` arrives as bare numbers, and that is the reason the body is
+    scanned for cross-repo spellings here too. The field itself is NOT
+    same-repository only — measured on crosslink PR #60, where an unmerged
+    pull request's `closingIssuesReferences` reported `scaffold#19`
+    repository-qualified — but the extraction renders it repo-blind, so a
+    trailer's bare `#N` reconciles green against a close that lands in another
+    repository. Agreement on those numbers is meaningless, so a refused
+    spelling short-circuits before the comparison. Ruled on workbench #7.
     """
+    refused = find_refused_spellings(text)
+    if refused:
+        return 1, _refusal_lines(refused) + [
+            "",
+            "  Reconciliation was not attempted: GitHub reports closes as bare",
+            "  numbers, so agreement while a cross-repo spelling is present would",
+            "  be meaningless (measured on crosslink #60).",
+        ]
+
     acknowledged = find_acknowledged(text)
 
     unacknowledged = sorted(reported - acknowledged)
