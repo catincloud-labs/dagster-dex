@@ -36,7 +36,7 @@ jobs:
     steps:
       # Checkout is load-bearing here, unlike the shared-action callers: the
       # vendored checker is read from this repository's tree.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Self-test FIRST, and it must be able to go red: a verification gate
       # that silently stopped matching is indistinguishable from a

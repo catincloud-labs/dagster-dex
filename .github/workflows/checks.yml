@@ -70,6 +70,8 @@ permissions:
 #   scripts/check_closing_keywords.py
 #   scripts/test_check_closing_keywords.py
 #   .github/markdownlint.json
+#   scripts/check_third_party_pins.py
+#   scripts/test_check_third_party_pins.py
 #
 # So do NOT edit those three to suit local taste. They are copies, they are
 # checked, and the check is somewhere you cannot see from this file. The
@@ -81,7 +83,7 @@ jobs:
     name: markdown
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Narrow to what this repository actually has. There is no `docs/`, and a
       # glob matching nothing is noise rather than coverage.
@@ -107,7 +109,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR: ${{ github.event.pull_request.number }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The guard's own self-test runs before the guard does. A checker that has
       # silently stopped detecting anything passes every pull request, which is
@@ -200,7 +202,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Guard fires and goes quiet
         run: python scripts/check_pr_title.py --self-test
@@ -247,8 +249,8 @@ jobs:
     outputs:
       versions: ${{ steps.resolve.outputs.versions }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -295,8 +297,8 @@ jobs:
         # about what is claimed, which is a thing to review rather than compute.
         python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -331,8 +333,8 @@ jobs:
       matrix:
         version: ${{ fromJSON(needs.engine-range.outputs.versions) }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -367,8 +369,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -524,3 +526,32 @@ jobs:
             exit 1
           fi
           echo "every job this gate depends on succeeded."
+
+  # ADR-0040 (constellation): every third-party action ref in this tree is a
+  # forty-character commit with its version as a trailing comment, from a
+  # publisher the record enumerates. VENDORED, like the guards above and for
+  # the same reason: this repository is public and cannot resolve the private
+  # action, so the scanner runs from `scripts/`, and the private repository's
+  # `vendored copies` job holds both files to their canonical copies. Do not
+  # edit them here. Dependabot (`.github/dependabot.yml`) is the mover; this
+  # is what makes a hand edit at a tag visible - which this repository has
+  # already lived once: `pr-hygiene.yml` arrived at `checkout@v4` by hand on
+  # 2026-08-27 beside eleven sites at `v7`, and nothing said so until the
+  # next Dependabot cycle.
+  #
+  # Deliberately NOT in the `tests` gate's `needs:` above, and not a required
+  # check today: either would make it required by the back door, and that is
+  # the owner's decision to take with the blocking cost in view.
+  third-party-pins:
+    name: third-party pins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The guard's own self-test runs before the guard does, here rather
+      # than trusted to have run once where the checker was authored.
+      - name: Guard fires and goes quiet
+        run: python3 scripts/test_check_third_party_pins.py
+
+      - name: Every third-party ref in this tree is a commit with its version
+        run: python3 scripts/check_third_party_pins.py --org catincloud-labs --tree .
