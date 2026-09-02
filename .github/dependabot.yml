@@ -20,5 +20,12 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
+    # ADR-0040 (constellation): grouped, so a month's bumps arrive as one pull
+    # request read as a diff of commit hashes and version comments. The entry's
+    # shape is stated once, in workbench #58; this is the amendment it asks of
+    # the one repository that already ran Dependabot.
+    groups:
+      github-actions:
+        patterns: ["*"]
     commit-message:
       prefix: "chore(deps)"

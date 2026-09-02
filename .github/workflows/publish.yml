@@ -105,8 +105,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -199,7 +199,7 @@ jobs:
             --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
             python scripts/drive_the_write_path_against_the_wheel.py
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dagster-dex-dist
           path: dist/
@@ -233,8 +233,8 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       # A rehearsal that can only be run once is not a rehearsal. An index
       # refuses a filename it already holds, so uploading the real `0.1.0` here
@@ -277,7 +277,7 @@ jobs:
       # (`/_/oidc/audience` answers `testpypi` here and `pypi` there), so pointing
       # at the other host cannot present a token minted for the real index.
       - name: Publish to TestPyPI (Trusted Publishing)
-        uses: pypa/gh-action-pypi-publish@v1.14.2
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
 
@@ -346,8 +346,8 @@ jobs:
       contents: read
       id-token: write # OIDC for PyPI Trusted Publishing; no API token is stored.
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Build sdist + wheel
         run: uv build
@@ -369,7 +369,7 @@ jobs:
           echo "Built artifacts match ${VERSION}."
 
       - name: Publish to PyPI (Trusted Publishing)
-        uses: pypa/gh-action-pypi-publish@v1.14.2
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
 
       # The same read-back as the rehearsal, and it FAILS THE JOB, which needs
       # saying because by the time it runs the release is already on PyPI and
@@ -443,7 +443,7 @@ jobs:
       # workflow block: every other job keeps `contents: read`.
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Create the Release for this tag
         env:
           GH_TOKEN: ${{ github.token }}
