@@ -17,5 +17,30 @@
 # a single-owner file leaves the requirement unsatisfiable for that owner --
 # they can only bypass it. The second entry is what makes the requirement
 # satisfiable in both directions, and it is deliberate, not a courtesy.
+#
+# The second owner is named on the SEAM, not on `*`. From 2026-08-23 to
+# 2026-09-04 `*` carried both owners, and every pull request here -- docs,
+# Dependabot bumps, CI plumbing -- requested a review from the upstream
+# maintainer; none of those requests was answered, and each one made the next
+# less legible. A request that fires only when a file binding this package to
+# dex-core changes carries information: it says the seam moved. Everything
+# else stays owner-only, which is the same posture as the other repositories
+# in this organisation, where the owner can only bypass.
+#
+# The seam is: the dex-core pin and the entry point that dex-core resolves
+# (`pyproject.toml`); the bridge module, the only import of dex-core in `src/`
+# (`dex.py`); the tests that import the real package; and the two tests that
+# hold the pin and the entry point to their declared values without importing
+# it. `tests/test_conformance.py` is this package's own suite and imports
+# nothing from dex-core, so it is not the seam. Re-derive the import half
+# rather than trusting it (a docstring mentioning the package is not a seam):
+#   grep -rlE '^\s*(from|import) exmergo_dex_core' src tests
 
-* @catincloudlabs @marcociav-exmergo
+* @catincloudlabs
+
+/pyproject.toml                    @catincloudlabs @marcociav-exmergo
+/src/dagster_dex/dex.py            @catincloudlabs @marcociav-exmergo
+/tests/test_upstream_contract.py   @catincloudlabs @marcociav-exmergo
+/tests/test_dex_bridge.py          @catincloudlabs @marcociav-exmergo
+/tests/test_pin_coherence.py       @catincloudlabs @marcociav-exmergo
+/tests/test_packaging.py           @catincloudlabs @marcociav-exmergo
