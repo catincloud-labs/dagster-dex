@@ -20,16 +20,15 @@ for readers who know it, and it does not travel to strangers.
 The second reason is a style rule, and a style rule with no control is a
 suggestion. This is the control.
 
-Two exemptions, and neither is a style choice. `scripts/check_closing_keywords.py`
-and `scripts/test_check_closing_keywords.py` are vendored copies compared
-**byte-for-byte** against their source. Editing either to satisfy this test would
-trade a passing test for a failing pipeline.
+One exemption, and it is not a style choice. `scripts/check_verification_section.py`
+is a vendored copy compared **byte-for-byte** against its source. Editing it to
+satisfy this test would trade a passing test for a failing pipeline.
 
-The second one arrived late. This repository is public and cannot resolve actions
-in a private repository, so the shared check that used to run the guard's
-self-test could not run here at all -- the self-test had to be vendored next to
-the guard it proves. The exemption's reason did not change, only how many files
-it covers.
+The closing-keyword guard and its self-test were exempt on the same argument
+until 2026-09-04, when their source was scrubbed to ASCII. They are now held to
+the rule like every other file: a byte copy is fixed at its source, so a
+non-ASCII byte arriving in a re-vendor reads here as a defect in the source, and
+this test is the first thing to see it.
 """
 
 from __future__ import annotations
@@ -50,12 +49,11 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 #: one-line change rather than a rewrite of the filter below.
 VENDORED = frozenset(
     {
-        "scripts/check_closing_keywords.py",
-        "scripts/test_check_closing_keywords.py",
         # The verification-section checker, vendored at the wb #23 step-4
-        # adoption. Same argument as the two above: compared byte-for-byte
-        # against its private source by the drift job, so reformatting it to
-        # ASCII here would be drift by construction.
+        # adoption: compared byte-for-byte against its private source by the
+        # drift job, so reformatting it to ASCII here would be drift by
+        # construction. The closing-keyword pair left this set on 2026-09-04
+        # when its source was scrubbed; see the module docstring.
         "scripts/check_verification_section.py",
     }
 )

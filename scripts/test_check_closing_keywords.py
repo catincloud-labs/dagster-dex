@@ -75,17 +75,17 @@ expect("acknowledged single", "Closes #12\n\nAutoclose: #12\n", 0)
 expect("acknowledged multiple, any order", "Fixes #14. Closes #12.\n\nAutoclose: #12, #14\n", 0)
 # The cross-repo spelling with NO verb is a reference, not a close - the
 # refusal is about the closing adjacency, never about citing another repo.
-expect("a cross-repo reference without a verb is a citation", "See catincloud-labs/constellation#9 for the record.\n", 0)
-expect("part of is safe for a cross-repo reference too", "part of catincloud-labs/constellation#9\n", 0)
-expect("refs is safe for a cross-repo reference too", "Refs catincloud-labs/constellation#9.\n", 0)
+expect("a cross-repo reference without a verb is a citation", "See example/other#9 for the record.\n", 0)
+expect("part of is safe for a cross-repo reference too", "part of example/other#9\n", 0)
+expect("refs is safe for a cross-repo reference too", "Refs example/other#9.\n", 0)
 expect(
     "a fenced example of the trailer is documentation, not a claim",
     "Explaining the convention:\n\n```\nAutoclose: #99\n```\n\nNothing here closes anything.\n",
     0,
 )
-# The wb #47 pair. A fence closes with the marker that opened it, so content
-# that merely looks like the other marker — a Python 3.11+ traceback's tilde
-# caret line is the case that actually fired — must not toggle the state and
+# The caret-line pair. A fence closes with the marker that opened it, so content
+# that merely looks like the other marker - a Python 3.11+ traceback's tilde
+# caret line is the case that actually fired - must not toggle the state and
 # swallow a well-formed trailer written after the true close of the fence.
 expect(
     "a tilde caret line inside a fence does not unfence the trailer",
@@ -110,38 +110,40 @@ expect("the hyphenated trailer spelling is itself a live close", "Auto-close: #1
 expect("a colon after the verb still links", "Closes: #12\n", 1)
 expect("uppercase", "FIXES #12\n", 1)
 expect("past tense", "Resolved #12\n", 1)
-# The URL form is refused as cross-repo-capable (wb #7): the guard cannot know
-# its own repository, so every URL spelling is refused, same-repo ones included.
-expect("the URL form", "Fixes https://github.com/catincloud-labs/constellation/issues/12\n", 1)
+# The URL form is refused as cross-repo-capable (ruled 2026-09-01): the guard
+# cannot know its own repository, so every URL spelling is refused, same-repo
+# ones included.
+expect("the URL form", "Fixes https://github.com/example/other/issues/12\n", 1)
 expect("the GH- form", "Closes GH-12\n", 1)
 
-# --- the cross-repo spelling is refused, not acknowledged (wb #7) ----------
+# --- the cross-repo spelling is refused, not acknowledged (2026-09-01) ------
 # GitHub closes across repositories and reports it repo-qualified - measured
-# on crosslink PR #60 - but the trailer and the CI extraction speak bare
-# numbers, so no trailer can honestly acknowledge a cross-repo close. The
-# spelling is refused outright; 'part of' plus a manual close is the form.
+# on a real unmerged pull request - but the trailer and the CI extraction
+# speak bare numbers, so no trailer can honestly acknowledge a cross-repo
+# close. The spelling is refused outright; 'part of' plus a manual close is
+# the form.
 
-expect("a bare cross-repo close is refused", "Closes catincloud-labs/scaffold#19\n", 1)
+expect("a bare cross-repo close is refused", "Closes example/other#19\n", 1)
 expect(
-    "a trailer cannot acknowledge a cross-repo close - this case flipped at wb #7",
-    "Closes catincloud-labs/constellation#9\n\nAutoclose: #9\n",
+    "a trailer cannot acknowledge a cross-repo close - this case flipped at the 2026-09-01 ruling",
+    "Closes example/other#9\n\nAutoclose: #9\n",
     1,
 )
 expect(
     "a URL close is refused even with a trailer naming its number",
-    "Fixes https://github.com/catincloud-labs/scaffold/issues/19\n\nAutoclose: #19\n",
+    "Fixes https://github.com/example/other/issues/19\n\nAutoclose: #19\n",
     1,
 )
 expect(
     "a fenced cross-repo close is still a close, so still refused",
-    "```\nFixes catincloud-labs/scaffold#19\n```\n",
+    "```\nFixes example/other#19\n```\n",
     1,
 )
 
 # The refusal message accounts for the trailer entry itself: the number of a
 # refused spelling must not ALSO be reported as a trailer that overclaims -
 # one defect, one message, one fix.
-_code, _lines = check("Closes catincloud-labs/scaffold#19\n\nAutoclose: #19\n")
+_code, _lines = check("Closes example/other#19\n\nAutoclose: #19\n")
 if _code != 1:
     FAILURES.append("refused-with-trailer: expected exit 1")
 if any("trailer claims" in line for line in _lines):
@@ -151,9 +153,9 @@ if any("trailer claims" in line for line in _lines):
     )
 expect("one acknowledged, one not", "Closes #12 and fixes #14.\n\nAutoclose: #12\n", 1)
 expect("a trailer that overclaims", "Nothing closes here.\n\nAutoclose: #12\n", 1)
-# The other direction of wb #47: a backtick line inside a tilde fence is
-# content too, so a trailer written there stays documentation and the real
-# close outside stays unacknowledged.
+# The other direction of the caret-line pair: a backtick line inside a tilde
+# fence is content too, so a trailer written there stays documentation and
+# the real close outside stays unacknowledged.
 expect(
     "a trailer fenced by tildes is documentation even past a stray backtick line",
     "Closes #12\n\n~~~\n```\nAutoclose: #12\n~~~\n",
@@ -199,7 +201,7 @@ expect(
 # `reconcile` compares GitHub's own answer against the trailer. It exists so
 # that "find the trailer" has a single implementation. The shell `grep` it
 # replaced was anchored at line start and not fence-aware, so CI failed the
-# fenced case pinned above while this file certified it clean — a guard against
+# fenced case pinned above while this file certified it clean - a guard against
 # two copies of a rule, containing two copies of a rule.
 
 expect_reconcile("both empty is the ordinary pull request", "docs: rewrite the preamble\n", set(), 0)
@@ -225,26 +227,26 @@ expect_reconcile(
     {12, 14},
     1,
 )
-# The measured false agreement (crosslink PR #60, 2026-09-01): GitHub reported
-# scaffold#19 and crosslink#59 as the bare numbers 19,59; the trailer named
-# both; the old guard printed "OK - GitHub agrees with the trailer" while #19
-# meant another repository's issue. Number agreement must not clear a
-# cross-repo spelling.
+# The measured false agreement (a real pull request, 2026-09-01): GitHub
+# reported example/other#19 and this repository's #59 as the bare numbers
+# 19,59; the trailer named both; the old guard printed "OK - GitHub agrees
+# with the trailer" while #19 meant another repository's issue. Number
+# agreement must not clear a cross-repo spelling.
 expect_reconcile(
     "agreement on bare numbers cannot clear a cross-repo spelling",
-    "Closes #59\nCloses catincloud-labs/scaffold#19\n\nAutoclose: #19, #59\n",
+    "Closes #59\nCloses example/other#19\n\nAutoclose: #19, #59\n",
     {19, 59},
     1,
 )
 expect_reconcile(
     "a cross-repo citation without a verb reconciles normally",
-    "part of catincloud-labs/scaffold#19\n",
+    "part of example/other#19\n",
     set(),
     0,
 )
 
 # GitHub's field arrives as a joined string, and empty is a valid answer rather
-# than a parse failure — the shape that once aborted the step before it printed.
+# than a parse failure - the shape that once aborted the step before it printed.
 if parse_reported("") != set():
     FAILURES.append("parse_reported: an empty answer should mean nothing, not an error")
 if parse_reported("12,14") != {12, 14}:
