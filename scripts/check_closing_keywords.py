@@ -14,32 +14,32 @@ enumerates exactly the set GitHub will close.
 
 One spelling is refused outright rather than acknowledged: a closing verb next
 to a reference that can reach ANOTHER repository (``owner/repo#N``, or a full
-issue URL). GitHub does close across repositories — measured, not assumed:
-``closingIssuesReferences`` on crosslink PR #60 reported a cross-repo
-reference on an unmerged pull request, repository-qualified, and the docs
-carry the syntax row. But every consumer of that field here reads bare
+issue URL). GitHub does close across repositories - measured, not assumed:
+``closingIssuesReferences`` on a real, unmerged pull request reported a
+cross-repo reference repository-qualified, and the docs carry the syntax
+row. But every consumer of that field here reads bare
 numbers, and the trailer speaks bare ``#N``, so a cross-repo close cannot be
-honestly acknowledged — the trailer entry for it reads as a same-repo claim.
-Ruled on workbench #7 (2026-09-01, superseding the 2026-08-31 ruling whose
-reversal condition had already fired). The honest form is
+honestly acknowledged - the trailer entry for it reads as a same-repo claim.
+Ruled 2026-09-01, superseding the 2026-08-31 ruling whose reversal
+condition had already fired. The honest form is
 ``part of owner/repo#N`` plus closing the other issue deliberately, by hand.
 Reversal condition: the trailer syntax and the reconcile comparison become
 repository-qualified, at which point the refusal relaxes to reconciliation.
 
-⚠️  The trailer is spelled without a hyphen on purpose. A hyphen is a word
-boundary, so the hyphenated spelling contains a live closing verb — the
+WARNING: The trailer is spelled without a hyphen on purpose. A hyphen is a word
+boundary, so the hyphenated spelling contains a live closing verb - the
 acknowledgement would close the issues it names and then satisfy this checker
 with a closure it manufactured itself.
 
 CI additionally asks GitHub what merging a pull request would *actually* close
 and reconciles that against the trailer. That comparison is `--github-closes`
 below rather than shell in the action, so that "find the trailer" has exactly
-one implementation — see `reconcile`.
+one implementation - see `reconcile`.
 
 Exit codes
 ----------
 0   the message is clean, or every close is acknowledged
-1   a violation — an unacknowledged close, or a trailer that overclaims
+1   a violation - an unacknowledged close, or a trailer that overclaims
 2   the checker could not run (bad usage, unreadable input)
 
 Usage
@@ -62,8 +62,8 @@ _VERBS = r"clos(?:e|es|ed)|fix(?:|es|ed)|resolv(?:e|es|ed)"
 
 # Adjacency is the whole rule: verb, an optional colon, then the reference.
 #
-# ⚠️  `[ \t]` rather than `\s` is belt-and-braces, NOT the thing that stops a
-# verb linking to a number on the next line — `find_closes` splits into lines
+# WARNING: `[ \t]` rather than `\s` is belt-and-braces, NOT the thing that stops a
+# verb linking to a number on the next line - `find_closes` splits into lines
 # before matching, so a newline never reaches this pattern at all. Swapping
 # this for `\s` changes nothing observable, which a mutation check confirmed.
 # The line split is the real enforcer; do not delete it thinking this covers it.
@@ -72,7 +72,7 @@ _GAP = r"[ \t]*:?[ \t]*"
 # The three reference spellings that link: bare, cross-repo, and a full URL.
 # The `xrepo` and `url` groups mark the two spellings that can denote another
 # repository; a match carrying either is refused rather than scored as a close
-# — see `find_refused_spellings`. Bare `#N` and `GH-N` are same-repository by
+# - see `find_refused_spellings`. Bare `#N` and `GH-N` are same-repository by
 # construction.
 _REF = (
     r"(?:"
@@ -85,15 +85,16 @@ _REF = (
 _CLOSING = re.compile(rf"\b(?:{_VERBS})\b{_GAP}{_REF}", re.IGNORECASE)
 
 # `Autoclose` has no word boundary before `close`, so this trailer is invisible
-# to GitHub's parser — which is exactly why it is safe to write.
+# to GitHub's parser - which is exactly why it is safe to write.
 _TRAILER = re.compile(r"^[ \t]*Autoclose[ \t]*:[ \t]*(?P<refs>.+?)[ \t]*$", re.IGNORECASE)
 _TRAILER_REF = re.compile(r"#(\d+)")
 
 # A fence closes with the marker that opened it, at least as long, and with
-# nothing but whitespace after — CommonMark's rule, and the difference bit for
-# real (wb #47): a Python 3.11+ traceback's `~~~~~~^^^` caret line inside a
-# ``` fence used to toggle the state, so the true closing ``` re-opened it and
-# a well-formed trailer two lines later read as fenced documentation.
+# nothing but whitespace after - CommonMark's rule, and the difference bit for
+# real, on a live pull request: a Python 3.11+ traceback's `~~~~~~^^^` caret
+# line inside a ``` fence used to toggle the state, so the true closing ```
+# re-opened it and a well-formed trailer two lines later read as fenced
+# documentation.
 _FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 _SCISSORS = re.compile(r"^[ \t]*#[ \t]*-+[ \t]*>8[ \t]*-+")
 
@@ -101,17 +102,17 @@ _SCISSORS = re.compile(r"^[ \t]*#[ \t]*-+[ \t]*>8[ \t]*-+")
 def strip_commit_cruft(text: str) -> str:
     """Drop what git itself will drop: comment lines and the verbose diff.
 
-    ⚠️  Narrow on purpose, and opt-in. Stripping is how a checker in a sibling
+    WARNING: Narrow on purpose, and opt-in. Stripping is how a checker in a sibling
     repo once missed a real violation, so this removes only what git removes,
     and only when the caller says the input is a commit message. A PR body is
-    never passed through here — `#` starts a heading there, not a comment.
+    never passed through here - `#` starts a heading there, not a comment.
     """
     kept: list[str] = []
     for line in text.splitlines():
         if _SCISSORS.match(line):
             break
         if line.lstrip().startswith("#") and not _TRAILER_REF.match(line.lstrip()):
-            # A git comment. The guard above keeps a bare `#12` line — that is
+            # A git comment. The guard above keeps a bare `#12` line - that is
             # content in a body, and git would keep it too only if it were not
             # at line start, so erring toward scoring it is the safe direction.
             continue
@@ -122,12 +123,12 @@ def strip_commit_cruft(text: str) -> str:
 def find_closes(text: str) -> dict[int, list[str]]:
     """Same-repository issue numbers GitHub would close, mapped to their lines.
 
-    Code spans and fences are scored. GitHub scores them, so this must too —
+    Code spans and fences are scored. GitHub scores them, so this must too -
     "I put it in backticks" has already failed as a defence.
 
     A match carrying a cross-repo-capable spelling is NOT scored here: its
     number belongs to another repository, so counting it as a close of this
-    repository's ``#N`` was the conflation workbench #7 measured. Those
+    repository's ``#N`` was the conflation the 2026-09-01 ruling measured. Those
     matches are `find_refused_spellings`' business, and they are refused.
     """
     found: dict[int, list[str]] = {}
@@ -145,8 +146,8 @@ def find_refused_spellings(text: str) -> dict[str, list[str]]:
 
     ``owner/repo#N`` and the full-URL form can each denote another repository,
     and GitHub honours both as closing keywords across repositories. The
-    trailer cannot honestly acknowledge such a close — it speaks bare ``#N``,
-    which every reader takes as this repository's — so the spelling itself is
+    trailer cannot honestly acknowledge such a close - it speaks bare ``#N``,
+    which every reader takes as this repository's - so the spelling itself is
     refused. Scored inside fences for the same reason `find_closes` scores
     them: GitHub does.
     """
@@ -168,7 +169,7 @@ def _refused_numbers(refused: dict[str, list[str]]) -> set[int]:
 
     Used only to keep the overclaim message honest: a trailer entry naming a
     refused spelling's number is part of the refused close, not a separate
-    stale claim, so it is reported once — in the refusal — rather than twice.
+    stale claim, so it is reported once - in the refusal - rather than twice.
     """
     numbers: set[int] = set()
     for spelling in refused:
@@ -192,7 +193,7 @@ def _refusal_lines(refused: dict[str, list[str]]) -> list[str]:
     out.append("  acknowledged: an Autoclose entry for it reads as a same-repo claim.")
     out.append("  Write 'part of owner/repo#N' instead, drop any trailer entry naming")
     out.append("  that number, and close the other issue deliberately, where it lives.")
-    out.append("  The rule and its evidence: workbench #7.")
+    out.append("  The rule and its evidence are recorded with the guard's source.")
     return out
 
 
@@ -208,7 +209,7 @@ def find_acknowledged(text: str) -> set[int]:
     fence_len = 0
     for line in text.splitlines():
         if fence_char:
-            # Inside a fence, only the opener's own marker can close it —
+            # Inside a fence, only the opener's own marker can close it -
             # same character, at least the opening length, nothing after but
             # whitespace. Any other marker-shaped line (a tilde caret line,
             # a shorter run, one with trailing text) is content.
@@ -236,7 +237,7 @@ def check(text: str, *, commit_msg: bool = False) -> tuple[int, list[str]]:
 
     unacknowledged = sorted(set(closes) - acknowledged)
     # A trailer entry naming a refused spelling's number is part of the refused
-    # close — reported in the refusal block, not again as a stale trailer.
+    # close - reported in the refusal block, not again as a stale trailer.
     overclaimed = sorted(acknowledged - set(closes) - _refused_numbers(refused))
 
     # Everything below is printed, so it stays ASCII. This runs as a commit hook
@@ -308,24 +309,24 @@ def reconcile(text: str, reported: set[int]) -> tuple[int, list[str]]:
 
     `find_closes` is this file's reimplementation of GitHub's parser. `reported`
     is what GitHub says about the pull request itself, which is the authority
-    when the two disagree — so CI cross-checks the trailer against it as well.
+    when the two disagree - so CI cross-checks the trailer against it as well.
 
-    ⚠️  The trailer is found with `find_acknowledged`, the same function the
+    WARNING: The trailer is found with `find_acknowledged`, the same function the
     rest of this file uses, and that shared call is the entire point of this
     mode. CI used to re-implement the search as a shell `grep` anchored at line
     start, which was not fence-aware. The self-test pins that a fenced example
-    of a trailer is documentation rather than a claim — so the second
+    of a trailer is documentation rather than a claim - so the second
     implementation is how CI came to fail precisely the case this file's own
     test certifies as clean.
 
-    ⚠️  `reported` arrives as bare numbers, and that is the reason the body is
+    WARNING: `reported` arrives as bare numbers, and that is the reason the body is
     scanned for cross-repo spellings here too. The field itself is NOT
-    same-repository only — measured on crosslink PR #60, where an unmerged
-    pull request's `closingIssuesReferences` reported `scaffold#19`
-    repository-qualified — but the extraction renders it repo-blind, so a
+    same-repository only - measured on an unmerged pull request whose
+    `closingIssuesReferences` reported another repository's issue,
+    repository-qualified - but the extraction renders it repo-blind, so a
     trailer's bare `#N` reconciles green against a close that lands in another
     repository. Agreement on those numbers is meaningless, so a refused
-    spelling short-circuits before the comparison. Ruled on workbench #7.
+    spelling short-circuits before the comparison. Ruled 2026-09-01.
     """
     refused = find_refused_spellings(text)
     if refused:
@@ -333,7 +334,7 @@ def reconcile(text: str, reported: set[int]) -> tuple[int, list[str]]:
             "",
             "  Reconciliation was not attempted: GitHub reports closes as bare",
             "  numbers, so agreement while a cross-repo spelling is present would",
-            "  be meaningless (measured on crosslink #60).",
+            "  be meaningless (measured on a real pull request).",
         ]
 
     acknowledged = find_acknowledged(text)

@@ -478,10 +478,14 @@ scoped to what is published, not to how the estate writes.**
 Use `-` for an em-dash, or restructure: a colon, a comma, or parentheses usually
 say it better. Use `=>` for an arrow and `...` for an ellipsis.
 
-**One exemption, and it is not stylistic.** `scripts/check_closing_keywords.py`
+**One exemption, and it is not stylistic.** `scripts/check_verification_section.py`
   is a vendored copy compared **byte-for-byte** against `workbench` by CI.
   Reformatting it to satisfy this rule trades a passing test for a failing
-  pipeline. The guard skips exactly that path and says why.
+  pipeline. The guard skips exactly that path and says why. The closing-keyword
+  guard and its self-test shared the exemption until 2026-09-04, when their
+  source was scrubbed; they are held to the rule now, so a non-ASCII byte
+  arriving in a re-vendor of either is a defect at the source, and this test
+  is the first to see it.
 
 ## Conventions
 
