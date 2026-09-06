@@ -470,8 +470,57 @@ def mypy_targets(cls: str, declared: Declared, tree: Path) -> list[str]:
     return [p for p in declared.get(cls, ()) if (tree / p).exists()]
 
 
+def _base_of(tree: Path, rel: str) -> Path:
+    """The directory a module name is counted from, for one declared path.
+
+    Walk the path from the tree root; the first directory carrying `__init__.py` is a
+    package, and the module name starts there, so its parent is the base. A path with
+    no package on it (`scripts/tool.py`, a directory that deliberately has none) is
+    counted from the root, which is the name a package in the tree imports it by:
+    `scripts.tool`. A directory declared whole with the package one level down
+    (`src` holding `src/pkg/`) is counted from itself, so the package is `pkg`, the
+    name its own modules import.
+    """
+    here = tree
+    for part in Path(rel).parts:
+        if (here / part / "__init__.py").is_file():
+            return here
+        here = here / part
+    if here.is_dir() and any((here / c / "__init__.py").is_file() for c in os.listdir(here)):
+        return here
+    return tree
+
+
+def package_bases(tree: Path, targets: list[str]) -> list[str]:
+    """`MYPYPATH` for one class: the root, and every base a declared path needs.
+
+    Together with `--explicit-package-bases` this gives a file one module name
+    whichever way mypy meets it - passed by path, or imported by a package in the
+    same tree. Without both, `scripts/tool.py` under a `scripts/` with no
+    `__init__.py` is `tool` by path and `scripts.tool` by import, and mypy exits 2
+    on "source file found twice" before reading a line, so a class B declaration
+    naming a shipped script is refused rather than read. The flag alone is not
+    enough: with only the root as a base a `src/` layout's `src/pkg/x.py` is
+    `src.pkg.x`, its own `from pkg.y import` goes unresolved, and strict typing
+    reports every value crossing that import as `Any` - a finding the same tree
+    does not have when `src` is a base, so the flag alone moves a reading. mypy
+    takes the longest base that holds a file, so listing the root beside `src`
+    is safe. Both shapes are in the self-test, which is where a stranger
+    reproduces them; the consumers they were measured on are not.
+    """
+    bases = [tree.resolve()] + [_base_of(tree, t).resolve() for t in targets]
+    seen: list[str] = []
+    for b in bases:
+        if str(b) not in seen:
+            seen.append(str(b))
+    return seen
+
+
 def mypy_findings(tree: Path, cls: str, targets: list[str], declared: Declared) -> list[Finding]:
-    """Class A strict, class B at the tool's default; `--platform linux` because the hosts are."""
+    """Class A strict, class B at the tool's default; `--platform linux` because the hosts are.
+
+    `--explicit-package-bases` with `MYPYPATH` from `package_bases`: see there.
+    """
     if not targets:
         return []
     with tempfile.TemporaryDirectory() as tmp:
@@ -481,11 +530,14 @@ def mypy_findings(tree: Path, cls: str, targets: list[str], declared: Declared) 
             sys.executable, "-m", "mypy", "--config-file", str(cfg), "--cache-dir", tmp,
             "--platform", "linux", "--ignore-missing-imports", "--no-error-summary",
             "--no-color-output", "--show-error-codes", "--exclude", TEST_EXCLUDE,
+            "--explicit-package-bases",
         ]
         if cls == "A":
             cmd.append("--strict")
+        env = {**os.environ, "MYPYPATH": os.pathsep.join(package_bases(tree, targets))}
         res = subprocess.run(
-            cmd + targets, cwd=tree, capture_output=True, text=True, encoding="utf-8", errors="replace"
+            cmd + targets, cwd=tree, env=env, capture_output=True, text=True, encoding="utf-8",
+            errors="replace",
         )
     if res.returncode not in (0, 1):
         raise Refusal(f"mypy exited {res.returncode} on class {cls}: {(res.stdout + res.stderr).strip()[:600]}")
