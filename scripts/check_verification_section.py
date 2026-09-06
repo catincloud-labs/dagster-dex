@@ -587,33 +587,25 @@ _OPTIONAL_CASES: list[tuple[str, str, list[str], bool]] = [
 ]
 
 
-def self_test() -> int:
+def _run_cases(cases: list, require_prod: bool, tag: str) -> int:
+    """One pinned corpus, one prod mode. Returns the number of cases that did not do as pinned."""
     failures = 0
-    for name, body, changed, want_clean in _CASES:
-        problems = check(body, changed)
+    for name, body, changed, want_clean in cases:
+        problems = check(body, changed, require_prod=require_prod)
         got_clean = not problems
         mark = "ok  " if got_clean == want_clean else "FAIL"
         if got_clean != want_clean:
             failures += 1
-        print(f"  {mark} {name}: expected {'clean' if want_clean else 'red'}")
+        print(f"  {mark} {tag}{name}: expected {'clean' if want_clean else 'red'}")
         if got_clean != want_clean and problems:
             print(f"        got: {problems[0][:100]}")
+    return failures
 
-    for name, body, changed, want_clean in _OPTIONAL_CASES:
-        problems = check(body, changed, require_prod=False)
-        got_clean = not problems
-        mark = "ok  " if got_clean == want_clean else "FAIL"
-        if got_clean != want_clean:
-            failures += 1
-        print(
-            f"  {mark} [no-require-prod] {name}: "
-            f"expected {'clean' if want_clean else 'red'}"
-        )
-        if got_clean != want_clean and problems:
-            print(f"        got: {problems[0][:100]}")
 
+def _check_trigger() -> int:
     # A checker whose own trigger has stopped firing would pass every case above by
     # declaring nothing runtime. Assert the trigger directly, both directions.
+    failures = 0
     if not runtime_paths(_RUNTIME):
         print("  FAIL trigger: a runtime path was not recognised as one")
         failures += 1
@@ -623,49 +615,59 @@ def self_test() -> int:
     if not runtime_paths(["docker-compose.yml"]):
         print("  FAIL trigger: docker-compose.yml was not recognised")
         failures += 1
+    return failures
 
-    # THE POLARITY ITSELF. Every path below read as NOT runtime before this gate
-    # was flipped, and each one alters what the box does. A regression to a
-    # declared scope of enforcement would make all six green again, silently,
-    # which is why they are asserted by name rather than by prefix.
-    # (`scripts/role_watch.py` and `scripts/resolve_role.py` were asserted here
-    # until #77 — they are not in this tree at all now, and their SHIPPED_ANYWAY
-    # carve-outs left with them, so the `^scripts/` exemption correctly covers
-    # everything that remains in that directory.)
-    _GATED_BY_DEFAULT = [
-        ("newservice/main.py", "a directory that did not exist when the list was written"),
-        ("backups/Dockerfile", "compose build context for postgres-backup"),
-        ("caddy/Caddyfile", "compose build context for caddy"),
-        ("uv.lock", "decides what is installed in every image"),
-    ]
+
+# THE POLARITY ITSELF. Every path below read as NOT runtime before this gate
+# was flipped, and each one alters what the box does. A regression to a
+# declared scope of enforcement would make all six green again, silently,
+# which is why they are asserted by name rather than by prefix.
+# (`scripts/role_watch.py` and `scripts/resolve_role.py` were asserted here
+# until #77 — they are not in this tree at all now, and their SHIPPED_ANYWAY
+# carve-outs left with them, so the `^scripts/` exemption correctly covers
+# everything that remains in that directory.)
+_GATED_BY_DEFAULT = [
+    ("newservice/main.py", "a directory that did not exist when the list was written"),
+    ("backups/Dockerfile", "compose build context for postgres-backup"),
+    ("caddy/Caddyfile", "compose build context for caddy"),
+    ("uv.lock", "decides what is installed in every image"),
+]
+
+# The exemptions still have to hold, or the flip has merely made the gate
+# fire on everything, which is the failure mode that gets a control disabled.
+_STILL_EXEMPT = [
+    ".github/workflows/ci.yml",
+    ".githooks/commit-msg",
+    "scripts/check_dex_pin.py",
+    ".gitignore",
+    ".env.example",
+    "renovate.json",
+    "LICENSE",
+    "README.md",
+    "tests/test_budget_ceilings_agree.py",
+]
+
+
+def _check_polarity() -> int:
+    failures = 0
     for path, why in _GATED_BY_DEFAULT:
         if not is_runtime_path(path):
             print(f"  FAIL polarity: {path} read as exempt -- {why}")
             failures += 1
-
-    # The exemptions still have to hold, or the flip has merely made the gate
-    # fire on everything, which is the failure mode that gets a control disabled.
-    _STILL_EXEMPT = [
-        ".github/workflows/ci.yml",
-        ".githooks/commit-msg",
-        "scripts/check_dex_pin.py",
-        ".gitignore",
-        ".env.example",
-        "renovate.json",
-        "LICENSE",
-        "README.md",
-        "tests/test_budget_ceilings_agree.py",
-    ]
     for path in _STILL_EXEMPT:
         if is_runtime_path(path):
             print(f"  FAIL exemption: {path} was gated and should not be")
             failures += 1
+    return failures
 
+
+def _check_normaliser() -> int:
     # `.github/...` above is the case that catches the normalisation defect this
     # change fixed: `.lstrip("./")` ate the leading dot, so a dot-prefixed
     # exemption never matched. Assert the normaliser directly too, because a
     # future rewrite could reintroduce it while that one case still passed by
     # some other route.
+    failures = 0
     if _normalise("./dex_api/x.py") != "dex_api/x.py":
         print("  FAIL normalise: a leading ./ was not stripped")
         failures += 1
@@ -673,17 +675,25 @@ def self_test() -> int:
         if _normalise(dotfile) != dotfile:
             print(f"  FAIL normalise: {dotfile} lost its leading dot")
             failures += 1
+    return failures
 
+
+def _check_reasons() -> int:
     # EVERY EXEMPTION CARRIES A REASON, because a reason is what makes the list
     # reviewable; an entry without one is a name somebody will not dare delete.
+    failures = 0
     for pattern, why in NOT_RUNTIME:
         if _substance(why) < _MIN_REASON:
             print(f"  FAIL reason: the exemption {pattern!r} has no usable reason")
             failures += 1
+    return failures
 
+
+def _check_carve_outs() -> int:
     # A CARVE-OUT THAT CARVES NOTHING IS A REGISTRY DEFECT, not a spare part. If
     # no exemption covers a SHIPPED_ANYWAY path, the entry is dead code claiming
     # to hold a hole open, and the next reader will believe it.
+    failures = 0
     for shipped, _why in SHIPPED_ANYWAY:
         if not any(p.search(shipped) for p, _ in _NOT_RUNTIME_RES):
             print(f"  FAIL carve-out: nothing exempts {shipped}, so naming it here")
@@ -707,13 +717,17 @@ def self_test() -> int:
             print("        It has moved or been deleted -- remove the SHIPPED_ANYWAY")
             print("        entry in the same change, or this is a claim about nothing.")
             failures += 1
+    return failures
 
+
+def _check_shipped_anyway_channel() -> int:
     # THE PER-REPOSITORY CARVE-OUT CHANNEL, exercised in both directions -- a
     # parser that refused everything would read exactly like one that worked,
     # and one that refused nothing would quietly re-open the fail-open registry
     # this input exists to avoid. Three arms: a valid entry makes an exempt
     # path runtime; an entry carving no hole is refused; a reasonless entry is
     # refused.
+    failures = 0
     carved = parse_shipped_anyway(
         ["scripts/example_shipped.py -- an entrypoint a compose service executes"]
     )
@@ -740,6 +754,21 @@ def self_test() -> int:
         else:
             print(f"  FAIL shipped-anyway: {bad!r} was accepted and must not be")
             failures += 1
+    return failures
+
+
+def self_test() -> int:
+    # One section per helper, so the estate's cyclomatic ceiling reads each
+    # independent block rather than their sum; the sections, their order and
+    # every printed line are unchanged from the single-function form.
+    failures = _run_cases(_CASES, True, "")
+    failures += _run_cases(_OPTIONAL_CASES, False, "[no-require-prod] ")
+    failures += _check_trigger()
+    failures += _check_polarity()
+    failures += _check_normaliser()
+    failures += _check_reasons()
+    failures += _check_carve_outs()
+    failures += _check_shipped_anyway_channel()
 
     if failures:
         print(f"\nself-test FAILED: {failures} case(s)", file=sys.stderr)
