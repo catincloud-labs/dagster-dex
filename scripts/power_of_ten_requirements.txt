@@ -1,4 +1,4 @@
-# ADR-0042 (constellation), rule 10: the tools that read the standard are
+# ADR-0042, rule 10: the tools that read the standard are
 # pinned by version, ONCE, here - and the pin has a mover. This file is the one
 # place the version is written; this repository's dependabot.yml reads this
 # directory under the `pip` ecosystem, so a bump is a pull request here, read

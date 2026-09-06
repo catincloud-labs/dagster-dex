@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The Power of 10 is read per class against a tree: findings, deviations, and a baseline that only shrinks.
 
-WHY THIS EXISTS (constellation's ADR-0042, ruled 2026-09-05; wb #73). The
+WHY THIS EXISTS (ADR-0042, ruled 2026-09-05, built the same day). The
 estate had never stated a coding standard, and seven repositories carrying
 Python held exactly one code-quality gate between them. The record adopts
 JPL's Power of 10, tailored to Python by a recorded disposition of each rule,
