@@ -523,7 +523,7 @@ def declared_keys(root: Path) -> set:
     return {(k.model, k.column) for k in project_definitions(root).declared_keys}
 
 
-def main() -> int:
+def main() -> int:  # noqa: C901 -- one walk, its legs in the order the README promises; each leg is a check and an early return, and splitting them would hide the order this file exists to show
     import dagster as dg
 
     print("dagster           : {}".format(dg.__version__))

@@ -206,9 +206,21 @@ DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
 Plus two checks that are not pytest, and both run in the same CI job:
 
 ```bash
-# the py.typed claim, actually checked -- at the FLOOR, not the newest interpreter
-uv run --no-project --with-editable . --with mypy==1.14.1 --with types-PyYAML \
+# the py.typed claim, actually checked -- at the FLOOR, not the newest interpreter.
+# The type checker's version is read from the manifest Dependabot moves, never
+# typed here (ADR-0042 in constellation, rule 10: a pin with no mover is frozen)
+uv run --no-project --with-editable . \
+  --with-requirements scripts/power_of_ten_requirements.txt --with types-PyYAML \
   python -m mypy
+
+# the coding standard, read at class A over `src` -- strict typing, ceiling 10 --
+# by the vendored checker; its self-test first, then the check. Same manifest.
+uv run --no-project --python 3.10 \
+  --with-requirements scripts/power_of_ten_requirements.txt \
+  python scripts/test_check_power_of_ten.py
+uv run --no-project --python 3.10 \
+  --with-requirements scripts/power_of_ten_requirements.txt \
+  python scripts/check_power_of_ten.py --tree . --class-a src
 
 # the reduction against REAL dagster objects -- no other step installs it
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
@@ -452,6 +464,26 @@ found.
 - `scripts/check_closing_keywords.py` is a **vendored copy**, present so the
   hook works offline. CI diffs it against its source and fails on drift. **Never
   edit it here.**
+- **The estate's coding standard is read here at class A** - ADR-0042 in
+  `catincloud-labs/constellation`: `src` is class A because a failure there
+  reaches a stranger, the consumer of a published wheel. Cyclomatic ceiling 10,
+  strict typing, no recursion, no `while True`, no `global`, no blind `except`.
+  `tests/`, `scripts/` and `examples/` are class C at ceiling 15. The checker
+  is vendored the way the two guards above are (public repository, private
+  action): `scripts/check_power_of_ten.py`, `scripts/test_check_power_of_ten.py`
+  and `scripts/power_of_ten_requirements.txt` are byte-compared against
+  `workbench` from the private side, and the `power of ten` job in `checks.yml`
+  runs them, advisory rather than ruleset-required. **Never edit them here.**
+  The manifest is the one place `ruff` and `mypy` are pinned, for the suite's
+  type-check step too, and `.github/dependabot.yml`'s `pip` entry moves it.
+  - The check is the **one reader of suppressions**: a deviation is a `noqa`
+    or a `type: ignore[code]` that names the rule with its reason on the same
+    line; one that is unused or gives no reason is red, and under strict typing
+    an unused `type: ignore` is red too. No `predates ADR-0042` marker stands in
+    this tree and the ratchet refuses the first one added. The two class C
+    `main`s (`examples/walk_the_whole_loop.py`, the write-path driver) carry a
+    reasoned `C901` deviation: each is one ordered walk of legs, and the order
+    is the artefact.
 
 ## This repository is ASCII
 

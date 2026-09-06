@@ -266,6 +266,36 @@ def _text_mapping(document: Mapping[str, object], key: str) -> dict[str, str]:
     return dict(raw)
 
 
+def _models_of(raw_models: list[object]) -> list[ProjectModel]:
+    """Each ``models[]`` entry as a :class:`ProjectModel`, or the refusal naming
+    the index it could not read. Split from :func:`loads` so each reads under
+    the class A ceiling; the refusals are the same ones, in the same words."""
+
+    models: list[ProjectModel] = []
+    for index, entry in enumerate(raw_models):
+        if not isinstance(entry, dict):
+            raise ArtifactError(f"models[{index}] must be an object")
+        depends_on = entry.get("depends_on", [])
+        if not isinstance(depends_on, list) or not all(
+            isinstance(d, str) for d in depends_on
+        ):
+            raise ArtifactError(f"models[{index}].depends_on must be a list of strings")
+        try:
+            # ProjectModel's own __post_init__ is the name check, so a nameless
+            # model is refused by the model rather than re-checked here.
+            models.append(
+                ProjectModel(
+                    name=entry.get("name", ""),
+                    depends_on=tuple(depends_on),
+                    relation=entry.get("relation"),
+                    layer=entry.get("layer"),
+                )
+            )
+        except ValueError as exc:
+            raise ArtifactError(f"models[{index}]: {exc}") from exc
+    return models
+
+
 def loads(text: str) -> ProjectArtifact:
     """Read an artifact, refusing anything it cannot vouch for.
 
@@ -318,32 +348,9 @@ def loads(text: str) -> ProjectArtifact:
     if not isinstance(raw_models, list):
         raise ArtifactError("'models' is required and must be a list")
 
-    models = []
-    for index, entry in enumerate(raw_models):
-        if not isinstance(entry, dict):
-            raise ArtifactError(f"models[{index}] must be an object")
-        depends_on = entry.get("depends_on", [])
-        if not isinstance(depends_on, list) or not all(
-            isinstance(d, str) for d in depends_on
-        ):
-            raise ArtifactError(f"models[{index}].depends_on must be a list of strings")
-        try:
-            # ProjectModel's own __post_init__ is the name check, so a nameless
-            # model is refused by the model rather than re-checked here.
-            models.append(
-                ProjectModel(
-                    name=entry.get("name", ""),
-                    depends_on=tuple(depends_on),
-                    relation=entry.get("relation"),
-                    layer=entry.get("layer"),
-                )
-            )
-        except ValueError as exc:
-            raise ArtifactError(f"models[{index}]: {exc}") from exc
-
     return ProjectArtifact(
         name=name,
-        models=tuple(models),
+        models=tuple(_models_of(raw_models)),
         declaration_sources=_text_mapping(document, "declared"),
         semantic_sources=_text_mapping(document, "semantic"),
         source_declarations=_text_mapping(document, "sources"),

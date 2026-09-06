@@ -427,7 +427,7 @@ class EditableDagsterProject(DagsterProject):
         self._surface = tuple(surface)
 
     @classmethod
-    def from_asset_graph(  # type: ignore[override]
+    def from_asset_graph(  # type: ignore[override]  # the write tier requires root and surface the base builds without; see below
         cls,
         assets: Iterable[_AssetDefinition],
         *,
