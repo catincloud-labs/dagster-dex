@@ -39,6 +39,7 @@ from check_power_of_ten import (
     Refusal,
     check,
     classify,
+    package_bases,
     parse_declaration,
     parse_suppression,
     render_markdown,
@@ -195,6 +196,59 @@ neg_b = run({**INIT, **NEGATIVES}, b="src")
 case("class B refuses the same rules at ceiling 15 with default typing", pairs(neg_b, "B") == NEGATIVE_PAIRS_AB)
 case("...complexity 11 fits class B's ceiling", ("complexity.py", "C901") not in pairs(neg_b, "B"))
 case("...an untyped def is strict's finding, not the default's", ("typing_strict.py", "types") not in pairs(neg_b, "B"))
+
+# --- a shipped script under a namespace directory, declared beside the package -------
+# A consumer's shape: `scripts/` deliberately has no `__init__.py`, the package imports
+# `scripts.<name>` at module level, and the script is COPY'd into the image, so the
+# record's test makes it class B. Passed to mypy by path beside the package, the one
+# file used to arrive under two module names and mypy exited 2 before reading a
+# line. The case is mixed on purpose: the clean script reads clean, and a real type
+# error in a script declared the same way is still a class B finding, so the flag
+# that stops the refusal is seen not to silence the reader.
+NAMESPACE_SCRIPTS = {
+    "pkg/__init__.py": "from scripts.tool import answer\n\n__all__ = [\"answer\"]\n",
+    "scripts/tool.py": "def answer() -> int:\n    return 42\n",
+    "scripts/wrong.py": "def answer() -> int:\n    return \"forty-two\"\n",
+}
+fixture(
+    "a package importing `scripts.<name>` with the script declared class B beside it",
+    "read, not refused: the clean script is clean and the wrong one is a class B typing finding",
+)
+ns = run(NAMESPACE_SCRIPTS, b="pkg scripts/tool.py scripts/wrong.py")
+case("a namespace-directory script declared class B is read rather than refused", ns.reports["B"].files == 3)
+case("...the clean script reads clean", ("tool.py", "types") not in pairs(ns, "B"))
+case("...and a type error in one declared the same way is still found", ("wrong.py", "types") in pairs(ns, "B"))
+case("...with nothing else refused", pairs(ns, "B") == {("wrong.py", "types")})
+
+# The flag alone would have moved a reading: a `src/` layout's own imports resolve
+# only if `src` is a package base. A `src/` layout's shape - `src/pkg/` declared as
+# `src`, one module importing another by `from pkg.x import` - is the case that
+# read one strict finding (`no-any-return`) under the flag without the base, and
+# zero on `main`. Mixed again: the cross-module import is clean under strict, and a
+# real strict finding in the same package is still found.
+SRC_LAYOUT = {
+    "src/pkg/__init__.py": "",
+    "src/pkg/a.py": "def one() -> int:\n    return 1\n",
+    "src/pkg/b.py": "from pkg.a import one\n\n\ndef two() -> int:\n    return one() + 1\n",
+    "src/pkg/c.py": "from pkg.a import one\n\n\ndef three():\n    return one() + 2\n",
+}
+fixture(
+    "a `src/` layout importing its own package by name, declared class A",
+    "read with `src` as a package base: the import resolves, and only the untyped def is a finding",
+)
+src_layout = run(SRC_LAYOUT, a="src")
+case("a `src/` layout's own import resolves, so nothing crossing it reads as Any", ("b.py", "types") not in pairs(src_layout, "A"))
+case("...and the strict finding beside it is still found", ("c.py", "types") in pairs(src_layout, "A"))
+root_src = stage(SRC_LAYOUT)
+case(
+    "...the derived bases are the root and `src`, in that order",
+    package_bases(root_src, ["src"]) == [str(root_src.resolve()), str((root_src / "src").resolve())],
+)
+root_ns = stage(NAMESPACE_SCRIPTS)
+case(
+    "...a namespace script's base is the root, not its own directory, and a package's is the root",
+    package_bases(root_ns, ["pkg", "scripts/tool.py"]) == [str(root_ns.resolve())],
+)
 
 # --- class C: the ceiling and nothing else ---------------------------------------------
 
