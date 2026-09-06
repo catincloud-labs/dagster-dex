@@ -389,10 +389,18 @@ jobs:
       # That claim is only worth something if something checks it -- a marker
       # shipped on unchecked code is the decorative-control shape. Run at the
       # floor (3.10), which is the version the annotations must be valid against.
+      #
+      # The type checker's version comes from `scripts/power_of_ten_requirements.txt`,
+      # the manifest Dependabot's `pip` entry moves, never from a version typed
+      # into this step: ADR-0042 (constellation), rule 10 - a pin in a `run:`
+      # step is in no ecosystem and has no mover, and `mypy==1.14.1` written
+      # here was the frozen example the record measured. The `power of ten`
+      # job below reads `src` at class A - strict - with the same pins; this
+      # step keeps the py.typed claim inside the required fan-in, at the floor.
       - name: Type check (the py.typed claim, actually checked)
         run: |
           uv run --no-project --with-editable . \
-            --with mypy==1.14.1 --with types-PyYAML \
+            --with-requirements scripts/power_of_ten_requirements.txt --with types-PyYAML \
             python -m mypy
 
       # A real Dagster graph, which no other step exercises. Every test above
@@ -555,3 +563,55 @@ jobs:
 
       - name: Every third-party ref in this tree is a commit with its version
         run: python3 scripts/check_third_party_pins.py --org catincloud-labs --tree .
+
+  # ADR-0042 (constellation): the estate's coding standard, the Power of 10,
+  # read per class against the tree this pull request proposes and refused.
+  # `src` is class A - a failure there reaches a stranger, the consumer of a
+  # published wheel - so it is read at ceiling 10 with strict typing: no
+  # recursion, no `while True`, no `global`, no blind `except`, every function
+  # annotated. `tests/`, `scripts/` and `examples/` are class C at ceiling 15
+  # without being named. The interpreter is the floor of `requires-python`,
+  # the version the py.typed claim must hold against.
+  #
+  # Vendored, like the two guards above: this repository is public and cannot
+  # resolve workbench's `power-of-ten` action, so `scripts/check_power_of_ten.py`,
+  # its self-test and `scripts/power_of_ten_requirements.txt` are byte-for-byte
+  # copies workbench's `vendored copies` job compares against its own. Do not
+  # edit them here. The manifest is the one place the tool versions are
+  # written, and `.github/dependabot.yml`'s `pip` entry is what moves it.
+  #
+  # No `predates ADR-0042` marker stands here: the two `src` functions above
+  # 10 were split, the strict-typing findings were annotated, and the two
+  # class C `main`s carry a reasoned `C901` deviation. Once `main` calls this
+  # script the ratchet is live: a marker may be removed by anyone and added by
+  # nobody. Not in the `tests` fan-in: making it blocking is the owner's
+  # decision to take with the blocking cost in view, the same as the two
+  # guards above.
+  power-of-ten:
+    name: power of ten
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      # The guard's own self-test runs before the guard does, here rather
+      # than trusted to have run once where the checker was authored.
+      - name: Guard fires and goes quiet
+        run: |
+          uv run --no-project --python 3.10 \
+            --with-requirements scripts/power_of_ten_requirements.txt \
+            python scripts/test_check_power_of_ten.py
+
+      # The base sha is the pull request's, or empty on a push: the checker
+      # reads the BASE's workflows to decide whether the ratchet runs, so
+      # nothing the head can set decides it.
+      - name: Every class reads clean at its ceiling, and the baseline did not grow
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          uv run --no-project --python 3.10 \
+            --with-requirements scripts/power_of_ten_requirements.txt \
+            python scripts/check_power_of_ten.py --tree . --class-a src --base-sha "$BASE_SHA"

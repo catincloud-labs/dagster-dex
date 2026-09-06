@@ -139,7 +139,7 @@ def parse_declarations(
     return keys, joins, notes
 
 
-def _composite_key(model: str, entry: dict, notes: list[str]) -> DeclaredKey | None:
+def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> DeclaredKey | None:
     """A model-level ``unique_combination_of_columns``, when present and sane."""
 
     for name, payload in _test_names(entry.get("tests")):
@@ -158,7 +158,7 @@ def _composite_key(model: str, entry: dict, notes: list[str]) -> DeclaredKey | N
 
 
 def _single_column_keys(
-    model: str, entry: dict, joins: list[DeclaredJoin], notes: list[str]
+    model: str, entry: dict[str, Any], joins: list[DeclaredJoin], notes: list[str]
 ) -> list[DeclaredKey]:
     """Column-level ``unique`` keys, collecting ``relationships`` joins en route.
 
@@ -196,6 +196,73 @@ def _single_column_keys(
                     )
                 )
     return found
+
+
+def _absorb_source_tables(
+    entry: dict[str, Any],
+    *,
+    origin: str,
+    reader: str,
+    declared_in: str | None,
+    found: dict[tuple[str, str | None, str], ExternalSource],
+    notes: list[str],
+) -> int:
+    """Fold one ``sources[]`` entry's tables into ``found``, and count them.
+
+    Split from :func:`parse_source_declarations` so each reads under the class A
+    ceiling; the notes are the same ones, in the same words, and the merge rule
+    for a table declared twice is stated where it is applied.
+    """
+
+    system = entry.get("name")
+    if not isinstance(system, str) or not system:
+        notes.append(f"source declaration {origin!r} has a source with no name; skipped")
+        return 0
+    schema = entry.get("schema")
+    schema_name = schema if isinstance(schema, str) and schema else None
+
+    declared = 0
+    for table_entry in entry.get("tables") or []:
+        if not isinstance(table_entry, dict):
+            continue
+        table = table_entry.get("name")
+        if not isinstance(table, str) or not table:
+            notes.append(
+                f"source {system!r} in {origin!r} declares a table with "
+                "no name; skipped"
+            )
+            continue
+        declared += 1
+        found_key = (system, schema_name, table)
+        columns = _named(table_entry.get("columns"))
+        existing = found.get(found_key)
+        if existing is None:
+            found[found_key] = ExternalSource(
+                system=system,
+                table=table,
+                schema_name=schema_name,
+                columns=columns,
+                read_by=(reader,),
+                declared_in=declared_in,
+            )
+        else:
+            merged = list(existing.columns)
+            merged.extend(c for c in columns if c not in existing.columns)
+            # The first declaration's provenance is kept when a second
+            # reader joins. Two readers of one table were declared in two
+            # places and the field holds one, so overwriting would make
+            # which one survives depend on sort order; keeping the first
+            # at least makes it stable and the `read_by` tuple says there
+            # is more than one place to look.
+            found[found_key] = ExternalSource(
+                system=system,
+                table=table,
+                schema_name=schema_name,
+                columns=tuple(merged),
+                read_by=existing.read_by + (reader,),
+                declared_in=existing.declared_in or declared_in,
+            )
+    return declared
 
 
 def parse_source_declarations(
@@ -261,55 +328,10 @@ def parse_source_declarations(
         for entry in document.get("sources") or []:
             if not isinstance(entry, dict):
                 continue
-            system = entry.get("name")
-            if not isinstance(system, str) or not system:
-                notes.append(
-                    f"source declaration {origin!r} has a source with no name; skipped"
-                )
-                continue
-            schema = entry.get("schema")
-            schema_name = schema if isinstance(schema, str) and schema else None
-
-            for table_entry in entry.get("tables") or []:
-                if not isinstance(table_entry, dict):
-                    continue
-                table = table_entry.get("name")
-                if not isinstance(table, str) or not table:
-                    notes.append(
-                        f"source {system!r} in {origin!r} declares a table with "
-                        "no name; skipped"
-                    )
-                    continue
-                declared_here += 1
-                found_key = (system, schema_name, table)
-                columns = _named(table_entry.get("columns"))
-                existing = found.get(found_key)
-                if existing is None:
-                    found[found_key] = ExternalSource(
-                        system=system,
-                        table=table,
-                        schema_name=schema_name,
-                        columns=columns,
-                        read_by=(reader,),
-                        declared_in=declared_in,
-                    )
-                else:
-                    merged = list(existing.columns)
-                    merged.extend(c for c in columns if c not in existing.columns)
-                    # The first declaration's provenance is kept when a second
-                    # reader joins. Two readers of one table were declared in two
-                    # places and the field holds one, so overwriting would make
-                    # which one survives depend on sort order; keeping the first
-                    # at least makes it stable and the `read_by` tuple says there
-                    # is more than one place to look.
-                    found[found_key] = ExternalSource(
-                        system=system,
-                        table=table,
-                        schema_name=schema_name,
-                        columns=tuple(merged),
-                        read_by=existing.read_by + (reader,),
-                        declared_in=existing.declared_in or declared_in,
-                    )
+            declared_here += _absorb_source_tables(
+                entry, origin=origin, reader=reader, declared_in=declared_in,
+                found=found, notes=notes,
+            )
 
         # A file that parsed but declared nothing is the failure mode worth
         # naming: it reads as "this model has no external reads", which is a

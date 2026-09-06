@@ -165,7 +165,7 @@ def announce(line: str) -> bool:
     return True
 
 
-def main() -> int:
+def main() -> int:  # noqa: C901 -- one drive, its legs in order against the published wheel; each leg is a check and an early return, and splitting them would hide the order the legs prove
     from exmergo_dex_core.adapters.project import (
         EditableProject,
         PlacingProject,

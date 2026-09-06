@@ -29,3 +29,19 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "chore(deps)"
+
+  # ADR-0042 (constellation), rule 10: the tools that read the coding standard
+  # are pinned by version, once, in `scripts/power_of_ten_requirements.txt`,
+  # and the pin has a mover. This entry is that mover. The file is a vendored
+  # copy of workbench's `.github/actions/power-of-ten/requirements.txt` -- this
+  # repository is public and cannot resolve a private action, so it carries
+  # the checker, its self-test and the manifest under `scripts/`, byte-compared
+  # to workbench by workbench's own `vendored copies` job. The two pins can
+  # differ for part of a cycle: a bump lands here as a pull request, read as a
+  # diff of a version and a changelog, and workbench's row says so.
+  - package-ecosystem: pip
+    directory: /scripts
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(deps)"
