@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A third-party action ref is a full commit with its version beside it, and the estate's pins are compared.
 
-WHY THIS EXISTS (constellation's ADR-0040, ruled 2026-09-01). Every action
+WHY THIS EXISTS (ADR-0040, ruled 2026-09-01). Every action
 the estate did not write was referenced by a TAG - `actions/checkout@v4`,
 `google-github-actions/auth@v3`, `tailscale/github-action@v4` holding the
 tailnet credential. A tag is a mutable pointer owned by someone else: when it
@@ -21,7 +21,7 @@ TWO THINGS, ONE SCANNER
   the version, and the publisher must be one the record enumerates. A
   refusal names the file, the line, the ref and the publisher.
 
-  The comparator (`--org` alone), run from `workbench` across the
+  The comparator (`--org` alone), run from the shared-actions repository across the
   organisation. The population is DERIVED exactly the way `pin-coherence`
   derives it - the organisation's repository list, every
   `.github/**/*.yml|yaml` blob in each default branch, an unreadable
@@ -58,8 +58,8 @@ pin. Dependabot does, per repository, and a pin without a mover is a frozen
 vulnerability (ADR-0031).
 
 THE PUBLISHER SET is enumerated in ADR-0040 from the estate's tree as read on
-2026-09-01. Adding one is a decision: a dated line in constellation's
-`docs/ORGANISATION.md` register, and then the line here that enforces it. The
+2026-09-01. Adding one is a decision: a dated line in the estate's register,
+and then the line here that enforces it. The
 register line is the argument and this set is the control; a publisher added
 to one without the other is either a refusal with no record or a record with
 no teeth, and both are visible - the first as a red run, the second in the
@@ -290,7 +290,7 @@ EXPLANATIONS = {
         "The publisher is outside the set ADR-0040 enumerates. A pin proves "
         "the code does not change; the publisher set is the whole of the claim "
         "that it is worth running. Adding one is a dated line in "
-        "constellation's ORGANISATION.md register and then a line in this "
+        "the estate's register and then a line in this "
         "scanner's TRUSTED_PUBLISHERS."
     ),
     "container-image": (
@@ -500,7 +500,7 @@ def main(argv: list[str] | None = None) -> int:
     if problems:
         # Everything on ONE stream. A runner reads stdout and stderr through
         # separate pipes and interleaves them by arrival, and three CI runs of
-        # #59 showed a stderr verdict printed AFTER a flushed stdout report
+        # one pull request showed a stderr verdict printed AFTER a flushed stdout report
         # still landing above it in the log. The exit code is the verdict;
         # the words go where the evidence goes.
         print(f"REFUSALS: {len(problems)}\n")
