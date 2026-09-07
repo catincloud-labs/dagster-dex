@@ -54,9 +54,12 @@ name: publish
 #                The reviewer costs one click per rehearsal. Unlike `pypi`'s it
 #                never sits on the pull-request path, because this job is
 #                `workflow_dispatch`-only -- see the `rehearse` job's `if:`.
-# A publisher matches on owner AND repo. `catincloudlabs` (no hyphen) is a
-# DIFFERENT organisation holding other repositories in this estate, and naming it
-# by mistake fails at upload -- after a tag is cut, having built and tested green.
+# A publisher matches on owner AND repo. `catincloudlabs` (no hyphen) is a USER
+# account, not an organisation - `.github/CODEOWNERS` says the same - and naming
+# it here by mistake fails at upload: after a tag is cut, having built and
+# tested green. Until 2026-09-07 this comment called it "a DIFFERENT
+# organisation" and added what else the account holds; the first was wrong and
+# the second was a disclosure no stranger can use, so it is dropped (#83).
 #
 # The tag is a bare `v*` because this repository holds exactly one
 # distribution. It was namespaced (`dagster-dex-project-v*`) in the monorepo this

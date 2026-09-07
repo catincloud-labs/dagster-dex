@@ -65,15 +65,23 @@ permissions:
 #
 # It has not been dropped. It moved to the private side, which is the direction
 # that does work -- a private job can read a public repository, and that was
-# measured too. The vendored files below are compared there:
+# measured too. The vendored files below are compared there. The upstream
+# comparison job's own pairing is the count to read, not this list: until
+# 2026-09-07 it held five names and the sentence after it said "those three",
+# while the job paired ten (#83). As of that date:
 #
 #   scripts/check_closing_keywords.py
 #   scripts/test_check_closing_keywords.py
 #   .github/markdownlint.json
 #   scripts/check_third_party_pins.py
 #   scripts/test_check_third_party_pins.py
+#   scripts/check_pr_title.py
+#   scripts/check_verification_section.py
+#   scripts/check_power_of_ten.py
+#   scripts/test_check_power_of_ten.py
+#   scripts/power_of_ten_requirements.txt
 #
-# So do NOT edit those three to suit local taste. They are copies, they are
+# So do NOT edit those files to suit local taste. They are copies, they are
 # checked, and the check is somewhere you cannot see from this file. The
 # weakening is real and worth naming: drift is now caught after it lands rather
 # than blocked on the pull request that introduces it.

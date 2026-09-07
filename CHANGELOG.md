@@ -12,6 +12,26 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
+## Unreleased
+
+Documentation and one docstring; no code path changed, the seam did not move,
+and nothing here is breaking.
+
+**Corrected.**
+
+- **The 0.6.1 entry's first claim - that the shipped docstrings no longer quote
+  private measurements - was false on the day it was written** (read
+  2026-09-07). `src/dagster_dex/project.py` carried a timing taken against a
+  deployment nobody outside this project can reach, in the `declarations()`
+  docstring, since before 0.6.1; the change that entry describes edited the
+  same file and left it (#52, #83). The figure is removed in this change. The
+  design reason it illustrated stays, without a number: memoising the result
+  avoids re-parsing the declaration files several times per command.
+- **The same 0.6.1 entry restates a removed figure in the sentence announcing
+  its removal.** A released entry is history and is not rewritten, so both
+  corrections are dated here rather than edited there. The property alone was
+  the claim worth publishing; the number belongs where it was taken (#83).
+
 ## 0.6.1 - 2026-08-27
 
 Documentation only: no code path changed, the seam did not move, and nothing
