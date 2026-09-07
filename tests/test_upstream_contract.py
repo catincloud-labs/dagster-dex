@@ -789,7 +789,9 @@ class TestTheWriteTierOverTheArtifactTransport(TestTheWriteTierAgainstDexCore):
 #: silently, because one nobody mixes in runs no assertions and is invisible to a
 #: suite that counts what ran. 1.6.4's `PlacingProjectContract` arrived exactly
 #: that way and was noticed by hand; 1.9.0's `SemanticCatalogContract` was
-#: noticed by this test going red, working as designed.
+#: noticed by this test going red, working as designed. 1.11.0's
+#: `SemanticCatalogSourceContract` arrived the same way on 2026-09-06 and was
+#: caught the same way, on the ceiling leg of `engine-ends` the next morning.
 #:
 #: History worth keeping, since it is the defect this repository names most
 #: often. The two pre-2026-08-18 entries were stale and one had been RETRACTED
@@ -802,16 +804,17 @@ class TestTheWriteTierOverTheArtifactTransport(TestTheWriteTierAgainstDexCore):
 #: copies of a claim.
 _DECLINED: dict[str, str] = {}
 
-#: The entry is CONDITIONAL, and the condition is a cost worth stating rather
-#: than hiding. The engine range this suite runs against spans 1.8.x, which
-#: ships no `SemanticCatalogContract`, and 1.9.x, which does: an unconditional
-#: entry fails the floor leg's staleness arm below for a contract that
-#: legitimately is not there (mutation-checked at 1.8.0: `if True:` in place of
-#: the hasattr fails exactly there). The price is that for THIS entry the
-#: staleness arm cannot fire - if upstream removes the contract, the entry
-#: vanishes with it instead of being flagged - so the arm's rot detection is
-#: suspended exactly here. Collapse this to a plain entry in `_DECLINED` when
-#: the `[dex]` floor reaches `~=1.9`, which restores the arm.
+#: The entries are CONDITIONAL, and the condition is a cost worth stating
+#: rather than hiding. The engine range this suite runs against spans 1.8.x,
+#: which ships neither contract below, and the later minors, which do: an
+#: unconditional entry fails the floor leg's staleness arm below for a contract
+#: that legitimately is not there (mutation-checked at 1.8.0 for each entry:
+#: `if True:` in place of the hasattr fails exactly there). The price is that
+#: for THESE entries the staleness arm cannot fire - if upstream removes a
+#: contract, the entry vanishes with it instead of being flagged - so the arm's
+#: rot detection is suspended exactly here. Collapse each to a plain entry in
+#: `_DECLINED` when the `[dex]` floor reaches the minor that ships it (`~=1.9`
+#: for the first, `~=1.11` for the second), which restores the arm.
 if hasattr(conformance, "SemanticCatalogContract"):
     _DECLINED["SemanticCatalogContract"] = (
         "declined as UNBUILT, not as structurally impossible - the distinction "
@@ -826,6 +829,28 @@ if hasattr(conformance, "SemanticCatalogContract"):
         "empty catalog reading as a layer with nothing in it is the failure "
         "mode the protocol itself names. Implementing the reduction is "
         "candidate work, not a foreclosed option."
+    )
+
+#: 1.11.0 lifted the catalog assertions out of `SemanticCatalogContract` into
+#: this base, so that a semantic SOURCE (native Apache Ossie documents in a
+#: repository, with no project behind them) is held to the same read view as a
+#: project. The base is the child's parent, so a format that mixes the child in
+#: considers both through the MRO, and a format that declines the child leaves
+#: the parent unconsidered - which is the exact shape this test went red on.
+#: Declined for the child's reason, not a second one: this format builds no
+#: read catalog yet, and it is not a semantic source either. It is a project,
+#: registered under `exmergo_dex_core.projects`; the semantic-source seam is a
+#: different factory this package does not supply.
+if hasattr(conformance, "SemanticCatalogSourceContract"):
+    _DECLINED["SemanticCatalogSourceContract"] = (
+        "declined for the reason SemanticCatalogContract above is declined, of "
+        "which this is the base since 1.11.0: the read-catalog assertions moved "
+        "here so that a semantic source (native Ossie documents, no project) "
+        "answers the same view as a project does. This format builds no "
+        "catalog yet, and it is not a semantic source - it registers under "
+        "exmergo_dex_core.projects, not the semantic-source seam. When the "
+        "catalog reduction is built, mix SemanticCatalogContract in and both "
+        "entries go together: the child's MRO considers this base."
     )
 
 
