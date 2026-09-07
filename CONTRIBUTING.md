@@ -127,14 +127,13 @@ issues.
 Use `-`, or restructure with a colon, a comma or parentheses. `=>` for arrows,
 `...` for ellipses.
 
-One file is exempt, and CI will fail if you "fix" it:
-`scripts/check_verification_section.py` is a vendored copy compared byte-for-byte
-against its source, and `tests/test_ascii_only.py` is where the exemption is
-written. This paragraph named `scripts/check_closing_keywords.py` until
-2026-09-07. That guard and its self-test were exempt on the same argument until
-2026-09-04, when their source was scrubbed to ASCII (#77); they have been held
-to the rule since, so the exemption described here had already ended when it was
-read (#83).
+No file is exempt. `scripts/check_verification_section.py` was, until
+2026-09-07: a vendored copy compared byte-for-byte against its source, which
+could not be reformatted here without failing that comparison. Its source was
+scrubbed to ASCII and re-vendored (#85), as the closing-keyword guard and its
+self-test had been on 2026-09-04 (#77), and the skip set in
+`tests/test_ascii_only.py` left with it: a non-ASCII byte arriving in a
+re-vendor is a defect at the source, and that test is the first to see it.
 
 ## Opening a pull request
 

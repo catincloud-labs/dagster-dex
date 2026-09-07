@@ -20,15 +20,17 @@ for readers who know it, and it does not travel to strangers.
 The second reason is a style rule, and a style rule with no control is a
 suggestion. This is the control.
 
-One exemption, and it is not a style choice. `scripts/check_verification_section.py`
-is a vendored copy compared **byte-for-byte** against its source. Editing it to
-satisfy this test would trade a passing test for a failing pipeline.
-
-The closing-keyword guard and its self-test were exempt on the same argument
-until 2026-09-04, when their source was scrubbed to ASCII. They are now held to
-the rule like every other file: a byte copy is fixed at its source, so a
-non-ASCII byte arriving in a re-vendor reads here as a defect in the source, and
-this test is the first thing to see it.
+There is no exemption, since 2026-09-07. Until then
+`scripts/check_verification_section.py` was skipped here: a vendored copy
+compared **byte-for-byte** against its source, so editing it to satisfy this
+test would have traded a passing test for a failing pipeline. The closing-keyword
+guard and its self-test were skipped on the same argument until 2026-09-04. Each
+exemption ended the same way, with the source scrubbed to ASCII and re-vendored
+(#77, then #85), and the skip set left with the last entry rather than staying
+empty, because an entry in it can never again be the right fix: a byte copy is
+fixed at its source, so a non-ASCII byte arriving in a re-vendor is a defect in
+the source, and this test is the first thing to see it. An empty set kept for
+that case would be a mechanism whose every future use is the wrong answer.
 """
 
 from __future__ import annotations
@@ -40,23 +42,6 @@ import sys
 import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-
-#: Compared byte-for-byte against their source. Not ours to reformat. See this
-#: module's docstring.
-#:
-#: A set rather than a single path since the guard's self-test had to be vendored
-#: too. Membership is checked with `in`, so adding a third vendored file is a
-#: one-line change rather than a rewrite of the filter below.
-VENDORED = frozenset(
-    {
-        # The verification-section checker, vendored at the wb #23 step-4
-        # adoption: compared byte-for-byte against its private source by the
-        # drift job, so reformatting it to ASCII here would be drift by
-        # construction. The closing-keyword pair left this set on 2026-09-04
-        # when its source was scrubbed; see the module docstring.
-        "scripts/check_verification_section.py",
-    }
-)
 
 
 def _tracked_files() -> list[str]:
@@ -81,7 +66,7 @@ def _text_files() -> list[str]:
     return [
         f
         for f in _tracked_files()
-        if f not in VENDORED and not f.lower().endswith(skip_suffixes)
+        if not f.lower().endswith(skip_suffixes)
     ]
 
 
