@@ -53,11 +53,15 @@ DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
   python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
 ```
 
-Plus two checks that are not pytest:
+Plus the following checks, which are not pytest:
 
 ```bash
-# annotations must check clean -- this package ships a py.typed marker
-uv run --no-project --with-editable . --with mypy==1.14.1 --with types-PyYAML \
+# annotations must check clean -- this package ships a py.typed marker.
+# The type checker's version comes from the manifest Dependabot moves, never
+# from a pin typed into this line: `--with mypy==1.14.1` stood here until
+# 2026-09-07, and that frozen pin is the shape the coding rule was written against
+uv run --no-project --with-editable . \
+  --with-requirements scripts/power_of_ten_requirements.txt --with types-PyYAML \
   python -m mypy
 
 # the reduction against real Dagster objects (everything above uses fakes)
@@ -74,7 +78,10 @@ Every command above runs in CI on every pull request, and the two `examples/`
 ones **are those files** rather than copies of them. (This sentence used to
 open "All five run in CI", and the count went wrong the moment a sixth was
 added - a number in a document that something else can change, which is the
-defect this repository names elsewhere and committed here.) This block used to inline an eight-line `python -c` script
+defect this repository names elsewhere and committed here. The line introducing
+the block made the same mistake one sentence away: it read "Plus two checks"
+until 2026-09-07 while the block beneath it held three commands, which is why it
+now names no number - #83.) This block used to inline an eight-line `python -c` script
 that built an asset and printed its tier. It worked, which is why it survived,
 and it was still wrong twice over: it was a second copy of a check that already
 had a home, and the sentence above it claimed CI ran it. CI has run
@@ -121,8 +128,13 @@ Use `-`, or restructure with a colon, a comma or parentheses. `=>` for arrows,
 `...` for ellipses.
 
 One file is exempt, and CI will fail if you "fix" it:
-`scripts/check_closing_keywords.py` is a vendored copy compared byte-for-byte
-against its source.
+`scripts/check_verification_section.py` is a vendored copy compared byte-for-byte
+against its source, and `tests/test_ascii_only.py` is where the exemption is
+written. This paragraph named `scripts/check_closing_keywords.py` until
+2026-09-07. That guard and its self-test were exempt on the same argument until
+2026-09-04, when their source was scrubbed to ASCII (#77); they have been held
+to the rule since, so the exemption described here had already ended when it was
+read (#83).
 
 ## Opening a pull request
 

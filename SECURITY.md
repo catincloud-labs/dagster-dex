@@ -22,9 +22,14 @@ credit you in the advisory unless you would prefer otherwise.
 
 ## Supported versions
 
-| Version | Supported |
-| --- | --- |
-| `0.1.x` | Yes |
+**The latest minor release on PyPI receives fixes; older minors receive none.**
+`CHANGELOG.md` is the current list - read it, not this file, for the number.
+This file names no version on purpose; the paragraph below is why.
+
+Until 2026-09-07 this section was a table naming `0.1.x` as the one supported
+version. It was written for the first release and never moved, so it sat five
+minors behind the index while still reading as current (#83). A version written
+into a document is a claim the next tag can falsify; the rule above cannot be.
 
 The package is alpha and the contract may move before 1.0. There is no long-term
 support branch, and there will not be one until the seam settles.

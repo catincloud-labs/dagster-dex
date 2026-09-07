@@ -203,7 +203,12 @@ DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
   python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
 ```
 
-Plus two checks that are not pytest, and both run in the same CI job:
+Plus the following checks, which are not pytest. They do not share a CI job:
+the type check and the two `examples/` commands run in `suite`, and the two
+power-of-ten commands run in `power of ten` (both are the literal `name:` of a
+job in `checks.yml`). Until 2026-09-07 this line read "Plus two checks that are
+not pytest, and both run in the same CI job", while the block beneath it held
+five commands across two jobs - both halves were false (#83).
 
 ```bash
 # the py.typed claim, actually checked -- at the FLOOR, not the newest interpreter.

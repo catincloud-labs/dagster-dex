@@ -166,10 +166,10 @@ class DagsterProject:
         ``DbtProject.load()`` is and for the same reason: the tier-2 accessors each
         need it and a single command needs several of them. ``DexProject``'s
         ``definitions()``, ``transform_layer()`` and ``semantic_layer()`` call this
-        separately, and ``notes()`` calls it again, so one ``maintain snapshot``
-        re-parsed every declaration file three or four times. Measured on the real
-        project before adding the memo: **21.0 ms** per call (50 warm calls, min
-        20.1, max 26.2), so about 63 ms of repeated parsing per command.
+        separately, and ``notes()`` calls it again, so before the memo existed one
+        ``maintain snapshot`` re-parsed every declaration file three or four
+        times. The saving is several parses per command; take the number against
+        your own project if you want one.
 
         Safe to hold because the result is a pure function of state fixed at
         construction: the models and the three source mappings are copied in
