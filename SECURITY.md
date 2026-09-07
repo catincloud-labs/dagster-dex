@@ -23,8 +23,8 @@ credit you in the advisory unless you would prefer otherwise.
 ## Supported versions
 
 **The latest minor release on PyPI receives fixes; older minors receive none.**
-As of 2026-09-07 that is `0.6.x`, and `CHANGELOG.md` is the current list - read
-it, not this file, for the number.
+`CHANGELOG.md` is the current list - read it, not this file, for the number.
+This file names no version on purpose; the paragraph below is why.
 
 Until 2026-09-07 this section was a table naming `0.1.x` as the one supported
 version. It was written for the first release and never moved, so it sat five
