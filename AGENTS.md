@@ -515,14 +515,16 @@ scoped to what is published, not to how the estate writes.**
 Use `-` for an em-dash, or restructure: a colon, a comma, or parentheses usually
 say it better. Use `=>` for an arrow and `...` for an ellipsis.
 
-**One exemption, and it is not stylistic.** `scripts/check_verification_section.py`
-  is a vendored copy compared **byte-for-byte** against `workbench` by CI.
-  Reformatting it to satisfy this rule trades a passing test for a failing
-  pipeline. The guard skips exactly that path and says why. The closing-keyword
-  guard and its self-test shared the exemption until 2026-09-04, when their
-  source was scrubbed; they are held to the rule now, so a non-ASCII byte
-  arriving in a re-vendor of either is a defect at the source, and this test
-  is the first to see it.
+**No exemption, since 2026-09-07.** `scripts/check_verification_section.py` was
+  exempt until then: a vendored copy compared **byte-for-byte** against
+  `workbench` by CI, so reformatting it here would have traded a passing test
+  for a failing pipeline. The closing-keyword guard and its self-test were
+  exempt on the same argument until 2026-09-04. Each ended when its source was
+  scrubbed to ASCII and re-vendored (#77, then #85), and the skip set in the
+  test left with the last entry rather than staying empty: a byte copy is fixed
+  at its source, so a non-ASCII byte arriving in a re-vendor is a defect at the
+  source, and this test is the first to see it. An entry in that set could
+  never again be the right fix, which is why there is no set.
 
 ## Conventions
 
