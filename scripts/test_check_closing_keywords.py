@@ -228,14 +228,14 @@ expect_reconcile(
     1,
 )
 # The measured false agreement (a real pull request, 2026-09-01): GitHub
-# reported example/other#19 and this repository's #59 as the bare numbers
-# 19,59; the trailer named both; the old guard printed "OK - GitHub agrees
-# with the trailer" while #19 meant another repository's issue. Number
-# agreement must not clear a cross-repo spelling.
+# reported example/other#19 and a same-repository issue as two bare numbers;
+# the trailer named both; the old guard printed "OK - GitHub agrees with the
+# trailer" while #19 meant another repository's issue. Number agreement must
+# not clear a cross-repo spelling.
 expect_reconcile(
     "agreement on bare numbers cannot clear a cross-repo spelling",
-    "Closes #59\nCloses example/other#19\n\nAutoclose: #19, #59\n",
-    {19, 59},
+    "Closes #12\nCloses example/other#19\n\nAutoclose: #19, #12\n",
+    {19, 12},
     1,
 )
 expect_reconcile(

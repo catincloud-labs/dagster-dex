@@ -8,7 +8,7 @@ JPL's Power of 10, tailored to Python by a recorded disposition of each rule,
 applied per software ITEM at a class set by what a failure of that item
 reaches - A reaches a guarantee or a stranger, B reaches production, C
 reaches a pipeline run and stops - and rules that a rule of the estate exists
-ONLY where a workbench check reads it against the tree and refuses. This is
+ONLY where a shared check reads it against the tree and refuses. This is
 that check. A rule this file does not read is not a rule, whatever a prose
 file says.
 

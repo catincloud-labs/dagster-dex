@@ -65,7 +65,7 @@ good_text = wf(
     f"      - uses: astral-sh/setup-uv@{SHA_B}  # v10.0.1",
     f"        uses: google-github-actions/auth@{SHA_A} # v3",
     f'      - uses: "docker/build-push-action@{SHA_B}" # v7',
-    f"      - uses: {ORG}/workbench/.github/actions/markdown@{SHA_A} # workbench main, prose is fine here",
+    f"      - uses: {ORG}/shared-actions/.github/actions/markdown@{SHA_A} # the estate's own, prose is fine here",
     "      - uses: ./.github/actions/local",
     f"      # - uses: actions/checkout@v4 (commented out, not a site)",
 )
@@ -146,7 +146,7 @@ case(
 # --- nothing found is not all clear ---------------------------------------------
 
 case("zero third-party refs is refused, never 'all clear'", kinds(judge(classify([], ORG))) == ["zero-refs"])
-only_own = judged("org/one", ".github/workflows/ci.yml", wf(f"      - uses: {ORG}/workbench/.github/actions/markdown@{SHA_A}"))
+only_own = judged("org/one", ".github/workflows/ci.yml", wf(f"      - uses: {ORG}/shared-actions/.github/actions/markdown@{SHA_A}"))
 case("...and a surface holding only the estate's own refs is zero too", kinds(only_own) == ["zero-refs"])
 
 # --- shapes the scanner will not classify are refused, never skipped -------------

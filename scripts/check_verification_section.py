@@ -1,35 +1,38 @@
 #!/usr/bin/env python3
 """Refuse a runtime-touching PR whose body does not say how it was verified.
 
-WHY THIS EXISTS. Testing in this repo happens during a PR; after the merge,
-attention moves to the next branch. Everything below passed its PR and was still
-wrong in production:
+WHY THIS EXISTS. Testing in a repository happens during a PR; after the merge,
+attention moves to the next branch. Every shape below passed its PR and was
+still wrong in production. Each one happened, in a private repository of this
+estate; the issue numbers, run histories and figures stay where they were
+measured, and the shapes travel:
 
-  - #283  `data_contract_breach_sensor` iterated the wrong collection and raised on
-          every invocation. Live history: 1799 SKIPPED / 201 FAILURE / 0 SUCCESS,
-          while sitting on `CONTROLS.md` as `proven`.
-  - #391  the nightly `/explore/refresh` was a no-op every OTHER night (24 h
-          freshness against a 24 h cron) and returned `200 ok` in 5.5 s having
-          profiled nothing. Billed 200 MB, 0, 275 MB, 0 on consecutive nights.
-  - #80/#129  seven asset checks validated nothing, because `PolarsData` made every
-          assertion vacuous.
-  - #210  both Healthchecks dead-man switches were never wired, while looking
-          configured, because `read_env` returns `""` for an absent key.
-  - #436  the `kill()` escalation had ZERO coverage while `engine_runner.py` and
-          `CONTROLS.md` both implied it was proven.
+  - a sensor iterated the wrong collection and raised on every invocation, while
+    a controls ledger row called it proven.
+  - a nightly refresh job was a no-op every OTHER night (a freshness window equal
+    to its own cron interval) and returned `200 ok` promptly having done nothing;
+    the billing showed work, then none, on alternating nights.
+  - a set of asset checks validated nothing, because a wrapper type made every
+    assertion vacuous.
+  - two dead-man switches were never wired, while looking configured, because
+    the env reader returned `""` for an absent key.
+  - a process-kill escalation had ZERO coverage while the runner and the ledger
+    both implied it was proven.
 
 The common shape is not a missing test. It is a **missing statement of what was
 observed after the change was live**, which is the one thing a PR body never has to
 contain. This makes it contain it.
 
-MOVED HERE FROM groundstation (scripts/check_verification_section.py), the half
-groundstation#32 settled; whether it BINDS a repository, and with which fields,
-is workbench#23's ruling (2026-08-28, per-repo fields): `Dev:` is required in
-every enforced repository; `Prod:`/`Discriminator:` are required only where a
-box exists to observe (`require-prod`), because a field that is structurally
-always N/A trains the reflex of writing N/A -- measured on 112 merged PRs, 24
-of 27 would-be failures were a missing `Prod:` no library repo can honestly
-fill. Where Prod is not required it is still never ignored: a `Prod:` line
+MOVED HERE FROM the first repository it gated, into a shared action, which
+settled the half of the question that asked where the checker lives; whether it
+BINDS a repository, and with which fields, was ruled 2026-08-28 (per-repo
+fields): `Dev:` is required in every enforced repository;
+`Prod:`/`Discriminator:` are required only where a box exists to observe
+(`require-prod`), because a field that is structurally always N/A trains the
+reflex of writing N/A -- in a repository with no box, a required `Prod:` can
+only ever be answered N/A, so every failure it produces is the same failure and
+none of them is the one this check exists for. Where Prod is not required it
+is still never ignored: a `Prod:` line
 that IS present is validated exactly as in full mode, because a present claim
 is a claim.
 
@@ -49,7 +52,8 @@ auditable where an absence is not. That is the whole of the escape hatch, and it
 deliberately one line wide.
 
 `Discriminator:` is required only when Prod is not N/A, and it is the field that
-separates verification from #391. *"`GET /maintain/schema` returned 200"* is not a
+separates verification from the no-op nightly job above. *"the endpoint returned
+200"* is not a
 discriminator, because it returned 200 before the change too. **A discriminator is
 a thing whose value differs between the old build and the new one** -- an image
 digest, a log line's changed wording, a field that appears or disappears, a number
@@ -72,22 +76,23 @@ than an oversight. A CI checker cannot be observed on the box, so its `Prod:` li
 would be `N/A` every single time -- and a field that is structurally always N/A
 teaches the reflex of writing N/A, which is precisely the habit this gate exists to
 break. The control appropriate to a checker is a **self-test that is proven to go
-red**, and `pr-hygiene` already runs one for every checker it invokes, including
-this one. What changed is that the reason is now written next to the exemption and
+red**, and the action that invokes this checker runs its self-test ahead of
+it. What changed is that the reason is now written next to the exemption and
 printed when it applies, instead of being inferred from a name's absence.
 
-That paragraph was also WRONG about two files, and only about them.
-`scripts/role_watch.py` (the entrypoint of a running compose service) and
-`scripts/resolve_role.py` (shipped inside the dex-api image) were exempt for as
-long as this gate had existed, and were then named in `SHIPPED_ANYWAY` and
-gated. ⚠️ Both LEFT this tree at #77 with the dex-api split — the shipping
-copies live in `catincloud-labs/dex-api` — so `SHIPPED_ANYWAY` is EMPTY now,
-kept as the mechanism (with its self-test) for the next file that ships from
-`scripts/` despite the directory's exemption.
+That paragraph was also WRONG about two files, and only about them. Two
+`scripts/` files that production ran (one the entrypoint of a running compose
+service, one copied into a service image) were exempt for as long as this gate
+had existed, and were then named in `SHIPPED_ANYWAY` and gated. Both later LEFT
+the tree that first ran this check, when their service moved to a repository of
+its own -- so `SHIPPED_ANYWAY` is EMPTY now, kept as the mechanism (with its
+self-test) for the next file that ships from `scripts/` despite the directory's
+exemption; a file only one adopter ships arrives through the `shipped-anyway`
+input instead.
 
 NOTHING SCANNED IS NOT ALL CLEAR. If the changed-file list is absent or empty, this
-exits 1 saying it could not check. `check_upstream_refs.py` carries the same rule for
-the same reason: exit 0 has to mean "checked and clean", never "found nothing to do".
+exits 1 saying it could not check. Every checker in this estate carries the same
+rule for the same reason: exit 0 has to mean "checked and clean", never "found nothing to do".
 
     python3 scripts/check_verification_section.py --self-test
     python3 scripts/check_verification_section.py pr.txt --changed-files files.txt
@@ -107,11 +112,11 @@ from pathlib import Path
 #: This used to be the other way round: a tuple named RUNTIME_PREFIXES held four
 #: directories, and everything outside it was exempt by saying nothing. That list
 #: was the SCOPE OF ENFORCEMENT, so a new runtime directory exempted itself on
-#: arrival and no diff recorded the decision -- the shape `catincloud-labs/
-#: constellation`'s ADR-0025 refuses. Measured at 851f9a2, eleven paths that alter
-#: what runs on the box read as not-runtime, among them `backups/` and `caddy/`
-#: (both `build:` contexts for running compose services) and `scripts/
-#: role_watch.py`, which compose executes as an ENTRYPOINT.
+#: arrival and no diff recorded the decision -- the shape ADR-0025 (2026-08-19)
+#: refuses. Read against the first adopter's tree, paths that alter what runs
+#: on the box read as not-runtime, among them the `build:` contexts of running
+#: compose services and a `scripts/` file compose executed as an ENTRYPOINT;
+#: the self-test's polarity list below is the reproducible form of that reading.
 #:
 #: The declared list is now the EXEMPTION, which is the half ADR-0025 says must be
 #: minimal and must carry its reason. A reason is data here rather than a comment
@@ -121,8 +126,9 @@ from pathlib import Path
 #: NOT the derived half of ADR-0025, and the falsifier there does not apply. That
 #: falsifier -- "an exclusion list longer than the enumeration it replaced" -- is
 #: about a DERIVED population whose hand-written list merely moved. Deriving here
-#: would mean classifying all 34 top-level entries so a new one goes red, i.e.
-#: trading a 4-entry list for a 30-entry one, which is the thing the falsifier
+#: would mean classifying every top-level entry so a new one goes red, i.e.
+#: trading a short exemption list for a long enumeration, which is the thing
+#: the falsifier
 #: names. Refusal by default is the other authorised shape, and it is this one.
 NOT_RUNTIME: tuple[tuple[str, str], ...] = (
     (r"(^|/)tests?/", "a test does not ship; it is what runs before shipping"),
@@ -137,7 +143,7 @@ NOT_RUNTIME: tuple[tuple[str, str], ...] = (
         r"^scripts/",
         "same reason as `.github/`: this directory is CI checkers -- any path "
         "here that ships despite that goes in SHIPPED_ANYWAY below (empty "
-        "since #77, when its two entries left with the dex-api split)",
+        "since its two entries left with the service that shipped them)",
     ),
     (r"^LICENSE$", "not executed by anything"),
     (r"^\.gitignore$|^\.gitattributes$", "VCS metadata; git does not run on the box"),
@@ -153,28 +159,29 @@ NOT_RUNTIME: tuple[tuple[str, str], ...] = (
     ),
     (
         r"^\.env\.example$",
-        "a template. The box reads /opt/app/.env; this file is compared against "
-        "it by check_env_key_drift.py and is never copied onto the host",
+        "a template. The box reads its own env file; this file is compared "
+        "against it by a key-drift check and is never copied onto the host",
     ),
 )
 
 #: EXCEPTIONS TO AN EXEMPTION, and they are the reason `scripts/` above is a
-#: blanket rather than a truth. `dex_api/Dockerfile:203` says in as many words
-#: "Deliberately NOT `COPY scripts/ scripts/`. Most of that directory is CI" --
-#: and then COPYs exactly these two. So the docstring's claim that this checker
-#: does not gate `scripts/` was right about the directory and wrong about the
-#: two files in it that production runs.
+#: blanket rather than a truth. The first adopter's service Dockerfile said in
+#: as many words that it deliberately did not copy `scripts/` because most of
+#: that directory is CI -- and then copied exactly two files from it. So the
+#: docstring's claim that this checker does not gate `scripts/` was right about
+#: the directory and wrong about the two files in it that production ran.
 #:
-#: Both leave with `dex_api/` at the ADR-0026 split, and the self-test asserts
-#: they are still in the tree -- so this carve-out goes red rather than quietly
-#: becoming a claim about files that no longer exist.
+#: Those two left with their service when it moved to a repository of its own
+#: (ADR-0026, 2026-08-19), and the self-test asserts every entry here is still
+#: in the tree -- so this carve-out goes red rather than quietly becoming a
+#: claim about files that no longer exist.
 SHIPPED_ANYWAY: tuple[tuple[str, str], ...] = (
-    # EMPTY since #77 — `scripts/role_watch.py` and `scripts/resolve_role.py`
-    # (the two entries this held) left with the dex-api split; the copies that
-    # ship live in `catincloud-labs/dex-api` and are gated by that repository's
-    # CI. The mechanism stays: a `scripts/` file that starts shipping again is
-    # named here with its reason, and the self-test asserts every entry both
-    # carves a real hole and names a file that exists.
+    # EMPTY since the two entries this held left with the service that shipped
+    # them; the copies that ship are gated by that service's own repository,
+    # which declares them through the `shipped-anyway` input. The mechanism
+    # stays: a `scripts/` file that starts shipping again is named here with
+    # its reason, and the self-test asserts every entry both carves a real
+    # hole and names a file that exists.
 )
 
 _NOT_RUNTIME_RES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
@@ -197,7 +204,9 @@ _PROD_RE = _label_re("prod")
 _DISCRIMINATOR_RE = _label_re("discriminator")
 
 #: `N/A`, `n/a`, `NA`, `none`, optionally followed by the reason.
-_NA_RE = re.compile(r"^\s*(?:n/?a|none|not applicable)\b[\s:—\-–]*(?P<reason>.*)$", re.IGNORECASE)
+#: The dash class is spelled in escapes (em dash, hyphen, en dash) so that this
+#: file stays ASCII where it is vendored into a public tree; `re` reads `\uXXXX`.
+_NA_RE = re.compile(r"^\s*(?:n/?a|none|not applicable)\b[\s:\u2014\-\u2013]*(?P<reason>.*)$", re.IGNORECASE)
 
 #: Enough alphanumerics to be a sentence rather than a shrug. Deliberately low: the
 #: point is to force a statement, not to police prose length.
@@ -241,11 +250,10 @@ def exemption_for(
     NOT_RUNTIME pattern covers it, so it has to be asked first.
 
     ``extra_shipped`` is the per-repository half of that list, arriving from the
-    action's ``shipped-anyway`` input (workbench #23 step 3): the built-in list
-    describes what every adopter shares, and a file only one repository ships —
-    dex-api's ``scripts/role_watch.py``, the case the built-in list's own
-    history warned about — is that repository's to declare, not this file's to
-    hardcode.
+    action's ``shipped-anyway`` input (ruled 2026-08-28): the built-in list
+    describes what every adopter shares, and a file only one repository ships --
+    the compose entrypoint the built-in list's own history warned about -- is
+    that repository's to declare, not this file's to hardcode.
     """
 
     path = _normalise(path)
@@ -280,8 +288,8 @@ def parse_shipped_anyway(entries: list[str]) -> tuple[tuple[str, str], ...]:
     carve-out must carve a real hole (some NOT_RUNTIME pattern must cover the
     path, or the entry asserts a hole that does not exist), and it must carry a
     reason with substance (a name nobody dares delete is how registries rot).
-    The one assertion that CANNOT move here is tree existence — the caller runs
-    without a checkout, deliberately — so that half of the discipline lives in
+    The one assertion that CANNOT move here is tree existence -- the caller runs
+    without a checkout, deliberately -- so that half of the discipline lives in
     the adopting repository, whose own docs name the shipping files this input
     repeats.
 
@@ -307,7 +315,7 @@ def parse_shipped_anyway(entries: list[str]) -> tuple[tuple[str, str], ...]:
             print(
                 f"could NOT check: shipped-anyway entry {path!r} is covered by "
                 "no exemption, so naming it asserts a hole that does not "
-                "exist — it is already runtime and the entry is dead weight.",
+                "exist -- it is already runtime and the entry is dead weight.",
                 file=sys.stderr,
             )
             raise SystemExit(1)
@@ -335,19 +343,19 @@ def extract_section(body: str) -> str | None:
 
 
 def _field(section: str, pattern: re.Pattern[str]) -> str | None:
-    """The field's value: the label line's own remainder — or, when the label
+    """The field's value: the label line's own remainder -- or, when the label
     stands alone on its line, the lines that follow it, up to the next label
     or heading.
 
     The follow-on half exists because the estate's PR templates preprint the
     bare label (``**Dev:**``) and instruct pasting verbatim output BELOW it.
-    Reading the label line alone scored exactly that shape as missing — a
+    Reading the label line alone scored exactly that shape as missing -- a
     false red on a body full of evidence, observed live on an adopter's
-    first template-shaped body (2026-08-28; wb #52). The template-side
+    first template-shaped body (2026-08-28). The template-side
     fixes both fail: a same-line placeholder substantial enough to satisfy
     the gate lets an UNEDITED template pass (fail-open), and instructing
     authors to keep the value on the label line trains one-line prose
-    summaries instead of verbatim output — the hollow compliance this
+    summaries instead of verbatim output -- the hollow compliance this
     module's docstring warns against.
 
     A line inside pasted output that itself looks like a heading or label
@@ -383,7 +391,7 @@ def check(
 ) -> list[str]:
     """Every problem found. Empty means clean.
 
-    `require_prod=False` is the library-repo mode (workbench#23): `Prod:` and
+    `require_prod=False` is the library-repo mode (ruled 2026-08-28): `Prod:` and
     `Discriminator:` stop being REQUIRED, and everything present is still
     validated -- a bare `Prod: N/A` or thin evidence fails in both modes.
     """
@@ -447,8 +455,8 @@ def check(
             "evidence. Name the thing that reads DIFFERENTLY before and after -- an "
             "image digest, a changed log wording, a field that appears or "
             "disappears, a number that moves. '200 OK' is not a discriminator: it "
-            "was 200 before the change too (#391 returned 200 for weeks while doing "
-            "nothing)."
+            "was 200 before the change too (the no-op nightly job in this file's "
+            "docstring returned 200 every night while doing nothing)."
         )
     return problems
 
@@ -459,39 +467,41 @@ def check(
 # whole script is about.
 # --------------------------------------------------------------------------- #
 
-_RUNTIME = ["dex_api/services/responder.py"]
-_DOCS = ["dex_api/CONTRACT.md", "README.md"]
-_TESTS = ["dex_api/tests/test_responder.py"]
+# Fixtures are invented: plausible shapes of real evidence, carrying no
+# measurement from any repository, so they can travel wherever this file does.
+_RUNTIME = ["app/services/responder.py"]
+_DOCS = ["app/CONTRACT.md", "README.md"]
+_TESTS = ["app/tests/test_responder.py"]
 
 _GOOD = """## Verification
 
-**Dev:** full dex_api suite, 864 passed / 7 skipped at dex-core 1.4.3.
-**Prod:** `GET /maintain/schema` 200 in 5.65s on the deployed image; ledger untouched.
-**Discriminator:** `maintain_in_process_enabled` logs the post-#436 wording, absent from the old image.
+**Dev:** full suite, example passed / example skipped against the pinned engine.
+**Prod:** `GET /example` 200 on the deployed image; the ledger table untouched.
+**Discriminator:** `example_flag_enabled` logs the new wording, absent from the old image.
 """
 
 _NA_WITH_REASON = """## Verification
 
-**Dev:** 14 new tests, suite 850 -> 864.
+**Dev:** new tests added for the path; the whole suite passed.
 **Prod:** N/A - nothing is wired yet, so no route reaches this code and there is no wire-visible change to observe.
 """
 
 #: The shape every estate PR template propagates: the bare label on its own
-#: line, verbatim output pasted below it. Scored as missing until wb #52.
+#: line, verbatim output pasted below it. Scored as missing until 2026-08-28.
 _TEMPLATE_SHAPED = """## Verification
 
 **Dev:**
 
 ```
-> uv run pytest -q
-864 passed in 0.31s
+> pytest -q
+example passed, 0 failed
 ```
 
-**Prod:** `GET /maintain/schema` 200 in 5.65s on the deployed image; ledger untouched.
-**Discriminator:** `maintain_in_process_enabled` logs the post-#436 wording, absent from the old image.
+**Prod:** `GET /example` 200 on the deployed image; the ledger table untouched.
+**Discriminator:** `example_flag_enabled` logs the new wording, absent from the old image.
 """
 
-#: The same shape with nothing pasted — an unedited template must still fail,
+#: The same shape with nothing pasted -- an unedited template must still fail,
 #: which is why the fix lives here and not in a template placeholder.
 _UNEDITED_TEMPLATE = """## Verification
 
@@ -512,19 +522,19 @@ _CASES: list[tuple[str, str, list[str], bool]] = [
     ("no section", "Some body text.", _RUNTIME, False),
     (
         "no Prod line",
-        "## Verification\n\n**Dev:** ran the whole suite, 864 passed.\n",
+        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n",
         _RUNTIME,
         False,
     ),
     (
         "bare N/A",
-        "## Verification\n\n**Dev:** ran the whole suite, 864 passed.\n**Prod:** N/A\n",
+        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n**Prod:** N/A\n",
         _RUNTIME,
         False,
     ),
     (
         "evidence but no discriminator",
-        "## Verification\n\n**Dev:** ran the whole suite, 864 passed.\n"
+        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n"
         "**Prod:** hit the endpoint on the box and it returned 200 OK.\n",
         _RUNTIME,
         False,
@@ -546,13 +556,13 @@ _CASES: list[tuple[str, str, list[str], bool]] = [
 _OPTIONAL_CASES: list[tuple[str, str, list[str], bool]] = [
     (
         "dev only, prod absent -- the released case",
-        "## Verification\n\n**Dev:** ran the whole suite, 864 passed.\n",
+        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n",
         _RUNTIME,
         True,
     ),
     (
         "dev-only, template-shaped: evidence below the bare label",
-        "## Verification\n\n**Dev:**\n\n```\n> uv run pytest -q\n864 passed in 0.31s\n```\n",
+        "## Verification\n\n**Dev:**\n\n```\n> pytest -q\nexample passed, 0 failed\n```\n",
         _RUNTIME,
         True,
     ),
@@ -573,13 +583,13 @@ _OPTIONAL_CASES: list[tuple[str, str, list[str], bool]] = [
     ),
     (
         "a PRESENT bare N/A is still refused",
-        "## Verification\n\n**Dev:** ran the whole suite, 864 passed.\n**Prod:** N/A\n",
+        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n**Prod:** N/A\n",
         _RUNTIME,
         False,
     ),
     (
         "PRESENT evidence without a discriminator is still refused",
-        "## Verification\n\n**Dev:** ran the whole suite, 864 passed.\n"
+        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n"
         "**Prod:** hit the endpoint on the box and it returned 200 OK.\n",
         _RUNTIME,
         False,
@@ -620,12 +630,12 @@ def _check_trigger() -> int:
 
 # THE POLARITY ITSELF. Every path below read as NOT runtime before this gate
 # was flipped, and each one alters what the box does. A regression to a
-# declared scope of enforcement would make all six green again, silently,
-# which is why they are asserted by name rather than by prefix.
-# (`scripts/role_watch.py` and `scripts/resolve_role.py` were asserted here
-# until #77 — they are not in this tree at all now, and their SHIPPED_ANYWAY
-# carve-outs left with them, so the `^scripts/` exemption correctly covers
-# everything that remains in that directory.)
+# declared scope of enforcement would make every one of them green again,
+# silently, which is why they are asserted by name rather than by prefix.
+# (The two shipped `scripts/` files were asserted here until they left with
+# their service; their SHIPPED_ANYWAY carve-outs left with them, so the
+# `^scripts/` exemption correctly covers everything that remains in that
+# directory.)
 _GATED_BY_DEFAULT = [
     ("newservice/main.py", "a directory that did not exist when the list was written"),
     ("backups/Dockerfile", "compose build context for postgres-backup"),
@@ -668,7 +678,7 @@ def _check_normaliser() -> int:
     # future rewrite could reintroduce it while that one case still passed by
     # some other route.
     failures = 0
-    if _normalise("./dex_api/x.py") != "dex_api/x.py":
+    if _normalise("./app/x.py") != "app/x.py":
         print("  FAIL normalise: a leading ./ was not stripped")
         failures += 1
     for dotfile in (".github/workflows/ci.yml", ".env.example", ".trivyignore"):
@@ -700,14 +710,14 @@ def _check_carve_outs() -> int:
             print("        asserts a hole that does not exist")
             failures += 1
 
-    # ... and it must still be a file. Both of these leave with `dex_api/` at the
-    # ADR-0026 split, and this is what makes that a red self-test rather than a
-    # silent claim about a path nothing has.
-    # CWD, not __file__: this file lives in the workbench action, and the
-    # tree a SHIPPED_ANYWAY path must exist in is the CALLER's checkout.
+    # ... and it must still be a file. An entry here outlives the file it names
+    # the moment that file moves out with its service, and this is what makes
+    # that a red self-test rather than a silent claim about a path nothing has.
+    # CWD, not __file__: this file lives in the shared action, and the tree a
+    # SHIPPED_ANYWAY path must exist in is the CALLER's checkout.
     # (This parenthesis used to read "a repository needing a carve-out also
     # needs an action input for it -- add both in the same change" -- that
-    # repository arrived (dex-api, wb #23 step 3) and the input exists:
+    # repository arrived (2026-08-28) and the input exists:
     # `shipped-anyway`, validated by `parse_shipped_anyway`. The built-in list
     # stays for a carve-out EVERY adopter shares, which is still none.)
     repo_root = Path.cwd()
@@ -738,7 +748,7 @@ def _check_shipped_anyway_channel() -> int:
         print("  FAIL shipped-anyway: a carve-out for one file un-exempted its neighbours")
         failures += 1
     for bad in (
-        "dex_api/main.py -- already runtime, carves nothing",
+        "app/main.py -- already runtime, carves nothing",
         "scripts/x.py -- no",
         "scripts/x.py",
     ):
@@ -797,7 +807,7 @@ def main(argv: list[str] | None = None) -> int:
         default=True,
         help=(
             "whether `Prod:` (and its Discriminator) are REQUIRED. "
-            "--no-require-prod is the library-repo mode (workbench#23): no box "
+            "--no-require-prod is the library-repo mode (ruled 2026-08-28): no box "
             "exists to observe, so an absent Prod is a complete answer -- but a "
             "present one is still validated in full."
         ),
@@ -844,9 +854,9 @@ def main(argv: list[str] | None = None) -> int:
     if not touched:
         # Name the exemption that covered each file, rather than reporting a
         # count. A success line that counts its own list tells you the list was
-        # read, not that anything was checked -- `check_image_paths.py` reports
-        # the size of its own map and is byte-identical whether or not the thing
-        # it exists to notice has happened (catincloud-labs/groundstation#74).
+        # read, not that anything was checked -- a sibling checker once reported
+        # the size of its own map, byte-identical whether or not the thing it
+        # existed to notice had happened.
         print(
             f"{args.label}: no runtime paths changed -- verification section not "
             f"required. {len(changed)} file(s), each exempt for a stated reason:"
