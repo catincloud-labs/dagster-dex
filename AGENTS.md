@@ -375,9 +375,13 @@ release. A step that has to be remembered is not a control, so both are now jobs
   test id PLUS the contract name for the coverage guard, because that one id
   goes red for every new upstream contract and would otherwise absorb the
   second while the first is open. `tests/test_pin_coherence.py` does not see the
-  install spec, correctly: a git URL is not a pin. Point the `package_dir`
-  input at `packages/dex-core-stub` and the run is a real red on a real tree,
-  which is how the filer is shown to fire. Reproduce the axis at a desk:
+  install spec, correctly: a git URL is not a pin. Two forced reds, both real
+  machinery on a real tree: `package_dir` at `packages/dex-core-stub` is
+  refused by uv on a metadata-name mismatch before pytest runs (the
+  install-failure arm, filed under its own key), and `upstream_ref` at `v1.4.0`
+  fails collection because the conformance module did not exist yet (the
+  test-keyed arm). A `workflow_dispatch` is refused until the file exists on
+  the default branch, measured as an HTTP 404. Reproduce the axis at a desk:
 
   ```bash
   DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \

@@ -79,7 +79,9 @@ def _param_case(param: str) -> str:
 def _error_case() -> str:
     return (
         '<testcase classname="" name="test_dex_bridge" time="0.000">'
-        '<error message="collection failure">ImportError while importing test module</error>'
+        '<error message="collection failure">ImportError while importing test module\n'
+        "Traceback:\ntests/x.py:51: in &lt;module&gt;\n    import exmergo_dex_core.adapters.conformance\n"
+        "E   ModuleNotFoundError: No module named 'exmergo_dex_core.adapters.conformance'</error>"
         "</testcase>"
     )
 
@@ -245,6 +247,17 @@ class TestTheRendering:
         assert "SAME upstream commit" in same
         moved = filer.body(empty, SHA_B, SHA_A, "u")
         assert f"https://github.com/exmergo/dex/compare/{SHA_A}...{SHA_B}" in moved
+
+    def test_a_collection_error_is_headlined_by_its_last_e_line(self, tmp_path):
+        """Measured on #91: junit's message for a collection error is the bare
+        words "collection failure", and the missing module is in the report."""
+
+        reds = filer.parse_junit(_write(tmp_path, _error_case()))
+        text = filer.body(filer.plan(reds, {}), SHA_A, "", "u")
+        assert (
+            "```text\nModuleNotFoundError: No module named "
+            "'exmergo_dex_core.adapters.conformance'\n```"
+        ) in text
 
     def test_no_upstream_sha_is_said_rather_than_linked(self):
         text = filer.body(filer.plan([], {}), "", SHA_A, "u")

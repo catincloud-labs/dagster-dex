@@ -248,11 +248,26 @@ def body(the_plan: Plan, upstream_sha: str, last_green_sha: str, run_url: str) -
 def _red_section(red: Red) -> list[str]:
     if red.kind == "run":
         return ["", f"### the run itself ({red.message})", f"<!-- {KEY_MARKER} {red.key} -->"]
-    section = ["", f"### `{red.test_id}` ({red.kind})", "", "```text", red.message.strip(), "```"]
+    section = ["", f"### `{red.test_id}` ({red.kind})", "", "```text", _headline(red), "```"]
     if red.text:
         section += ["", "<details><summary>full report</summary>", "", "```text", red.text, "```", "", "</details>"]
     section.append(f"<!-- {KEY_MARKER} {red.key} -->")
     return section
+
+
+def _headline(red: Red) -> str:
+    """The line worth reading first.
+
+    A collection error's junit `message` is the bare words "collection failure";
+    the news is the last `E ` line of its report (measured on #91: the message
+    said nothing, the report named the missing module). Assertion failures
+    already carry the whole message.
+    """
+
+    e_lines = [line[1:].strip() for line in red.text.splitlines() if line.startswith("E ")]
+    if red.kind == "error" and e_lines:
+        return e_lines[-1]
+    return red.message.strip()
 
 
 def _gh(argv: Sequence[str]) -> str:
