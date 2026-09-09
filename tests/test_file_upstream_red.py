@@ -188,6 +188,18 @@ class TestDeDuplication:
         assert not the_plan.files_an_issue
         assert the_plan.tracked == ((reds[0], 12),)
 
+    def test_a_key_with_spaces_survives_the_round_trip_through_a_body(self, tmp_path):
+        """Two contracts arriving together give a key holding a space
+        (`['A', 'B']`). The live proof only ever wrote keys without one, so the
+        marker regex's lazy match is shown here to read the whole key back."""
+
+        reds = filer.parse_junit(
+            _write(tmp_path, _guard_case("['SemanticCatalogContract', 'SemanticCatalogSourceContract']"))
+        )
+        assert " " in reds[0].key
+        text = filer.body(filer.plan(reds, {}), SHA_A, "", "u")
+        assert filer.open_issue_keys([{"number": 1, "body": text}]) == {reds[0].key: 1}
+
     def test_one_new_key_files_once_and_names_the_tracked_ones(self, tmp_path):
         reds = filer.parse_junit(_write(tmp_path, _param_case("b"), _param_case("c")))
         the_plan = filer.plan(reds, {reds[0].key: 12})
@@ -291,6 +303,16 @@ class TestMain:
         assert filer.LABEL in create[0]
         body_file = Path(create[0][create[0].index("--body-file") + 1])
         assert filer.KEY_MARKER in body_file.read_text(encoding="utf-8")
+
+    def test_the_title_names_the_new_red_not_the_tracked_one_listed_first(self, tmp_path):
+        """pytest lists the tracked red first here; the issue is about the other."""
+
+        junit = _write(tmp_path, _param_case("b"), _param_case("c"))
+        tracked_key = filer.parse_junit(junit)[0].key
+        fake, calls = self._gh([_issue(5, tracked_key)])
+        filer.main(["--junit", str(junit), "--upstream-sha", SHA_A, "--run-url", "u"], gh=fake)
+        create = [c for c in calls if c[:2] == ["issue", "create"]][0]
+        assert create[create.index("--title") + 1].endswith("fails test_param[c]")
 
     def test_an_open_red_creates_nothing(self, tmp_path):
         junit = _write(tmp_path, _param_case("b"))

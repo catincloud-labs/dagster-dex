@@ -98,7 +98,14 @@ jobs:
           REF: ${{ inputs.upstream_ref || 'main' }}
         run: |
           set -euo pipefail
-          sha="$(git ls-remote https://github.com/exmergo/dex "refs/heads/${REF}" "refs/tags/${REF}" | cut -f1 | head -n1)"
+          # A branch first; then a tag, preferring the peeled `^{}` line an
+          # annotated tag adds, so the sha is always a COMMIT the compare and
+          # commit links can resolve. Upstream's tags are lightweight today
+          # (measured: no peeled line for v1.4.0), so this is for the day one
+          # is not.
+          sha="$(git ls-remote https://github.com/exmergo/dex "refs/heads/${REF}" "refs/tags/${REF}" \
+            | awk '$2 ~ /^refs\/heads\// {print $1; exit} $2 ~ /\^\{\}$/ {peeled=$1} $2 ~ /^refs\/tags\// && !tag {tag=$1} END {if (peeled) print peeled; else if (tag) print tag}' \
+            | head -n1)"
           if [ -z "$sha" ]; then
             echo "::error::exmergo/dex has no branch or tag named '${REF}'"
             exit 1
@@ -160,15 +167,22 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # The range is a courtesy; the filing is the control. Nothing in the
+          # lookup is allowed to stop the filer running: a failed `gh run list`,
+          # a missing artifact or an empty file each degrade to an unnamed range
+          # (the body says so), never to a red run with no issue. Under `set -e`
+          # that means every command here carries its own fallback.
           last_green_run="$(gh run list --workflow "$WORKFLOW" --branch main --status success \
-            --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty' || true)"
           last_green_sha=""
           if [ -n "$last_green_run" ]; then
             if gh run download "$last_green_run" --name upstream-sha --dir "$RUNNER_TEMP/last-green"; then
-              last_green_sha="$(tr -d '[:space:]' < "$RUNNER_TEMP/last-green/upstream-sha.txt")"
+              last_green_sha="$(tr -d '[:space:]' < "$RUNNER_TEMP/last-green/upstream-sha.txt" || true)"
             else
               echo "::warning::run ${last_green_run} was the last green but its upstream-sha artifact is gone; the range goes unnamed"
             fi
+          else
+            echo "::notice::no green run of this workflow on main is on record; the range goes unnamed"
           fi
           echo "upstream sha: ${SHA:-<none>}; last green: ${last_green_sha:-<none>}"
           python3 scripts/file_upstream_red.py \

@@ -298,7 +298,10 @@ def main(argv: Sequence[str] | None = None, gh: GhRunner = _gh) -> int:
         print("every red is already open; filing nothing", file=sys.stderr)
         return 0
 
-    issue_title = title(reds, args.upstream_sha)
+    # Titled by what is NEW, not by whatever pytest listed first: a tracked red
+    # ahead of a new one in the file would otherwise name an issue about the
+    # wrong test.
+    issue_title = title(the_plan.new, args.upstream_sha)
     issue_body = body(the_plan, args.upstream_sha, args.last_green_sha, args.run_url)
     if args.dry_run:
         print(issue_title)
