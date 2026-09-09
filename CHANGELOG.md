@@ -14,8 +14,18 @@ if you depend on the contract.
 
 ## Unreleased
 
-Documentation and one docstring; no code path changed, the seam did not move,
-and nothing here is breaking.
+Documentation, one docstring and a scheduled workflow; no code path in the
+package changed, the seam did not move, and nothing here is breaking.
+
+**Added.**
+
+- **The two contract files now run against `exmergo/dex` `main` daily, red-only**
+  (`.github/workflows/upstream-main.yml`, #74). Green is reported nowhere; red
+  opens one issue labelled `upstream:dex`, de-duplicated on the failing test id
+  plus, for the coverage guard, the contract it names, quoting the assertion and
+  the upstream commit range since the workflow's last green run. A consumer sees
+  nothing of this in the wheel: it changes when a breaking upstream change is
+  discovered here, from bump day to the morning after it merges.
 
 **Corrected.**
 

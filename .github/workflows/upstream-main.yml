@@ -1,0 +1,192 @@
+name: upstream main
+
+# The two contract files against `exmergo/dex` MAIN, on a clock, red-only (#74).
+#
+# Every pin bump today is a discovery event: bump, run the suite, find out. A
+# breaking change upstream reaches this repository on bump day, weeks after it
+# merged, with nothing naming the commit. This job runs the same two files that
+# judge a release against whatever `main` is this morning, and says nothing when
+# they pass. Green is reported nowhere. Red opens ONE issue here, labelled
+# `upstream:dex`, quoting the failing assertion and the upstream commit range
+# since the last green run of THIS workflow.
+#
+# WHY A SEPARATE FILE, AND NOT A JOB IN `checks.yml`. Three reasons, each one a
+# thing that would otherwise be false:
+#
+#   - `main` moves; a pull request here must not go red because upstream is
+#     mid-change. Nothing in this file runs on `pull_request`, and nothing in
+#     the rulesets names it.
+#   - `checks.yml` grants `issues: read`, for a reason its own comment states,
+#     and a composite cannot raise its own scope. Filing an issue needs `write`,
+#     declared here and nowhere else.
+#   - `tests/test_pin_coherence.py` counts `exmergo-dex-core==` and `~=` sites
+#     per file. The spec below is a git URL and carries neither operator, so the
+#     guard does not see it - correctly: it is not a pin. It IS a second install
+#     path for the engine, which #74 said the guard "must be told about"; the
+#     truthful answer is that the guard's scope is pins, and this is not one.
+#     Add a `--with exmergo-dex-core==` to this file and that guard goes red on
+#     a file it has no row for, which is the right failure.
+#
+# `continue-on-error` is NOT the mechanism, and must not become one. A red must
+# be a red: the filer runs on `if: failure()`, which runs the step and leaves the
+# job red. `continue-on-error: true` would run it and turn the job green.
+#
+# The install spec needs `#subdirectory=packages/dex-core`. `exmergo/dex` is a
+# monorepo whose root has no `pyproject.toml`. Its sibling
+# `packages/dex-core-stub` was expected to satisfy the import and fail every
+# contract; MEASURED instead (run 34389729037): uv refuses it before anything
+# runs, "Package metadata name `dex-core` does not match given name
+# `exmergo-dex-core`". So pointing `package_dir` at the stub is the forced red
+# for the INSTALL-FAILURE arm - no junit, filed under its own key - and an old
+# tag in `upstream_ref` (v1.4.0 predates the conformance module) is the forced
+# red for the test-keyed arm. Both are real machinery on a real tree.
+#
+# The sha is resolved FIRST and the install pins to it, so the commit the issue
+# names is the commit that was tested. Installing `@main` directly would let
+# upstream move between the resolve and the install.
+
+on:
+  schedule:
+    # Daily, before the 09:00Z tick that reads the board. Upstream releases
+    # every two to four days, so daily is enough and hourly would only find
+    # the same red sooner.
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "branch or tag of exmergo/dex to test against"
+        default: main
+        type: string
+      package_dir:
+        description: "package directory inside the monorepo (the stub forces the install-failure red)"
+        default: packages/dex-core
+        type: string
+
+permissions:
+  contents: read
+  # `gh issue create` and `gh issue list`. Declared in this file only.
+  issues: write
+  # `gh run list` and `gh run download`, to read the upstream sha the last
+  # green run of this workflow recorded. With an explicit `permissions:` block
+  # every scope not named is `none`, so this one has to be named.
+  actions: read
+
+# Two runs of this file at once could both find no open issue and both file.
+# One at a time, and the later one waits rather than being cancelled: a
+# cancelled run is a run that reported nothing.
+concurrency:
+  group: upstream-main
+  cancel-in-progress: false
+
+jobs:
+  upstream-main:
+    name: dex-core main
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      # Fail closed: an empty answer is a network or a renamed branch, not a
+      # commit to test, and a job that installed "nothing in particular" and
+      # went green would be the fail-open this whole file exists to remove.
+      - name: Resolve the upstream commit under test
+        id: upstream
+        env:
+          REF: ${{ inputs.upstream_ref || 'main' }}
+        run: |
+          set -euo pipefail
+          # A branch first; then a tag, preferring the peeled `^{}` line an
+          # annotated tag adds, so the sha is always a COMMIT the compare and
+          # commit links can resolve. Upstream's tags are lightweight today
+          # (measured: no peeled line for v1.4.0), so this is for the day one
+          # is not.
+          sha="$(git ls-remote https://github.com/exmergo/dex "refs/heads/${REF}" "refs/tags/${REF}" \
+            | awk '$2 ~ /^refs\/heads\// {print $1; exit} $2 ~ /\^\{\}$/ {peeled=$1} $2 ~ /^refs\/tags\// && !tag {tag=$1} END {if (peeled) print peeled; else if (tag) print tag}' \
+            | head -n1)"
+          if [ -z "$sha" ]; then
+            echo "::error::exmergo/dex has no branch or tag named '${REF}'"
+            exit 1
+          fi
+          echo "exmergo/dex ${REF} is ${sha}"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$sha" > "$RUNNER_TEMP/upstream-sha.txt"
+
+      # `--python 3.13` is the same cross-product cell `engine-ends` names, and
+      # moves with it. `DEX_UPSTREAM_CONTRACT_REQUIRED=1` is what makes a broken
+      # or missing engine a FAILURE here rather than a green skip: without it,
+      # `tests/test_upstream_contract.py` skips itself when the upstream contract
+      # will not import, and an install failure would read as a pass.
+      #
+      # `--junitxml` is how the filer learns WHICH assertion failed and what it
+      # said; the human-readable log stays in the run. `-p no:cacheprovider`
+      # for the same reason step 3 of `AGENTS.md` carries it.
+      - name: Both contract files against that commit
+        env:
+          DEX_UPSTREAM_CONTRACT_REQUIRED: "1"
+          SHA: ${{ steps.upstream.outputs.sha }}
+          DIR: ${{ inputs.package_dir || 'packages/dex-core' }}
+        run: |
+          uv run --no-project --python 3.13 --with-editable . \
+            --with pytest==8.4.1 \
+            --with "exmergo-dex-core @ git+https://github.com/exmergo/dex@${SHA}#subdirectory=${DIR}" \
+            --with sqlglot==30.13.0 \
+            python -m pytest tests/test_upstream_contract.py tests/test_dex_bridge.py \
+              -p no:cacheprovider -o junit_family=xunit2 --junitxml "$RUNNER_TEMP/junit.xml"
+
+      # The only state this workflow keeps, and it is GitHub's rather than a
+      # store of our own: the sha each run tested, as an artifact. A red run
+      # reads the artifact of the last SUCCESSFUL run to name the range since
+      # the last green. Uploaded on green and on red alike so a human reading
+      # any run finds it; the filer reads successes only.
+      - name: Record the commit this run tested
+        if: always() && steps.upstream.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: upstream-sha
+          path: ${{ runner.temp }}/upstream-sha.txt
+          retention-days: 90
+
+      # `if: failure()`, not `continue-on-error`. See the preamble.
+      #
+      # The last green is looked up on the default branch only, so a dispatch
+      # from a feature branch (the forced-red proof) never becomes anybody's
+      # "last green". An expired or absent artifact leaves the range unnamed;
+      # the filer says so in the body rather than inventing one. Two separate
+      # `gh` calls, never a pipe into python: a pipe reports the tail's exit
+      # code and would hide a failed `gh` behind a filed issue.
+      - name: Red opens one issue here, de-duplicated
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          SHA: ${{ steps.upstream.outputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # The range is a courtesy; the filing is the control. Nothing in the
+          # lookup is allowed to stop the filer running: a failed `gh run list`,
+          # a missing artifact or an empty file each degrade to an unnamed range
+          # (the body says so), never to a red run with no issue. Under `set -e`
+          # that means every command here carries its own fallback.
+          last_green_run="$(gh run list --workflow "$WORKFLOW" --branch main --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty' || true)"
+          last_green_sha=""
+          if [ -n "$last_green_run" ]; then
+            if gh run download "$last_green_run" --name upstream-sha --dir "$RUNNER_TEMP/last-green"; then
+              last_green_sha="$(tr -d '[:space:]' < "$RUNNER_TEMP/last-green/upstream-sha.txt" || true)"
+            else
+              echo "::warning::run ${last_green_run} was the last green but its upstream-sha artifact is gone; the range goes unnamed"
+            fi
+          else
+            echo "::notice::no green run of this workflow on main is on record; the range goes unnamed"
+          fi
+          echo "upstream sha: ${SHA:-<none>}; last green: ${last_green_sha:-<none>}"
+          python3 scripts/file_upstream_red.py \
+            --junit "$RUNNER_TEMP/junit.xml" \
+            --upstream-sha "$SHA" \
+            --last-green-sha "$last_green_sha" \
+            --run-url "$RUN_URL"
