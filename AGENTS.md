@@ -424,6 +424,16 @@ Renaming it means editing the organisation ruleset in the same change.
     by making the sentence guardable rather than by loosening the guard, since a
     looser pattern would have to match a bare `==1.6.5` anywhere and would find
     versions of unrelated things.
+  - **It is the demonstrated pin, and one of three engine axes, not the only
+    version the package runs against.** `engine-ends` runs the boundary suite
+    and the upstream contract at the resolved floor and ceiling of the published
+    range on every push, and `upstream main` runs them daily against the
+    unreleased head. A grep for version literals sees only this axis, because
+    the other two hold no literal by design (a matrix expression and a git URL).
+    Reading such a grep as the whole matrix is how #89 came to say the package
+    was tested nowhere above this version, on a day the ceiling cell had already
+    caught 1.11.0 (#86). The pin moves when the floor moves, and the floor moves
+    when the package needs something the newer engine ships.
 
 **These disagree on purpose.** This package is a plugin whose host resolves it
 through an entry point, so an `==` pin in published metadata would make every
