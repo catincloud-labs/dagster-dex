@@ -1599,6 +1599,9 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
             # Every original line is still there, in order: the splice inserted
             # and touched nothing else. Asserted as a subsequence rather than as
             # exact bytes so the spelling of the inserted line stays upstream's.
+            # `in` on an ITERATOR consumes it up to the match, so each original
+            # line must appear after the previous one was found - that is what
+            # makes this an order check and not a membership check.
             remaining = iter(after.splitlines())
             for line in COMMENTED_DECLARATION.splitlines():
                 assert line in remaining, f"the original line {line!r} is gone or reordered:\n{after}"
