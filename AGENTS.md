@@ -364,6 +364,28 @@ release. A step that has to be remembered is not a control, so both are now jobs
   not a pin, so templating those steps would have shrunk that guard's corpus by
   two sites with no count changing to show it.
 
+- **`upstream main`** (its own file, `.github/workflows/upstream-main.yml`) runs
+  the boundary file and the upstream contract against `exmergo/dex` **`main`**,
+  daily, **red-only**: green is reported nowhere, red opens one issue here
+  labelled `upstream:dex` through `scripts/file_upstream_red.py`, quoting the
+  failing assertion and the upstream commit range since this workflow's last
+  green run. It is a third engine axis (the demonstrated pin, the published
+  range's ends, and the unreleased head), and it lives outside `checks.yml` so
+  a moving `main` can never redden a pull request. The de-duplication key is the
+  test id PLUS the contract name for the coverage guard, because that one id
+  goes red for every new upstream contract and would otherwise absorb the
+  second while the first is open. `tests/test_pin_coherence.py` does not see the
+  install spec, correctly: a git URL is not a pin. Point the `package_dir`
+  input at `packages/dex-core-stub` and the run is a real red on a real tree,
+  which is how the filer is shown to fire. Reproduce the axis at a desk:
+
+  ```bash
+  DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
+    --with pytest==8.4.1 --with sqlglot==30.13.0 \
+    --with 'exmergo-dex-core @ git+https://github.com/exmergo/dex@main#subdirectory=packages/dex-core' \
+    python -m pytest tests/test_upstream_contract.py tests/test_dex_bridge.py -p no:cacheprovider
+  ```
+
 **The cross-product is one named cell, not a matrix**: the engine axis runs on
 the newest claimed interpreter (`--python` on its steps, moved together with
 the `python-floor` list), so "the floor of the range on the newest
