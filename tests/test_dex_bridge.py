@@ -9,6 +9,8 @@ skippable, the "engine-free core" claim would be untestable.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from dagster_dex import DagsterProject, ProjectModel
@@ -1473,3 +1475,137 @@ class TestWriteEditsAcrossTheBoundary:
         assert (tmp_path / "declarations/orders.yml").read_text(
             encoding="utf-8"
         ) != "models: []\n"
+
+
+#: A declaration the way a person writes one: a header, an inline comment on
+#: the model, one on a test, and a trailing line. Four comments in four
+#: positions, because a reprint loses all of them and a splice loses none, and
+#: anything in between would be a third behaviour worth seeing.
+COMMENTED_DECLARATION = """# dim_date: the calendar spine. Hand-written, version-controlled.
+version: 2
+models:
+  - name: dim_date  # one row per day
+    columns:
+      - name: date
+        tests:
+          - unique  # the grain
+          - not_null
+      - name: is_weekend
+# trailing comment: keep me
+"""
+
+#: The engine minor whose `maintain/declare.py` began splicing a declaration
+#: instead of reprinting it (exmergo/dex#432, closing our exmergo/dex#429,
+#: released in 1.10.0). A fact about upstream's release history, which is why
+#: it may be written down: released versions do not change.
+SPLICE_FROM = (1, 10)
+
+
+def _engine_minor() -> tuple[int, int]:
+    import importlib.metadata as md
+
+    major, minor = md.version("exmergo-dex-core").split(".")[:2]
+    return int(major), int(minor)
+
+
+class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
+    """#88: the harvest drill of 2026-09-03 came back with every comment gone.
+
+    A reconcile plan's content at dex-core 1.9.2 was a whole-document reprint of
+    the declaration, so applying it through this format's `write_edits` (which
+    writes the bytes the plan carries and re-serialises nothing) dropped every
+    comment a person had written. groundstation's RUNBOOK and its
+    `harvest_apply.py` carry a red warning to read the diff for that. dex-core
+    1.10.0 changed the content to a byte-span splice into the original.
+
+    **Two arms in one test, and no skip.** Below 1.10.0 the reprint is asserted
+    - reproduced on the wheel, which is what #88 asked, instead of cited from
+    the drill - and from 1.10.0 the splice is. A version-gated skip would have
+    read green at the demonstrated pin (1.8.0) while asserting nothing there;
+    this way `suite` at 1.8.0 pins the reason the warning exists and
+    `engine-ends` at the ceiling pins the reason it can go. The finding is
+    `key_lost_uniqueness`, the one the drill applied: a `column_added` finding
+    is advisory below 1.10.0 with no profiled baseline and produces no edit, so
+    it cannot show the reprint at all (measured 2026-09-09, on #88).
+    """
+
+    def _apply_a_unique_test(self, tmp_path):
+        from exmergo_dex_core.maintain import reconcile
+        from exmergo_dex_core.maintain.drift import DriftFinding
+        from exmergo_dex_core.maintain.snapshot import Snapshot
+        from exmergo_dex_core.storage.memory import MemoryStore
+        from exmergo_dex_core.transform import plans
+
+        project = _editable(tmp_path, {"dim_date.yml": COMMENTED_DECLARATION})
+        finding = DriftFinding(
+            axis="grain",
+            code="key_lost_uniqueness",
+            identifier="warehouse.analytics.dim_date",
+            column="is_weekend",
+            detail="the declared grain no longer holds",
+        )
+        _proposals, edits, warnings = reconcile.build(
+            [finding],
+            Snapshot(created_at="2026-01-01T00:00:00Z"),
+            None,
+            project.load(),
+            placement=project,
+        )
+        assert edits, f"reconcile produced no edit for the grain finding; warnings: {warnings!r}"
+
+        store = MemoryStore()
+        plan, _diffs, _warnings = plans.plan(
+            "add the unique test the grain lost",
+            edits,
+            repo_root=tmp_path,
+            store=store,
+            project_format=project,
+        )
+        result = plans.apply(plan.plan_id, repo_root=tmp_path, store=store, project_format=project)
+        assert result.written == ["declarations/dim_date.yml"], result
+        assert not result.conflicts, result
+
+        return (tmp_path / "declarations" / "dim_date.yml").read_text(encoding="utf-8")
+
+    def test_the_unique_test_is_read_back_as_a_declared_key_at_every_engine(self, tmp_path):
+        """The parse, not the spelling: the splice writes `tests: [unique]`, a
+        flow sequence, and the reprint writes a block sequence. Both are the
+        same declared key to this package's reader, which is the property the
+        whole loop depends on."""
+
+        from dagster_dex.declarations import parse_declarations
+
+        after = self._apply_a_unique_test(tmp_path)
+        keys, _joins, _notes = parse_declarations({"declarations/dim_date.yml": after})
+
+        assert {(k.model, k.columns) for k in keys} == {
+            ("dim_date", ("date",)),
+            ("dim_date", ("is_weekend",)),
+        }, after
+
+    def test_comments_survive_from_the_splicing_engine_and_are_lost_before_it(self, tmp_path):
+        import importlib.metadata as md
+
+        after = self._apply_a_unique_test(tmp_path)
+        comments = re.findall(r"#[^\n]*", COMMENTED_DECLARATION)
+        lost = [comment for comment in comments if comment not in after]
+        engine = md.version("exmergo-dex-core")
+
+        if _engine_minor() >= SPLICE_FROM:
+            assert lost == [], (
+                f"dex-core {engine} splices a declaration since 1.10.0, yet applying a "
+                f"reconcile edit through this format lost these comments: {lost}"
+            )
+            # Every original line is still there, in order: the splice inserted
+            # and touched nothing else. Asserted as a subsequence rather than as
+            # exact bytes so the spelling of the inserted line stays upstream's.
+            remaining = iter(after.splitlines())
+            for line in COMMENTED_DECLARATION.splitlines():
+                assert line in remaining, f"the original line {line!r} is gone or reordered:\n{after}"
+        else:
+            assert lost == comments, (
+                f"dex-core {engine} predates the splice and reprints the whole document, "
+                f"which is why groundstation's harvest warning exists. It should have lost "
+                f"every comment here and lost {lost}. If it lost none, SPLICE_FROM is stale "
+                "and that warning is dead one version earlier than recorded."
+            )
