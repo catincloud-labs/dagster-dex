@@ -12,10 +12,14 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
-## Unreleased
+## 0.6.2 - 2026-09-14
 
 Documentation, one docstring and a scheduled workflow; no code path in the
-package changed, the seam did not move, and nothing here is breaking.
+package changed, the seam did not move, and nothing here is breaking. A patch
+exists for two reasons: an index is immutable, so the docstring correction
+below reaches an installed copy only as a new version; and this is the first
+cut through the release job (#62), which has to produce its GitHub Release
+with no step outside bump-and-tag before that issue can close.
 
 **Added.**
 
