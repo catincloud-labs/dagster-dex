@@ -12,6 +12,33 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
+## Unreleased
+
+**Corrected.**
+
+- **The 0.6.2 entry's first claim - that no code path in the package changed -
+  was false on the day it was written, and it shipped.** Measured after the
+  release (2026-09-14): `git diff --stat v0.6.1..v0.6.2 -- src/` is five files,
+  +177/-121, from two changes. The 2026-09-06 power-of-ten pass at class A
+  (#80) split two functions so each reads under the ceiling, `_models_of` out
+  of `artifact.loads` and `_absorb_source_tables` out of
+  `declarations.parse_source_declarations`, each keeping its refusals and
+  notes in the same words; the same pass typed every method of the
+  conformance contracts, gave `FingerprintedProjectContract` its own
+  `make_project` signature narrowed to tier 2, and put a reason on each
+  `type: ignore`. The 2026-09-06 docstring change (#84, for #83) removed the
+  private figure the entry does describe. `protocol.py` is byte-identical
+  between the tags and no public name moved, so the sentence the entry needed
+  was "no behaviour changed": the suite is green at both ends and the
+  defect-injection floor was re-measured at 5/5 on the post-#80 tree (#95).
+  The claim was written into this section on 2026-09-09 (#92), three days
+  after #80 had moved the code, and the cut on 2026-09-14 (#97) carried it
+  forward without running the diff it asserts. A released entry is history,
+  so the correction is dated here rather than edited there, the same shape as
+  the 0.6.1 correction in the entry below. The check that would have caught
+  both is one command, run before the version bump: `git diff --stat <last
+  tag>..HEAD -- src/`.
+
 ## 0.6.2 - 2026-09-14
 
 Documentation, one docstring and a scheduled workflow; no code path in the
