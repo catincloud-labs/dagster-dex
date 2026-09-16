@@ -103,8 +103,14 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import os
 import re
 import sys
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 #: A CHANGED PATH IS RUNTIME UNLESS SOMETHING BELOW SAYS WHY IT IS NOT.
@@ -131,7 +137,24 @@ from pathlib import Path
 #: the falsifier
 #: names. Refusal by default is the other authorised shape, and it is this one.
 NOT_RUNTIME: tuple[tuple[str, str], ...] = (
-    (r"(^|/)tests?/", "a test does not ship; it is what runs before shipping"),
+    (
+        r"(^|/)tests?/.*\.py$",
+        "a Python test under a test directory is run by CI before shipping and "
+        "by nothing after; it ships in both image-building adopters, harmlessly. "
+        "Anything else under a test directory is runtime by default: a dbt "
+        "singular test ships and runs on a schedule after merge (narrowed 2026-09-16)",
+    ),
+    # This entry used to read `(^|/)tests?/` with the reason "a test does not
+    # ship; it is what runs before shipping". Both halves were false in the
+    # two image-building adopters (`COPY . .` ships every test path), and the
+    # pattern exempted a dbt singular test under an `analytics/tests/`
+    # directory, one a scheduled asset runs after every merge, so a pull
+    # request weakening it merged with no `## Verification` section.
+    # Narrowed 2026-09-16 (ruled 2026-09-15). The rejected shapes, a
+    # dbt-project carve-out and a prefix form of `shipped-anyway`, are both
+    # registries, and this estate has measured that a gate's scope list fails
+    # open when the second entry arrives. The cost: a fixture-only change
+    # under `tests/` now owes one honest paragraph.
     (r"\.md$", "prose cannot alter what the box does"),
     (
         r"^\.github/",
@@ -180,8 +203,9 @@ SHIPPED_ANYWAY: tuple[tuple[str, str], ...] = (
     # them; the copies that ship are gated by that service's own repository,
     # which declares them through the `shipped-anyway` input. The mechanism
     # stays: a `scripts/` file that starts shipping again is named here with
-    # its reason, and the self-test asserts every entry both carves a real
-    # hole and names a file that exists.
+    # its reason; the self-test asserts every entry carves a real hole, and
+    # the check step asserts it still names a file at the head commit,
+    # through the API, beside the input channel's entries (ruled 2026-09-15).
 )
 
 _NOT_RUNTIME_RES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
@@ -288,10 +312,12 @@ def parse_shipped_anyway(entries: list[str]) -> tuple[tuple[str, str], ...]:
     carve-out must carve a real hole (some NOT_RUNTIME pattern must cover the
     path, or the entry asserts a hole that does not exist), and it must carry a
     reason with substance (a name nobody dares delete is how registries rot).
-    The one assertion that CANNOT move here is tree existence -- the caller runs
-    without a checkout, deliberately -- so that half of the discipline lives in
-    the adopting repository, whose own docs name the shipping files this input
-    repeats.
+    Tree existence cannot be asserted at parse time -- the caller runs without
+    a checkout, deliberately -- so that half runs in the check step, through the
+    API at the pull request's head commit (`_check_live_carve_outs`, ruled 2026-09-15).
+    This docstring used to say that half "lives in the adopting repository,
+    whose own docs name the shipping files"; a register nothing reads is the
+    shape this checker exists to refuse, and that is why it moved.
 
     Raises ``SystemExit(1)`` with the defect named, because a misdeclared
     carve-out silently un-carving itself is exactly the fail-open registry
@@ -321,6 +347,168 @@ def parse_shipped_anyway(entries: list[str]) -> tuple[tuple[str, str], ...]:
             raise SystemExit(1)
         parsed.append((path, reason.strip()))
     return tuple(parsed)
+
+
+#: Where a carve-out's file is looked for, and what came back (ruled
+#: 2026-09-15). `present` and `absent` are answers. `blind` is the store not
+#: answering -- a 403, a 5xx, a timeout, no network -- and it is reported as its
+#: own failure, never as absent and never as a pass: a flaky API must be able
+#: to turn this check neither red for the wrong reason nor green.
+Verdict = tuple[str, str]
+Resolver = Callable[[str], Verdict]
+
+
+def tree_resolver(root: Path) -> Resolver:
+    """Existence in a directory: the self-test's STAGED root, never the caller's CWD."""
+
+    def resolve(path: str) -> Verdict:
+        if (root / path).is_file():
+            return ("present", "file")
+        return ("absent", "no such file")
+
+    return resolve
+
+
+def _api_get(url: str, token: str, timeout: float) -> Verdict:
+    """One authenticated GET: ("present", status), ("absent", "HTTP 404") or ("blind", why)."""
+
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "verification-section-checker",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return ("present", f"HTTP {resp.status}")
+    except urllib.error.HTTPError as err:
+        if err.code == 404:
+            return ("absent", "HTTP 404")
+        return ("blind", f"HTTP {err.code}")
+    except (urllib.error.URLError, TimeoutError, OSError) as err:
+        return ("blind", f"{type(err).__name__}: {err}")
+
+
+def head_commit_visible(repo: str, ref: str, token: str, timeout: float = 10.0) -> Verdict:
+    """Whether the token can see `ref` in `repo` at all -- read BEFORE any path is judged absent.
+
+    The contents API answers 404 for three different things: a path that is
+    not in the tree, a ref that does not resolve, and a repository the token
+    cannot see (measured 2026-09-16: `contents/README.md?ref=<40 zeros>` and
+    `contents/README.md` on a repository that does not exist both answer 404,
+    exactly like `contents/no_such_file.py` at a real commit). Only the first
+    is a dead entry; the other two are blindness wearing its status code. The
+    commits endpoint separates them -- 200 for a commit the token can read,
+    422 for a sha the repository does not hold, 404 for a repository it cannot
+    see -- so one read here decides whether a 404 on a path may be believed.
+    """
+
+    return _api_get(
+        f"https://api.github.com/repos/{repo}/commits/{urllib.parse.quote(ref)}", token, timeout
+    )
+
+
+def api_resolver(repo: str, ref: str, token: str, timeout: float = 10.0) -> Resolver:
+    """Existence at the pull request's head commit, through the contents API.
+
+    One GET per carve-out with the token the action already holds (the callers
+    grant `contents: read` beside `pull-requests: read`). The four required
+    callers run without a checkout, deliberately, so the tree a carve-out must
+    exist in is asked for by commit rather than looked for on disk. A 404 here
+    is "absent" only once `head_commit_visible` has answered 200 for the same
+    repo and ref; the caller reads that first.
+    """
+
+    def resolve(path: str) -> Verdict:
+        return _api_get(
+            f"https://api.github.com/repos/{repo}/contents/"
+            f"{urllib.parse.quote(path)}?ref={urllib.parse.quote(ref)}",
+            token,
+            timeout,
+        )
+
+    return resolve
+
+
+def carve_out_problems(
+    entries: tuple[tuple[str, str], ...], resolve: Resolver
+) -> tuple[list[str], list[str]]:
+    """Both dead-entry arms over ONE list: (dead entries, blind reads).
+
+    Arm one, nothing exempts it: the entry asserts a hole that does not exist.
+    Arm two, not in the tree: the entry outlived the file it names. Both run
+    over the built-in tuple and the input channel together, because the input
+    channel held the only live carve-outs in the estate and neither arm
+    reached them (ruled 2026-09-15: `_check_carve_outs` walked `SHIPPED_ANYWAY` alone
+    while `exemption_for` honoured both). A blind read is neither dead nor
+    alive and comes back apart, so the caller can refuse to judge it.
+    """
+
+    dead: list[str] = []
+    blind: list[str] = []
+    for shipped, _why in entries:
+        if not any(p.search(shipped) for p, _ in _NOT_RUNTIME_RES):
+            dead.append(
+                f"{shipped}: nothing exempts it, so naming it asserts a hole "
+                "that does not exist"
+            )
+        state, detail = resolve(shipped)
+        if state == "absent":
+            dead.append(
+                f"{shipped}: not in the tree at the head commit ({detail}). It "
+                "has moved or been deleted -- remove the entry in the same "
+                "change, or this is a claim about nothing"
+            )
+        elif state == "blind":
+            blind.append(
+                f"{shipped}: existence could NOT be read ({detail}); not read "
+                "as absent and not read as present"
+            )
+    return dead, blind
+
+
+def _check_live_carve_outs(
+    entries: tuple[tuple[str, str], ...], head_sha: str | None
+) -> int:
+    """The dead-entry arms at check time, at the head commit, through the API."""
+
+    repo = os.environ.get("GH_REPO", "")
+    token = os.environ.get("GH_TOKEN", "")
+    if not (head_sha and repo and token):
+        print(
+            "could NOT check: carve-outs are declared, and asserting that each "
+            "still names a file at the head commit needs --head-sha, GH_REPO and "
+            "GH_TOKEN. Exiting 1 rather than 0: an unchecked carve-out is a hole "
+            "nobody has looked at.",
+            file=sys.stderr,
+        )
+        return 1
+    state, detail = head_commit_visible(repo, head_sha, token)
+    if state != "present":
+        print(
+            f"could NOT check: the head commit {head_sha[:7]} could not be read in "
+            f"{repo} ({detail}), so no carve-out's absence can be believed -- a 404 "
+            "on a path at an unreadable ref is not a dead entry. Not read as absent "
+            "and not read as present.",
+            file=sys.stderr,
+        )
+        return 1
+    dead, blind = carve_out_problems(entries, api_resolver(repo, head_sha, token))
+    for line in blind:
+        print(f"could NOT check: carve-out {line}", file=sys.stderr)
+    for line in dead:
+        print(f"dead carve-out: {line}", file=sys.stderr)
+    if dead or blind:
+        return 1
+    noun = "entry" if len(entries) == 1 else "entries"
+    print(
+        f"carve-outs: {len(entries)} {noun}, each covered by an exemption and "
+        f"present at {head_sha[:7]}"
+    )
+    return 0
 
 
 def extract_section(body: str) -> str | None:
@@ -638,6 +826,11 @@ def _check_trigger() -> int:
 # directory.)
 _GATED_BY_DEFAULT = [
     ("newservice/main.py", "a directory that did not exist when the list was written"),
+    (
+        "analytics/tests/orders_grain.sql",
+        "a dbt singular test that ships and runs on a schedule after merge (narrowed 2026-09-16)",
+    ),
+    ("tests/fixtures/rows.csv", "a fixture is not a Python test; runtime by default since the narrowing of 2026-09-16"),
     ("backups/Dockerfile", "compose build context for postgres-backup"),
     ("caddy/Caddyfile", "compose build context for caddy"),
     ("uv.lock", "decides what is installed in every image"),
@@ -655,6 +848,8 @@ _STILL_EXEMPT = [
     "LICENSE",
     "README.md",
     "tests/test_budget_ceilings_agree.py",
+    "engine/core/tests/conftest.py",
+    "service/tests/test_routes.py",
 ]
 
 
@@ -700,33 +895,51 @@ def _check_reasons() -> int:
 
 
 def _check_carve_outs() -> int:
-    # A CARVE-OUT THAT CARVES NOTHING IS A REGISTRY DEFECT, not a spare part. If
-    # no exemption covers a SHIPPED_ANYWAY path, the entry is dead code claiming
-    # to hold a hole open, and the next reader will believe it.
+    # Arm one over the built-in tuple needs no tree and runs here as it always
+    # did. Arm two used to look in Path.cwd(), and the four required callers
+    # run without a checkout, so it stayed green only because the built-in
+    # tuple is empty (ruled 2026-09-15). Now the resolver is injected
+    # and both arms run on a STAGED root: a present file is the positive twin,
+    # an absent one the known negative, an uncovered path the arm-one negative,
+    # and a blind read is asserted to come back as neither. Nothing here touches
+    # the caller's working directory. (The built-in tuple's own existence is
+    # asserted at check time, at the head commit, beside the input channel's.)
     failures = 0
     for shipped, _why in SHIPPED_ANYWAY:
         if not any(p.search(shipped) for p, _ in _NOT_RUNTIME_RES):
             print(f"  FAIL carve-out: nothing exempts {shipped}, so naming it here")
             print("        asserts a hole that does not exist")
             failures += 1
+    return failures + _check_staged_carve_outs()
 
-    # ... and it must still be a file. An entry here outlives the file it names
-    # the moment that file moves out with its service, and this is what makes
-    # that a red self-test rather than a silent claim about a path nothing has.
-    # CWD, not __file__: this file lives in the shared action, and the tree a
-    # SHIPPED_ANYWAY path must exist in is the CALLER's checkout.
-    # (This parenthesis used to read "a repository needing a carve-out also
-    # needs an action input for it -- add both in the same change" -- that
-    # repository arrived (2026-08-28) and the input exists:
-    # `shipped-anyway`, validated by `parse_shipped_anyway`. The built-in list
-    # stays for a carve-out EVERY adopter shares, which is still none.)
-    repo_root = Path.cwd()
-    for shipped, _why in SHIPPED_ANYWAY:
-        if not (repo_root / shipped).exists():
-            print(f"  FAIL carve-out: {shipped} is not in the tree any more.")
-            print("        It has moved or been deleted -- remove the SHIPPED_ANYWAY")
-            print("        entry in the same change, or this is a claim about nothing.")
-            failures += 1
+
+def _check_staged_carve_outs() -> int:
+    failures = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "scripts").mkdir()
+        (root / "scripts" / "present.py").write_text("# staged twin\n", encoding="utf-8")
+        entries = (
+            ("scripts/present.py", "the positive twin: covered, and in the staged tree"),
+            ("scripts/gone.py", "the known negative: covered, and not in the tree"),
+            ("app/main.py", "the arm-one negative: no exemption covers it"),
+        )
+        dead, blind = carve_out_problems(entries, tree_resolver(root))
+    if blind or any(d.startswith("scripts/present.py:") for d in dead):
+        print("  FAIL carve-out: the present twin was reported dead or blind")
+        failures += 1
+    if not any(d.startswith("scripts/gone.py:") and "not in the tree" in d for d in dead):
+        print("  FAIL carve-out: the absent entry was not reported dead")
+        failures += 1
+    if not any(d.startswith("app/main.py:") and "nothing exempts" in d for d in dead):
+        print("  FAIL carve-out: an entry no exemption covers was not refused")
+        failures += 1
+    dead, blind = carve_out_problems(
+        (("scripts/present.py", "x"),), lambda _path: ("blind", "HTTP 403")
+    )
+    if dead or len(blind) != 1 or "HTTP 403" not in blind[0]:
+        print("  FAIL carve-out: a blind read was not reported apart, naming its status")
+        failures += 1
     return failures
 
 
@@ -787,7 +1000,8 @@ def self_test() -> int:
         f"\nself-test OK: {len(_CASES)} + {len(_OPTIONAL_CASES)} cases "
         f"(both prod modes), 3 trigger assertions, "
         f"{len(_GATED_BY_DEFAULT)} polarity, {len(_STILL_EXEMPT)} exemption, "
-        f"{len(NOT_RUNTIME)} reasons, {len(SHIPPED_ANYWAY)} carve-outs, "
+        f"{len(NOT_RUNTIME)} reasons, {len(SHIPPED_ANYWAY)} carve-outs + 4 "
+        f"resolver arms (present, absent, uncovered, blind), "
         f"shipped-anyway 2+3 arms"
     )
     return 0
@@ -823,6 +1037,14 @@ def main(argv: list[str] | None = None) -> int:
             "input). Refused unless it carves a real hole and carries a reason."
         ),
     )
+    parser.add_argument(
+        "--head-sha",
+        help=(
+            "the pull request's head commit. Required when any carve-out is "
+            "declared: each is asserted to still name a file at that commit, "
+            "through the contents API with GH_TOKEN and GH_REPO (ruled 2026-09-15)."
+        ),
+    )
     parser.add_argument("--self-test", action="store_true", help="prove it can go red")
     args = parser.parse_args(argv)
 
@@ -850,6 +1072,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     extra_shipped = parse_shipped_anyway(args.shipped_anyway)
+    entries = tuple(SHIPPED_ANYWAY) + tuple(extra_shipped)
+    if entries:
+        rc = _check_live_carve_outs(entries, args.head_sha)
+        if rc:
+            return rc
     touched = runtime_paths(changed, extra_shipped)
     if not touched:
         # Name the exemption that covered each file, rather than reporting a
