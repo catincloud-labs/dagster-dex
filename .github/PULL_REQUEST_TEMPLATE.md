@@ -72,3 +72,4 @@ Autoclose: none
 - [ ] Branched off `main`, not committed to it directly
 - [ ] No decision restated rather than cited
 - [ ] Any new control ships with proof it can fire and proof it can go quiet
+- [ ] Exactly one `deploy:` label, required; a `review:` clock, applied by hand and read by no guard. Both axes, their values and what each requires are ruled in [`constellation#214`'s 2026-09-17 ruling](https://github.com/catincloud-labs/constellation/issues/214#issuecomment-5720653048).
