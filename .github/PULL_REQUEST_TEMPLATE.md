@@ -72,3 +72,4 @@ Autoclose: none
 - [ ] Branched off `main`, not committed to it directly
 - [ ] No decision restated rather than cited
 - [ ] Any new control ships with proof it can fire and proof it can go quiet
+- [ ] One `deploy:` label and one `review:` clock — the axes are declared once in `workbench`'s `.github/actions/labels/labels.yml`, and what each requires is ruled in [`constellation#214`'s 2026-09-17 ruling](https://github.com/catincloud-labs/constellation/issues/214#issuecomment-5720653048)
