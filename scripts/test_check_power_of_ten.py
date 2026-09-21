@@ -18,7 +18,9 @@ module that also carries the two shapes the record chose NOT to read: a
 same-named delegation, and a typed handler whose body is `pass`.
 
 Needs ruff and mypy importable, as the check does, and git on the path for
-the ratchet cases.
+the ratchet cases. That sentence was an assumption nothing tested until
+2026-09-21: the check read a tree green on an interpreter that could load
+neither tool. Their absence is now a staged fixture like any other.
 
     python3 test_check_power_of_ten.py
 """
@@ -31,6 +33,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from check_power_of_ten import (
@@ -39,10 +42,14 @@ from check_power_of_ten import (
     Refusal,
     check,
     classify,
+    mypy_findings,
+    mypy_targets,
     package_bases,
     parse_declaration,
     parse_suppression,
+    reader_version,
     render_markdown,
+    ruff_findings,
 )
 
 failures = 0
@@ -355,6 +362,43 @@ try:
     case("an empty population is a refusal, never a green", False)
 except Refusal:
     case("an empty population is a refusal, never a green", True)
+
+# --- a reader the interpreter cannot load ---------------------------------------------
+#
+# `-S` starts the interpreter without `site`, so without the site-packages both
+# tools are installed into: the same absence a virtualenv that never installed
+# them has, staged without uninstalling anything. The premise is asserted
+# first, because on a machine where `-S` still finds the tools every case below
+# would be red for the wrong reason, and should say so.
+
+BLIND = (sys.executable, "-S")
+OVER = {**INIT, "src/pkg/over.py": ifs(13)}
+
+
+def refuses(call: Callable[[], object], *words: str) -> bool:
+    try:
+        call()
+    except Refusal as exc:
+        return all(w in str(exc) for w in words)
+    return False
+
+
+fixture("an interpreter that cannot load ruff or mypy", "refused: a reader that did not run is not a green")
+for tool in ("ruff", "mypy"):
+    probe = subprocess.run([*BLIND, "-m", tool, "--version"], capture_output=True)
+    case(f"premise: `python -S` cannot load {tool}, so the absence is real", probe.returncode != 0)
+    case(f"the probe refuses an interpreter that cannot load {tool}", refuses(lambda t=tool: reader_version(t, BLIND), tool, "requirements.txt"))
+over_root = stage(OVER)
+over_decl = parse_declaration("src", "", "")
+case("a class A tree over its ceiling is REFUSED on that interpreter, not green", refuses(lambda: check(over_root, over_decl, interpreter=BLIND), "ruff"))
+seen = check(over_root, over_decl)
+case("...and the same tree is red on C901 where ruff loads: the pair", ("over.py", "C901") in pairs(seen, "A"))
+case("the ruff reader refuses an exit with nothing on stdout, without the probe", refuses(lambda: ruff_findings(over_root, "A", ["src/pkg/over.py"], BLIND), "ruff exited 1"))
+case("the mypy reader refuses an exit 1 that names no error, without the probe", refuses(lambda: mypy_findings(over_root, "A", mypy_targets("A", over_decl, over_root), over_decl, BLIND), "named no error"))
+case("a green run names the version of each reader it used", positive.readers[0].startswith("ruff ") and positive.readers[1].startswith("mypy "))
+case("...in the summary too", "readers: ruff " in render_markdown(positive, parse_declaration("src", "", "")))
+only_c = run({"tools/a.py": "X = 1\n"})
+case("mypy is not asked for where no class A or B file exists, and the run says so", only_c.problems == [] and only_c.readers[1].startswith("mypy not run"))
 
 # --- the suppression reader, alone -----------------------------------------------------
 

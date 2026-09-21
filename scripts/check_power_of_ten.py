@@ -97,7 +97,8 @@ WHAT IS RED AND WHAT IS REPORTED
     estate exists to distrust.
   - The ratchet: RED where any class's count rose against the base.
   - An empty population, a tool that crashed, a file that does not parse,
-    a base that cannot be read: a REFUSAL, exit 1, never an empty success.
+    a base that cannot be read, a tool the interpreter cannot load: a
+    REFUSAL, exit 1, never an empty success.
   - The deviation and baseline counts per class: REPORTED on every run,
     green or red, so a baseline standing still and a standard being
     suppressed away are numbers a reader sees rather than remembers.
@@ -213,6 +214,7 @@ class Outcome(NamedTuple):
     problems: list[Problem]
     ratchet: str  # what the ratchet did, in words
     base: dict[str, int] | None  # the base's marker count per class, when compared
+    readers: tuple[str, ...] = ()  # each tool's own version line, or why it was not run
 
 
 Declared = dict[str, tuple[str, ...]]
@@ -409,20 +411,62 @@ def judge_suppressions(
 # --- the readers: ruff, mypy, the AST ------------------------------------------
 
 
-def ruff_findings(tree: Path, cls: str, files: list[str]) -> list[Finding]:
+Interpreter = tuple[str, ...]
+PYTHON: Interpreter = (sys.executable,)
+
+
+def reader_version(tool: str, interpreter: Interpreter = PYTHON) -> str:
+    """The tool's own version line, or a REFUSAL when the interpreter cannot load it.
+
+    `python -m <tool>` with the tool absent exits 1 and says so on stderr only.
+    1 is also the code both tools use for "findings present", so a reader that
+    tolerates it and parses an empty stdout reports zero findings: a tree over
+    its ceiling read green on an interpreter holding neither tool, while the
+    AST rules beside them still fired and made the report look whole (measured
+    2026-09-20). The probe asks the one question whose answer is not
+    ambiguous, before any reader runs, and the answer is printed on every run
+    so a log that was kept says which tool read the tree.
+    """
+    res = subprocess.run(
+        [*interpreter, "-m", tool, "--version"], capture_output=True, text=True, encoding="utf-8",
+        errors="replace",
+    )
+    line = (res.stdout.strip().splitlines() or [""])[0]
+    if res.returncode != 0 or not line:
+        said = (res.stderr.strip().splitlines() or ["nothing on stderr"])[-1][:300]
+        raise Refusal(
+            f"`{' '.join(interpreter)} -m {tool} --version` exited {res.returncode} ({said}). The rules "
+            f"{tool} reads cannot be read without it, and a run that skips them is not a green: "
+            "pip install -r requirements.txt, from the directory this file is in, into the "
+            "interpreter running it."
+        )
+    return line
+
+
+def reader_versions(need_mypy: bool, interpreter: Interpreter = PYTHON) -> tuple[str, ...]:
+    """ruff reads every class; mypy reads A and B, and is asked for only when one has a file."""
+    ruff = reader_version("ruff", interpreter)
+    if not need_mypy:
+        return (ruff, "mypy not run (no class A or B file)")
+    return (ruff, reader_version("mypy", interpreter))
+
+
+def ruff_findings(tree: Path, cls: str, files: list[str], interpreter: Interpreter = PYTHON) -> list[Finding]:
     select = [COMPLEXITY] + (list(RUFF_AB) if cls != "C" else [])
     out: list[Finding] = []
     root = tree.resolve()
     for i in range(0, len(files), 200):
         cmd = [
-            sys.executable, "-m", "ruff", "check", "--isolated", "--no-cache", "--quiet", "--ignore-noqa",
+            *interpreter, "-m", "ruff", "check", "--isolated", "--no-cache", "--quiet", "--ignore-noqa",
             "--select", ",".join(select), "--config", f"lint.mccabe.max-complexity={CEILING[cls]}",
             "--output-format", "json", "--", *files[i : i + 200],
         ]
         res = subprocess.run(cmd, cwd=tree, capture_output=True, text=True, encoding="utf-8", errors="replace")
-        if res.returncode not in (0, 1):
-            raise Refusal(f"ruff exited {res.returncode} on class {cls}: {res.stderr.strip()[:400]}")
-        for item in json.loads(res.stdout or "[]"):
+        # The JSON format prints `[]` on a clean read, so an empty stdout is a
+        # ruff that did not run, whatever it exited: never an empty success.
+        if res.returncode not in (0, 1) or not res.stdout.strip():
+            raise Refusal(f"ruff exited {res.returncode} on class {cls}: {res.stderr.strip()[:400] or 'and printed nothing'}")
+        for item in json.loads(res.stdout):
             rel = Path(item["filename"]).resolve().relative_to(root).as_posix()
             code = item["code"] or "syntax-error"
             row = item["location"]["row"]
@@ -516,7 +560,9 @@ def package_bases(tree: Path, targets: list[str]) -> list[str]:
     return seen
 
 
-def mypy_findings(tree: Path, cls: str, targets: list[str], declared: Declared) -> list[Finding]:
+def mypy_findings(
+    tree: Path, cls: str, targets: list[str], declared: Declared, interpreter: Interpreter = PYTHON
+) -> list[Finding]:
     """Class A strict, class B at the tool's default; `--platform linux` because the hosts are.
 
     `--explicit-package-bases` with `MYPYPATH` from `package_bases`: see there.
@@ -527,7 +573,7 @@ def mypy_findings(tree: Path, cls: str, targets: list[str], declared: Declared) 
         cfg = Path(tmp) / "mypy.ini"
         cfg.write_text("[mypy]\n", encoding="utf-8")
         cmd = [
-            sys.executable, "-m", "mypy", "--config-file", str(cfg), "--cache-dir", tmp,
+            *interpreter, "-m", "mypy", "--config-file", str(cfg), "--cache-dir", tmp,
             "--platform", "linux", "--ignore-missing-imports", "--no-error-summary",
             "--no-color-output", "--show-error-codes", "--exclude", TEST_EXCLUDE,
             "--explicit-package-bases",
@@ -542,21 +588,28 @@ def mypy_findings(tree: Path, cls: str, targets: list[str], declared: Declared) 
     if res.returncode not in (0, 1):
         raise Refusal(f"mypy exited {res.returncode} on class {cls}: {(res.stdout + res.stderr).strip()[:600]}")
     out: list[Finding] = []
+    placed = 0
     for line in res.stdout.splitlines():
         m = _MYPY_LINE.match(line)
         if m:
+            placed += 1
             rel = m["path"].replace("\\", "/")
             if classify(rel, declared) == cls:
                 out.append(Finding(rel, int(m["line"]), TYPES, m["msg"], int(m["line"])))
         elif "error:" in line:
             raise Refusal(f"mypy said something this reader cannot place on a line: {line}")
+    if res.returncode == 1 and not placed:
+        # 1 is "errors found". With none on stdout it was not mypy that said so.
+        raise Refusal(f"mypy exited 1 on class {cls} and named no error: {res.stderr.strip()[:400] or 'and printed nothing'}")
     return out
 
 
 # --- one class ----------------------------------------------------------------
 
 
-def read_class(tree: Path, cls: str, files: list[str], declared: Declared) -> tuple[ClassReport, list[Problem]]:
+def read_class(
+    tree: Path, cls: str, files: list[str], declared: Declared, interpreter: Interpreter = PYTHON
+) -> tuple[ClassReport, list[Problem]]:
     findings: list[Finding] = []
     sups: list[Suppression] = []
     problems: list[Problem] = []
@@ -580,9 +633,9 @@ def read_class(tree: Path, cls: str, files: list[str], declared: Declared) -> tu
             elif MARKER in comment:
                 problems.append(Problem("baseline-stray", f"class {cls} {rel}:{line}", comment.strip()))
     if readable:
-        findings += ruff_findings(tree, cls, readable)
+        findings += ruff_findings(tree, cls, readable, interpreter)
         if cls != "C":
-            findings += mypy_findings(tree, cls, mypy_targets(cls, declared, tree), declared)
+            findings += mypy_findings(tree, cls, mypy_targets(cls, declared, tree), declared, interpreter)
     kept, suppressed = apply_suppressions(findings, sups)
     sp, deviations, baseline = judge_suppressions(cls, sups, findings)
     problems += sp
@@ -681,7 +734,13 @@ def ratchet(
 # --- the whole -------------------------------------------------------------------
 
 
-def check(tree: Path, declared: Declared, base_sha: str = "", action_name: str = ACTION_NAME) -> Outcome:
+def check(
+    tree: Path,
+    declared: Declared,
+    base_sha: str = "",
+    action_name: str = ACTION_NAME,
+    interpreter: Interpreter = PYTHON,
+) -> Outcome:
     files = population(tree)
     if not files:
         raise Refusal(
@@ -691,13 +750,14 @@ def check(tree: Path, declared: Declared, base_sha: str = "", action_name: str =
     by_class: dict[str, list[str]] = defaultdict(list)
     for f in files:
         by_class[classify(f, declared)].append(f)
+    readers = reader_versions(bool(by_class.get("A") or by_class.get("B")), interpreter)
     reports: dict[str, ClassReport] = {}
     problems: list[Problem] = []
     for cls in CLASSES:
-        reports[cls], found = read_class(tree, cls, by_class.get(cls, []), declared)
+        reports[cls], found = read_class(tree, cls, by_class.get(cls, []), declared, interpreter)
         problems += found
     note, base, rp = ratchet(tree, base_sha, action_name, declared, {c: reports[c].baseline for c in CLASSES})
-    return Outcome(reports, problems + rp, note, base)
+    return Outcome(reports, problems + rp, note, base, readers)
 
 
 def by_code(report: ClassReport) -> str:
@@ -708,7 +768,8 @@ def by_code(report: ClassReport) -> str:
 
 
 def render(outcome: Outcome, declared: Declared) -> list[str]:
-    lines = ["declaration (a file under no prefix, and every test path, is class C):"]
+    lines = [f"readers: {'; '.join(outcome.readers)}", ""]
+    lines.append("declaration (a file under no prefix, and every test path, is class C):")
     for cls in CLASSES:
         lines.append(f"  class {cls} (ceiling {CEILING[cls]}): {' '.join(declared.get(cls, ())) or '-'}")
     lines.append("")
@@ -735,7 +796,8 @@ def render_markdown(outcome: Outcome, declared: Declared) -> str:
             f"{len(r.findings)} | {r.deviations} | {r.baseline}{base} | {by_code(r)} |"
         )
     verdict = f"**{len(outcome.problems)} refusal(s)**" if outcome.problems else "**green** - zero findings"
-    return "\n".join(["### power of ten", "", *rows, "", f"ratchet: {outcome.ratchet}", "", verdict, ""])
+    readers = f"readers: {'; '.join(outcome.readers)}"
+    return "\n".join(["### power of ten", "", *rows, "", readers, "", f"ratchet: {outcome.ratchet}", "", verdict, ""])
 
 
 def write_summary(text: str) -> None:
