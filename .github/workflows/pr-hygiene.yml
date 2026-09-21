@@ -16,11 +16,22 @@ name: pr-hygiene
 # the same way: the private repository's `vendored copies` job diffs every
 # public copy against its canonical file and fails on drift. Do not edit the
 # copy here; fix the canonical file and re-vendor.
+#
+# `scripts/check_deploy_label.py` is the second checker this job runs, vendored
+# and held unmodified the same way. Elsewhere it is a shared action's script;
+# here the two steps at the end of the job are that action's two steps, written
+# out, because the action itself cannot be resolved from a public repository.
 
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, edited]
+    # `labeled` and `unlabeled` are for the deploy-label step, whose whole
+    # remedy is *apply the label*: neither is in the default types, and
+    # `edited` is title, body and base, not labels. Without them a pull
+    # request opened unlabelled stays red after the label is applied, until
+    # something pushes a commit. A label change re-runs the body check too; it
+    # is two API reads.
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
 
 concurrency:
   group: pr-hygiene-${{ github.ref }}
@@ -65,3 +76,28 @@ jobs:
           python3 scripts/check_verification_section.py "$RUNNER_TEMP/body.txt" \
             --changed-files "$RUNNER_TEMP/files.txt" --label "PR #$PR body" \
             --no-require-prod
+
+      # Exactly one `deploy:` label, or the pull request is unclassified and
+      # reads red. The labels come from the event payload, so these two steps
+      # read no API; they reach the script through the environment, never
+      # interpolated into shell, because a label name is repository-controlled
+      # text. Dependabot is exempt by author, and the exemption prints, with its
+      # closing condition, whenever it fires.
+      #
+      # `!cancelled()` on both, so a refused body does not hide a missing label,
+      # or the other way round: both judgements print on one run. The self-test
+      # comes first for the reason the one above does.
+      #
+      # A label change does not move the head commit, so a red run and the green
+      # one that follows it both stay on the commit. Read the LATEST run of this
+      # job; anything that reads every conclusion sees the old red.
+      - name: Self-test the deploy-label checker
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_deploy_label.py --self-test
+
+      - name: Exactly one deploy label
+        if: ${{ !cancelled() }}
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: python3 scripts/check_deploy_label.py --labels-json "$PR_LABELS" --author "$PR_AUTHOR"
