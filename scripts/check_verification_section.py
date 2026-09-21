@@ -511,8 +511,121 @@ def _check_live_carve_outs(
     return 0
 
 
+#: A fence opener, and the two things that can start on an ordinary line: an
+#: inline code span (skipped whole, so a body that MENTIONS the comment marker
+#: in backticks is not read as opening one) or a comment. A backtick fence's
+#: opening line holds no later backtick: without that, a line that merely
+#: STARTS with a code span of three ticks was read as a fence that never
+#: closed, and every comment below it was kept (found in review, 2026-09-21).
+_FENCE_RE = re.compile(r"^ {0,3}(?P<fence>`{3,}(?!.*`)|~{3,})")
+_SPAN_OR_COMMENT_RE = re.compile(r"(?P<ticks>`+).*?(?P=ticks)|(?P<open><!--)")
+
+
+def _uncomment_line(line: str, closes_in_paragraph: bool) -> tuple[str, bool]:
+    """One line outside any fence, with its comments removed, and whether it
+    leaves a comment open.
+
+    An opener its own line does not close is one of two things. Where nothing
+    but a removed comment precedes it, it is an HTML block: hidden up to the next
+    closer wherever that is, or to the end of the document. Mid-line it is
+    inline, and an inline comment cannot cross a blank line: with no closer
+    before the paragraph ends it renders as the literal characters and is
+    kept as them. Every real template ends in a comment, so "a closer
+    anywhere later" is true of every body and cannot be the test.
+
+    The closer is looked for two characters into the opener, because `<!-->`
+    and `<!--->` are whole comments.
+    """
+
+    kept: list[str] = []
+    pos = 0
+    while True:
+        m = _SPAN_OR_COMMENT_RE.search(line, pos)
+        while m and not m.group("open"):
+            m = _SPAN_OR_COMMENT_RE.search(line, m.end())
+        if not m:
+            return "".join(kept) + line[pos:], False
+        kept.append(line[pos : m.start()])
+        end = line.find("-->", m.start() + 2)
+        if end >= 0:
+            pos = end + 3
+            continue
+        if closes_in_paragraph or not "".join(kept).strip():
+            return "".join(kept), True
+        return "".join(kept) + line[m.start() :], False
+
+
+def _closes_in_paragraph(lines: list[str], i: int) -> bool:
+    """Whether a closer stands on a line after `i` and before the next blank one."""
+
+    for later in lines[i + 1 :]:
+        if not later.strip():
+            return False
+        if "-->" in later:
+            return True
+    return False
+
+
+def strip_comments(body: str) -> str:
+    """The body as a reader of the rendered page sees it: HTML comments removed.
+
+    WHY. The estate's PR templates carry their instructions in comments, and an
+    instruction that starts a line with a label and a colon was read as that
+    label's VALUE, ahead of the bare label the author is meant to fill -- so a
+    template submitted unedited passed (measured 2026-09-19 on one adopter's
+    template, open since 2026-08-16). The self-test could not see it: its
+    unedited-template fixture had no comment block, which no real template
+    lacks. A comment is invisible on the rendered pull request, so nothing in
+    it is a statement anybody made; it is removed before the heading is
+    looked for, because a heading inside a comment is no more real than a
+    label there.
+
+    Whichever opens first wins: a marker inside a fence is pasted output and
+    stays, a fence inside a comment is hidden with it. Each removed line
+    leaves an empty one, so nothing is joined that was apart.
+
+    KNOWN LIMITS. This reads lines, not a document tree, so it follows the
+    rendered page only for structure that starts a line within three spaces.
+    A fence indented under a list item or quoted with `>`, an indented code
+    block, and a code span that runs across a line break are not seen as
+    code, so a bare comment opener inside one is read as an opener. Each
+    fails closed, and only on a body that both carries the marker as
+    evidence and has a closer later in that paragraph or block; backticks
+    on the same line as the marker are the way out. In the other direction,
+    removing a commented-out heading lets the section run on to the next
+    real heading, which is what the rendered page shows too.
+    """
+
+    lines = body.splitlines()
+    out: list[str] = []
+    fence = ""
+    in_comment = False
+    for i, line in enumerate(lines):
+        if in_comment:
+            end = line.find("-->")
+            if end < 0:
+                out.append("")
+                continue
+            line, in_comment = line[end + 3 :], False
+        elif fence:
+            out.append(line)
+            if line.strip().startswith(fence) and not line.strip().strip(fence[0]):
+                fence = ""
+            continue
+        elif m := _FENCE_RE.match(line):
+            fence = m.group("fence")
+            out.append(line)
+            continue
+        kept, in_comment = _uncomment_line(line, _closes_in_paragraph(lines, i))
+        out.append(kept)
+    return "\n".join(out)
+
+
 def extract_section(body: str) -> str | None:
-    """The `## Verification` section's text, or None when there is no such heading."""
+    """The `## Verification` section's text, or None when there is no such heading.
+
+    Reads what it is given: `check` hands it a body with its comments removed.
+    """
 
     lines = body.splitlines()
     start = None
@@ -589,7 +702,7 @@ def check(
     if not touched:
         return problems
 
-    section = extract_section(body)
+    section = extract_section(strip_comments(body))
     if section is None:
         fields = (
             "Dev / Prod / Discriminator lines; `Prod: N/A - <reason>` is a "
@@ -700,6 +813,157 @@ _UNEDITED_TEMPLATE = """## Verification
 Part of #
 """
 
+#: The shape templates actually have, which the fixture above never had: the
+#: instructions sit in a comment, and they start their lines with the labels.
+#: Until 2026-09-21 each instruction was read as its label's value and this
+#: body, submitted untouched, passed in both prod modes. The comment ahead of
+#: the section carries a heading and a full set of labels for the same reason:
+#: a section opened inside a comment is one nobody wrote.
+_COMMENTED_TEMPLATE = """<!--
+Fill every section. An example of a finished one:
+
+## Verification
+
+Dev: the whole suite was run and every example in it passed.
+Prod: N/A - an example reason long enough to be read as a real one.
+-->
+
+## What changed
+
+<!-- One paragraph, in terms of observable behaviour after the merge. -->
+
+## Verification
+
+<!--
+Dev: verbatim output, not a description of output: the command and what it
+reported, pasted below the label.
+
+Prod: what you observed after it deployed. `N/A - <reason>` is always a valid
+answer, and silence never is.
+
+Discriminator: the thing that reads DIFFERENTLY before and after, required
+whenever the line above is not N/A.
+
+```
+an example fence inside the comment, hidden with it
+```
+-->
+
+**Dev:**
+
+**Prod:**
+
+**Discriminator:**
+
+## Issue references
+
+<!-- Part of, or refs. -->
+"""
+
+#: The same template filled in, comments left where they were, which is what
+#: an author actually submits. The evidence quotes both comment markers, in a
+#: fence and in backticks, unclosed: pasted output is not markup.
+_COMMENTED_TEMPLATE_FILLED = _COMMENTED_TEMPLATE.replace(
+    "**Dev:**\n",
+    "**Dev:**\n\n```\n> grep -c '<!--' example.md\n3\n```\n",
+).replace(
+    "**Prod:**\n",
+    "**Prod:** the deployed page no longer renders a stray `<!--` above the fold.\n",
+).replace(
+    "**Discriminator:**\n",
+    "**Discriminator:** the page source carried the marker twice before, once after.\n",
+)
+
+#: Every red body below is complete apart from its comment, so that reading
+#: the comment is the only way to pass it: each case is red in both prod modes
+#: for that one reason, not for a missing `Prod:` that full mode refuses anyway.
+_EXAMPLE_NA = "**Prod:** N/A - an example reason long enough to be read as a real one.\n"
+
+_COMMENT_CASES: list[tuple[str, str, list[str], bool]] = [
+    ("unedited template, labelled instructions in a comment", _COMMENTED_TEMPLATE, _RUNTIME, False),
+    ("the same template filled in, comments kept", _COMMENTED_TEMPLATE_FILLED, _RUNTIME, True),
+    (
+        "a placeholder comment on the label line is not a value",
+        "## Verification\n\n**Dev:** <!-- the command and what it reported, verbatim -->\n"
+        + _EXAMPLE_NA,
+        _RUNTIME,
+        False,
+    ),
+    (
+        "a section that exists only inside a comment",
+        "<!--\n## Verification\n\n**Dev:** the whole suite was run and all of it passed.\n"
+        + _EXAMPLE_NA
+        + "-->\n",
+        _RUNTIME,
+        False,
+    ),
+    (
+        # The evidence stands AFTER the marker and the body ends in a comment,
+        # as every real body does: read as an opener, the marker would take
+        # the evidence in both prod modes. The first draft of this case had
+        # its evidence before the marker and no later closer, and pinned
+        # nothing in one mode and the wrong rule in the other.
+        "an unclosed marker mid-line is text, though the template's last comment closes later",
+        "## Verification\n\n**Dev:** <!-- was left in the page; removed, and the whole suite passed.\n"
+        + _EXAMPLE_NA
+        + "\n## Issue references\n\n<!-- Part of, or refs. -->\n",
+        _RUNTIME,
+        True,
+    ),
+    (
+        "a comment opened mid-line and closed in the same paragraph is one comment",
+        "## Verification\n\n**Dev:** <!-- the command and what it\nreported, verbatim, pasted here -->\n"
+        + _EXAMPLE_NA,
+        _RUNTIME,
+        False,
+    ),
+    (
+        "evidence after a comment on the label line is the value",
+        "## Verification\n\n**Dev:** <!-- paste --> ran the whole suite, example passed.\n" + _EXAMPLE_NA,
+        _RUNTIME,
+        True,
+    ),
+    (
+        "evidence after a multi-line comment's closer is kept",
+        "## Verification\n\n**Dev:**\n<!-- the command and\nwhat it reported --> ran the whole suite, example passed.\n"
+        + _EXAMPLE_NA,
+        _RUNTIME,
+        True,
+    ),
+    (
+        "a closed fence above the template does not shelter its comments",
+        "```text\nexample output\n```\n\n" + _COMMENTED_TEMPLATE,
+        _RUNTIME,
+        False,
+    ),
+    (
+        "nor does a closed tilde fence",
+        "~~~\nexample output\n~~~\n\n" + _COMMENTED_TEMPLATE,
+        _RUNTIME,
+        False,
+    ),
+    (
+        "a line that starts with a three-tick code span opens no fence",
+        "```make lint``` now runs first.\n\n" + _COMMENTED_TEMPLATE,
+        _RUNTIME,
+        False,
+    ),
+    (
+        "the four- and five-character comments are whole comments",
+        "## Verification\n\n<!-->\n**Dev:** ran the whole suite, example passed.\n<!--->\n" + _EXAMPLE_NA,
+        _RUNTIME,
+        True,
+    ),
+    (
+        "an unclosed marker at line start hides the rest, as rendered",
+        "## Verification\n\n<!-- instructions nobody closed\n"
+        "**Dev:** ran the whole suite, example passed.\n"
+        + _EXAMPLE_NA,
+        _RUNTIME,
+        False,
+    ),
+]
+
 _CASES: list[tuple[str, str, list[str], bool]] = [
     ("complete", _GOOD, _RUNTIME, True),
     ("n/a with a reason", _NA_WITH_REASON, _RUNTIME, True),
@@ -783,6 +1047,34 @@ _OPTIONAL_CASES: list[tuple[str, str, list[str], bool]] = [
         False,
     ),
 ]
+
+
+#: What the stripper returns, exactly, where a verdict alone cannot tell two
+#: readings apart: the text on either side of a comment survives, every
+#: comment on a line goes and not only the first, and a removed line leaves
+#: an empty one behind.
+_STRIP_CASES: list[tuple[str, str, str]] = [
+    ("text either side of a comment survives", "a <!-- b --> c", "a  c"),
+    ("every comment on a line goes", "a <!-- b --> c <!-- d --> e", "a  c  e"),
+    ("a removed line leaves an empty one", "a\n<!--\nb\n-->\nc", "a\n\n\n\nc"),
+    ("text before a mid-line opener survives", "a <!-- b\nc --> d", "a \n d"),
+    ("a marker in backticks is text, with a closer in its paragraph", "a `<!--` b\nc --> d", "a `<!--` b\nc --> d"),
+    ("a marker in a tilde fence is text", "~~~\n<!--\n~~~\n<!-- c -->d", "~~~\n<!--\n~~~\nd"),
+    ("a marker in a fence is text", "```\n<!--\n```\n<!-- c -->d", "```\n<!--\n```\nd"),
+    ("a longer fence is not closed by a shorter one", "````\n```\n<!-- a -->\n````", "````\n```\n<!-- a -->\n````"),
+]
+
+
+def _check_strip() -> int:
+    failures = 0
+    for name, body, want in _STRIP_CASES:
+        got = strip_comments(body)
+        if got != want:
+            print(f"  FAIL [strip] {name}: got {got!r}, expected {want!r}")
+            failures += 1
+        else:
+            print(f"  ok   [strip] {name}")
+    return failures
 
 
 def _run_cases(cases: list, require_prod: bool, tag: str) -> int:
@@ -986,6 +1278,9 @@ def self_test() -> int:
     # every printed line are unchanged from the single-function form.
     failures = _run_cases(_CASES, True, "")
     failures += _run_cases(_OPTIONAL_CASES, False, "[no-require-prod] ")
+    failures += _run_cases(_COMMENT_CASES, True, "[comments] ")
+    failures += _run_cases(_COMMENT_CASES, False, "[comments, no-require-prod] ")
+    failures += _check_strip()
     failures += _check_trigger()
     failures += _check_polarity()
     failures += _check_normaliser()
@@ -998,7 +1293,9 @@ def self_test() -> int:
         return 1
     print(
         f"\nself-test OK: {len(_CASES)} + {len(_OPTIONAL_CASES)} cases "
-        f"(both prod modes), 3 trigger assertions, "
+        f"(both prod modes), {len(_COMMENT_CASES)} comment cases in each mode, "
+        f"{len(_STRIP_CASES)} strip cases, "
+        f"3 trigger assertions, "
         f"{len(_GATED_BY_DEFAULT)} polarity, {len(_STILL_EXEMPT)} exemption, "
         f"{len(NOT_RUNTIME)} reasons, {len(SHIPPED_ANYWAY)} carve-outs + 4 "
         f"resolver arms (present, absent, uncovered, blind), "
