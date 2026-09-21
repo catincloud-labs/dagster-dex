@@ -494,6 +494,25 @@ found.
     plus the `pr title` job in `checks.yml`, byte-compared from the private
     side, advisory rather than ruleset-required. Do not edit the vendored copy
     here.
+- **A pull request carries exactly one `deploy:` label.** It says what merging
+  does to a box, which is a fact about the change. Merging deploys nothing
+  here: publication runs on a `v*` tag (`publish.yml`), never on a merge, so
+  `deploy:none` is the usual value, and a pull request that owes a tag after
+  it merges is `deploy:by-hand`.
+  None is unclassified and reads red; two is two claims about one merge and
+  reads red. The `review:` clock is applied by hand and read by no guard.
+  - Guarded by `scripts/check_deploy_label.py` in the `pr-hygiene` job, its
+    self-test first. It is a **vendored copy**, byte-compared from the private
+    side like the checks above. **Never edit it here.** Run it by hand with
+    `python scripts/check_deploy_label.py --labels-json '["deploy:none"]'`.
+  - The remedy for a red is to apply the label: the job listens for `labeled`
+    and `unlabeled`, so it re-runs by itself. The red run stays on the commit
+    beside the green one; read the latest run of the job.
+  - Advisory, not ruleset-required: count the required contexts with
+    `gh api repos/catincloud-labs/dagster-dex/rules/branches/main` before
+    assuming a red here blocks a merge.
+  - Dependabot is exempt by author, and the exemption prints its closing
+    condition at every firing: a `labels:` key in `.github/dependabot.yml`.
 - **Never put a `close` / `fix` / `resolve` verb immediately before `#N`** in a
   commit message or PR body unless you mean it - including inside backticks, and
   including in a sentence warning against it. Only *adjacency* fires, so "part of
