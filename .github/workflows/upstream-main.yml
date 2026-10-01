@@ -47,9 +47,16 @@ name: upstream main
 
 on:
   schedule:
-    # Daily, before the 09:00Z tick that reads the board. Upstream releases
-    # every two to four days, so daily is enough and hourly would only find
-    # the same red sooner.
+    # Daily. Upstream releases every two to four days, so daily is enough and
+    # hourly would only find the same red sooner. The hour is a request, not
+    # a promise: GitHub says a schedule event can be delayed under load and
+    # bounds the delay nowhere. Measured 2026-10-01 (#104) over the last three
+    # scheduled runs, every one fired about six hours after this cron, at
+    # 11:25Z, 11:13Z and 11:40Z. Nothing reads this workflow's result at a
+    # fixed hour (this comment used to promise a run before the 09:00Z board
+    # tick, which does not read it), so the slot stays. Read when a run
+    # actually fired from the runs, never from this line:
+    #   gh run list --workflow upstream-main.yml --json createdAt,event
     - cron: "23 5 * * *"
   workflow_dispatch:
     inputs:
