@@ -9,5 +9,5 @@
 #
 # Both versions are the ones the record's readings were taken with, so the
 # day-one counts it prices are the counts this action reports.
-ruff==0.16.6
+ruff==0.16.9
 mypy==2.3.1
