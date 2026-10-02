@@ -49,14 +49,17 @@ on:
   schedule:
     # Daily. Upstream releases every two to four days, so daily is enough and
     # hourly would only find the same red sooner. The hour is a request, not
-    # a promise: GitHub says a schedule event can be delayed under load and
-    # bounds the delay nowhere. Measured 2026-10-01 (#104) over the last three
-    # scheduled runs, every one fired about six hours after this cron, at
-    # 11:25Z, 11:13Z and 11:40Z. Nothing reads this workflow's result at a
-    # fixed hour (this comment used to promise a run before the 09:00Z board
-    # tick, which does not read it), so the slot stays. Read when a run
-    # actually fired from the runs, never from this line:
-    #   gh run list --workflow upstream-main.yml --json createdAt,event
+    # a promise: GitHub says a schedule event can be delayed under load, or
+    # dropped, and bounds neither. Measured 2026-10-01 (#104) over the last
+    # three scheduled runs, every one fired about six hours after this cron,
+    # at 11:25Z, 11:13Z and 11:40Z; re-read 2026-10-02 (PR #107's review) over
+    # every scheduled run since this file landed, all fired after 09:00Z,
+    # four to six and a half hours after it. Nothing reads this workflow's
+    # result at a fixed hour (this comment used to promise a run before the
+    # 09:00Z board tick, which does not read it), so the slot stays. Green is
+    # reported nowhere, so a dropped run reads as a quiet day. Read when a
+    # run actually fired from the runs, never from this line:
+    #   gh run list --repo catincloud-labs/dagster-dex --workflow upstream-main.yml --json createdAt,event
     - cron: "23 5 * * *"
   workflow_dispatch:
     inputs:
