@@ -15,9 +15,14 @@ changes, the README does not, and nothing goes red. CI runs the example on every
 pull request anyway, so its step captures the output and this file refuses any
 excerpt line the run did not print, verbatim and as a whole line.
 
-Whole lines, not substrings, because a substring match would pass an excerpt
-that a later edit TRUNCATED - the README would then quote half a line the
-example no longer ends that way, and still read as checked.
+Whole lines, not substrings, because a substring match would pass a quote that
+is only part of a printed line - for instance one left behind when the
+example's line grew - and it would still read as checked. A line quoted twice
+is refused too: it pads the excerpt without holding anything more.
+
+What this does NOT hold: the prose beside the excerpt, which leg each quoted
+line belongs to, and any fence the marker does not name. Those are read, not
+checked.
 
 The excerpt is found by its marker comment rather than by position, and EXACTLY
 ONE marked block must exist. A guard that found no block would check nothing
@@ -74,6 +79,9 @@ def excerpt(readme: str) -> list[str]:
     quoted = [line for line in body if line]
     if not quoted:
         raise ExcerptNotFound("the excerpt is empty, so it would agree with any run")
+    repeated = sorted({line for line in quoted if quoted.count(line) > 1})
+    if repeated:
+        raise ExcerptNotFound("a line is quoted more than once: %s" % "; ".join(repeated))
     return quoted
 
 

@@ -29,8 +29,8 @@ artifact for a machine that has the engine to read it.
 ## What it finds
 
 `examples/walk_the_whole_loop.py` puts a small Dagster asset graph in front of a
-local DuckDB warehouse, breaks the warehouse by hand, and lets dex find the
-drift through this package. It needs no cloud account, no credential and
+local DuckDB warehouse, breaks the warehouse and one of the project's
+definitions by hand, and lets dex find the drift through this package. It needs no cloud account, no credential and
 nothing private. From the root of a clone of this repository:
 
 ```bash
@@ -49,21 +49,26 @@ leg 11 ok         : dangling_source on raw.sales_events, declared_in sources/fac
 leg 12 ok         : definition_changed, and sales.amount reported as uncheckable
 ```
 
-- **Leg 5.** A duplicate row breaks the key of `dim_date`, and the finding
-  names `fact_sales` among the models it impacts. Nothing in the warehouse
-  connects those two tables; the Dagster asset graph does.
+- **Leg 5.** One duplicate row in each of `dim_date` and `fact_sales` breaks
+  both keys, hence two findings, and the `dim_date` finding names `fact_sales`
+  among the models it impacts. Nothing in the warehouse connects those two
+  tables; the Dagster asset graph does.
 - **Legs 7 and 8.** The `unique` test dex proposed for the broken key is written
   into the hand-written declaration YAML through this package, and reading the
   project back shows the key declared.
 - **Leg 11.** A source table the project declares is dropped, and the finding
   names the file that declared it.
-- **Leg 12.** A measure is redefined. No inspection of the warehouse finds that,
-  because nothing in the warehouse changed.
+- **Leg 12.** A measure is redefined as `amount * 1.2`. dex reports
+  `definition_changed`, which no inspection of the warehouse finds because
+  nothing in the warehouse changed, and says the new expression no longer maps
+  to a column it can check, rather than passing it.
 
-CI runs the same command on every pull request and refuses the change if any
-line quoted above is not one the run printed.
+CI runs this example on every pull request and refuses the change if any line
+quoted above is not one the run printed.
 
-To point dex at your own graph once the package is installed:
+## Pointing dex at your graph
+
+Once the package is installed, name the format in dex's own config:
 
 ```yaml
 # .dex/config.yml
@@ -198,8 +203,8 @@ uv run --no-project --with-editable . \
 ```
 
 `--with-editable` is not optional: without it the package is never installed and
-every test errors at collection on `No module named 'dagster_dex'`. These
-are the two commands CI runs, and the first is a **control**: it is what holds
+every test errors at collection on `No module named 'dagster_dex'`. Both run
+in CI, and the first is a **control**: it is what holds
 the engine coupling to one file, so an `exmergo_dex_core` import anywhere else
 turns it red at collection.
 
@@ -259,7 +264,7 @@ could be skipped - and a skipped assertion is not a passing one.
 not a settled interface: it exists to be argued with, and the argument may change
 it. Pin the minor if you depend on it.
 
-[CHANGELOG.md](CHANGELOG.md) names what changed between releases and which
+[CHANGELOG.md](https://github.com/catincloud-labs/dagster-dex/blob/main/CHANGELOG.md) names what changed between releases and which
 changes were breaking, which is the question this section cannot answer for a
 consumer already on an older version.
 
@@ -284,7 +289,8 @@ that way is in the changelog.
 | A second plan is refused over a human's edit rather than written | release workflow |
 
 Every row runs from a clean checkout with no access to anything private:
-[CONTRIBUTING.md](CONTRIBUTING.md) gives the commands, and the workflows under
+[CONTRIBUTING.md](https://github.com/catincloud-labs/dagster-dex/blob/main/CONTRIBUTING.md)
+gives the commands, and the workflows under
 `.github/workflows/` run the rest.
 
 ### Two ways to name the project, and the reason there are two

@@ -14,8 +14,8 @@ the real output cannot show:
   quoted line passes with its other output ignored;
 - a run that printed a LONGER line is still a refusal, because a substring match
   would pass an excerpt left behind by a truncation;
-- a README with no marker, two markers, an unclosed fence or an empty block
-  cannot be checked, and says so rather than passing.
+- a README with no marker, two markers, an unclosed fence, an empty block or a
+  line quoted twice cannot be checked, and says so rather than passing.
 """
 
 from __future__ import annotations
@@ -77,8 +77,9 @@ def test_a_longer_printed_line_does_not_vouch_for_a_shorter_quote():
         (guard.MARKER + " -->\n\n```text\nleg 1\n```\n", "directly above"),
         (guard.MARKER + " -->\n```text\nleg 1\n", "never closed"),
         (_readme(), "empty"),
+        (_readme(_LINES[0], _LINES[1], _LINES[0]), "more than once"),
     ],
-    ids=["no marker", "two markers", "marker not on the fence", "unclosed", "empty"],
+    ids=["no marker", "two markers", "marker not on the fence", "unclosed", "empty", "a line twice"],
 )
 def test_a_readme_the_checker_cannot_read_is_refused(readme: str, cause: str):
     with pytest.raises(guard.ExcerptNotFound, match=cause):

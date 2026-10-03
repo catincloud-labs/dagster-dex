@@ -68,10 +68,13 @@ if you depend on the contract.
   from: `git show v0.1.0:pyproject.toml` registers
   `dagster_dex.dex:project_from_context`, under a comment dating the
   correction 2026-08-08, and `git show v0.1.0:README.md` already says both
-  gaps are fixed. The class-named registration that failed on first contact
-  was in the tree before the first tag, not in any wheel, and the "0.1.0" the
-  entry says it was inert from is a version string that predates publication.
-  Found while moving the README's account of the same history into the entry
+  gaps are fixed. The wheel on the index agrees: installed from PyPI, 0.1.0's
+  `exmergo_dex_core.projects` entry point is
+  `dagster_dex.dex:project_from_context`. The class-named registration that
+  failed on first contact predates this repository's first commit (`1e414db`,
+  which already registers `project_from_context`), so it was in no tagged
+  tree and no wheel, and the "0.1.0" the entry says it was inert from is a
+  version string that predates publication. Found while moving the README's account of the same history into the entry
   above. Dated here rather than edited there, for the reason the next
   correction gives.
 - **The 0.6.2 entry's first claim - that no code path in the package changed -

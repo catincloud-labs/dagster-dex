@@ -10,8 +10,8 @@ distribution this project publishes.
 
 That gap had a name before it had a test. This package's own recorded lesson is
 that a declared-but-unresolved extension point is not evidence that registration
-works; it was inert from 0.1.0 until dex-core 1.6.0 began resolving the group,
-and there was no moment at which it could have failed. "The wheel installs and
+works; it was inert until dex-core 1.6.0 began resolving the group, before this
+package's first release, and there was no moment at which it could have failed. "The wheel installs and
 the entry point is present" is a claim of exactly that shape, one level up.
 
 WHAT THIS RUNS, AND WHY EACH LEG IS HERE
