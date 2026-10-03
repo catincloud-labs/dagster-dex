@@ -13,9 +13,10 @@ name = "dagster-dex"
 version = "0.6.2"
 # Leads with the use case rather than the design argument, because this is the
 # COLDEST surface the package has: it renders under the name in PyPI search
-# results, above the README. The framing the README and the repo carry -- an
-# asset graph as a project format, and the tiered seam it proposes -- is one
-# scroll down, where a reader has already decided to look.
+# results, above the README. The README opens with this same sentence (#109);
+# the design argument -- an asset graph as a project format, and the tiered
+# seam it proposes -- is under its `## What this is`, where a reader has
+# already decided to look.
 #
 # ASCII on purpose, and the em-dash it wants is deliberately not here. The
 # metadata is UTF-8 and PyPI's web page renders one correctly -- but this string

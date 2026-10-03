@@ -68,10 +68,12 @@ uv run --no-project --with-editable . \
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
   python examples/reduce_asset_graph.py
 
-# the whole loop against a real warehouse: real graph, real drift, real edit
+# the whole loop against a real warehouse: real graph, real drift, real edit,
+# and the README's quote of its output, held to what this run printed
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
   --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 --with duckdb \
-  python examples/walk_the_whole_loop.py
+  python examples/walk_the_whole_loop.py | tee whole-loop.txt
+python scripts/check_readme_excerpt.py whole-loop.txt
 ```
 
 Every command above runs in CI on every pull request, and the two `examples/`
@@ -174,7 +176,9 @@ re-vendor is a defect at the source, and that test is the first to see it.
 - A new leg in `examples/walk_the_whole_loop.py` for a case the loop does not
   reach yet. (This bullet used to say a runnable example was the clearest gap;
   every file in `examples/` is now executed by CI - and briefly said "two",
-  a count the next example moved.)
+  a count the next example moved.) The README quotes some of the loop's
+  output: if a leg it quotes changes what it prints, re-quote the README in
+  the same change, or CI refuses it.
 - Support for asset-graph shapes the reduction handles badly.
 - Arguments, in an issue, about the tier boundaries. Where the write tier's
   scope sits - hand-written declarations can receive an edit, reduced models

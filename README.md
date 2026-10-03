@@ -1,8 +1,12 @@
 # dagster-dex
 
-A Dagster asset graph read as a **project format** for
-[dex](https://github.com/exmergo/dex), and the tiered seam it proposes for
-reading one.
+Let [dex](https://github.com/exmergo/dex) read your Dagster asset graph the way
+it reads a dbt project: keys, joins, sources, semantics, drift.
+
+**dex** reports where a warehouse has drifted from the structure a project
+declares. It reads dbt projects natively. This package makes a Dagster asset
+graph readable the same way, without the graph having to pretend to be a dbt
+project first.
 
 Copyright 2026 David Anaya. Apache-2.0.
 
@@ -22,7 +26,49 @@ Python 3.10+, matching Dagster's own floor. The `[dex]` extra needs 3.11+,
 because the engine does: on 3.10 you can still reduce a graph and write an
 artifact for a machine that has the engine to read it.
 
-Once installed, dex can name this format directly:
+## What it finds
+
+`examples/walk_the_whole_loop.py` puts a small Dagster asset graph in front of a
+local DuckDB warehouse, breaks the warehouse and one of the project's
+definitions by hand, and lets dex find the drift through this package. It needs no cloud account, no credential and
+nothing private. From the root of a clone of this repository:
+
+```bash
+uv run --no-project --with-editable . --with 'dagster>=1.13' \
+  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 --with duckdb \
+  python examples/walk_the_whole_loop.py
+```
+
+Some of the lines it prints:
+
+<!-- excerpt: examples/walk_the_whole_loop.py, held to the run by scripts/check_readme_excerpt.py -->
+```text
+leg 5 ok          : 2 finding(s); dim_date impacts ['dim_date', 'fact_sales']
+leg 7/8 ok        : wrote it, and the project gained [('dim_date', 'date_key')]
+leg 11 ok         : dangling_source on raw.sales_events, declared_in sources/fact_sales.yml
+leg 12 ok         : definition_changed, and sales.amount reported as uncheckable
+```
+
+- **Leg 5.** One duplicate row in each of `dim_date` and `fact_sales` breaks
+  both keys, hence two findings, and the `dim_date` finding names `fact_sales`
+  among the models it impacts. Nothing in the warehouse connects those two
+  tables; the Dagster asset graph does.
+- **Legs 7 and 8.** The `unique` test dex proposed for the broken key is written
+  into the hand-written declaration YAML through this package, and reading the
+  project back shows the key declared.
+- **Leg 11.** A source table the project declares is dropped, and the finding
+  names the file that declared it.
+- **Leg 12.** A measure is redefined as `amount * 1.2`. dex reports
+  `definition_changed`, which no inspection of the warehouse finds because
+  nothing in the warehouse changed, and says the new expression no longer maps
+  to a column it can check, rather than passing it.
+
+CI runs this example on every pull request and refuses the change if any line
+quoted above is not one the run printed.
+
+## Pointing dex at your graph
+
+Once the package is installed, name the format in dex's own config:
 
 ```yaml
 # .dex/config.yml
@@ -31,11 +77,6 @@ project:
   options:
     assets: my_project.definitions:all_assets
 ```
-
-**dex** reads a project's declared structure (keys, joins, sources, semantics)
-and reports where the warehouse has drifted from it. It reads dbt projects
-natively. This package makes a Dagster asset graph readable the same way,
-without the graph having to pretend to be a dbt project first.
 
 ## What this is
 
@@ -162,8 +203,8 @@ uv run --no-project --with-editable . \
 ```
 
 `--with-editable` is not optional: without it the package is never installed and
-every test errors at collection on `No module named 'dagster_dex'`. These
-are the two commands CI runs, and the first is a **control**: it is what holds
+every test errors at collection on `No module named 'dagster_dex'`. Both run
+in CI, and the first is a **control**: it is what holds
 the engine coupling to one file, so an `exmergo_dex_core` import anywhere else
 turns it red at collection.
 
@@ -223,44 +264,18 @@ could be skipped - and a skipped assertion is not a passing one.
 not a settled interface: it exists to be argued with, and the argument may change
 it. Pin the minor if you depend on it.
 
-[CHANGELOG.md](CHANGELOG.md) names what changed between releases and which
+[CHANGELOG.md](https://github.com/catincloud-labs/dagster-dex/blob/main/CHANGELOG.md) names what changed between releases and which
 changes were breaking, which is the question this section cannot answer for a
 consumer already on an older version.
 
-**The entry point stopped being inert on 2026-08-08.** This section used to end:
-*"nothing resolves it today, and an entry point nobody looks up is inert."*
-dex-core **1.6.0** added resolution for exactly the `exmergo_dex_core.projects`
-group this package has declared since `0.1.0` - a format can now be named from
-`.dex/config.yml`, from a dotted `mypkg.projects:my_project` path, or from that
-entry-point group, with `--project-format` overriding on the CLI.
-
-That arrived through [`exmergo/dex#171`](https://github.com/exmergo/dex/issues/171),
-which this package's own constraint shaped: a host reaching dex as a subprocess
-cannot hand an object in, so name resolution was the only door that worked.
-
-**And it was registered wrong.** That paragraph originally ended *"what is left
-between here and a resolvable format is packaging, not design"*, written before
-anyone had run it. Resolution found the entry point immediately and then refused:
-it named the **class**, and dex-core's `ProjectFactory` calls what it resolves
-**with a `ProjectContext`**, so the context bound to `models`. A second gap sat
-behind it: a bare `DagsterProject` is refused as *"missing name, definitions"*,
-because this package says `format`/`declarations()` where the seam says
-`name`/`definitions()`.
-
-=> The lesson is worth more than the fix: **a declared-but-unresolved extension
-point is not evidence that registration works.** It was inert from `0.1.0`, so
-there was no moment before 2026-08-08 at which it could have failed.
-
-Both are fixed. The entry point names `dex:project_from_context`, which takes a
-context and returns a `DexProject`, and a regression test asserts the registration
-*and* that it loads to the callable.
-
-**This paragraph used to end with a hand-counted end-to-end result** - a model
-count, a source count, semantic models and metrics, from dex driven as a
-subprocess against a private asset graph. It was true where it was written and it
-is unverifiable here: nobody outside can run it, and it was four numbers in a
-document, which is the thing this project's own rules forbid. What replaces it is
-smaller and checkable by anyone:
+**dex finds this format by name.** From dex-core 1.6.0 the engine resolves the
+`exmergo_dex_core.projects` entry-point group, which this package registers in,
+so a format can be named from `.dex/config.yml`, from a dotted
+`mypkg.projects:my_project` path, or from that group, with `--project-format`
+overriding on the CLI. The entry point names `dex:project_from_context`, which
+takes a context and returns a `DexProject`, and a regression test asserts the
+registration *and* that it loads to the callable. How it came to be registered
+that way is in the changelog.
 
 | Verified in CI, every commit | Where |
 | --- | --- |
@@ -273,8 +288,10 @@ smaller and checkable by anyone:
 | A reconcile proposal becomes a plan, is written through this format, and changes what the project declares | release workflow |
 | A second plan is refused over a human's edit rather than written | release workflow |
 
-Everything above runs from a clean checkout with two commands and no access to
-anything private, which is the property the old sentence did not have.
+Every row runs from a clean checkout with no access to anything private:
+[CONTRIBUTING.md](https://github.com/catincloud-labs/dagster-dex/blob/main/CONTRIBUTING.md)
+gives the commands, and the workflows under
+`.github/workflows/` run the rest.
 
 ### Two ways to name the project, and the reason there are two
 
@@ -286,11 +303,6 @@ it. How long that import takes is a property of your project rather than of this
 package, so it is the thing to measure before choosing between the two forms:
 time `dagster definitions list` against your own code location and you have the
 number, on your machine, where it is true.
-
-**This paragraph used to give a figure from a private project.** It was measured,
-it was accurate where it was written, and nobody outside could reproduce it -
-the same defect as the four numbers removed above, left standing twenty lines
-below the paragraph that removed them.
 
 `artifact:` is the answer for a host that cannot pay that: the side that already
 has the graph reduces it once and writes the result down, and the side that

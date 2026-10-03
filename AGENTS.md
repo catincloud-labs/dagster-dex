@@ -204,7 +204,8 @@ DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
 ```
 
 Plus the following checks, which are not pytest. They do not share a CI job:
-the type check and the two `examples/` commands run in `suite`, and the two
+the type check, the two `examples/` commands and the README excerpt check that
+reads the second one's output run in `suite`, and the two
 power-of-ten commands run in `power of ten` (both are the literal `name:` of a
 job in `checks.yml`). Until 2026-09-07 this line read "Plus two checks that are
 not pytest, and both run in the same CI job", while the block beneath it held
@@ -232,10 +233,12 @@ uv run --no-project --with-editable . --with 'dagster>=1.13' \
   python examples/reduce_asset_graph.py
 
 # the WHOLE loop against a real (DuckDB) warehouse -- the only command that
-# installs the orchestrator, the engine and a warehouse at once
+# installs the orchestrator, the engine and a warehouse at once -- and the
+# README's quote of its output, held to what this run printed
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
   --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 --with duckdb \
-  python examples/walk_the_whole_loop.py
+  python examples/walk_the_whole_loop.py | tee whole-loop.txt
+python scripts/check_readme_excerpt.py whole-loop.txt
 ```
 
 The second line used to end `python -c "..."`, with the ellipsis standing in for
@@ -251,6 +254,13 @@ deliberate - the suite must run without an orchestrator - but it means nothing
 else here would notice `from_asset_graph` breaking against the objects Dagster
 actually hands it. The `[dagster]` extra was declared and installed by nothing
 until that step existed.
+
+**The README quotes the whole loop's output, and CI holds the quote to the
+run.** The `suite` step that runs `examples/walk_the_whole_loop.py` keeps its
+stdout, and `scripts/check_readme_excerpt.py` refuses any line in the README's
+marked excerpt that the run did not print, whole. Change a leg's printed line and
+the README excerpt moves in the same change; `tests/test_readme_excerpt.py`
+calibrates the checker in the control step, where no example runs.
 
 `--with-editable` is not optional - without it every test errors at collection
 on `No module named 'dagster_dex'`. Never `uv run --python X` without

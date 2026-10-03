@@ -468,11 +468,23 @@ jobs:
       # them; only the asset graph does. Verified to FAIL when the `deps=` edge
       # is removed, so it is a control that has been observed firing rather than
       # one that has only ever passed.
+      #
+      # The output is kept because the README quotes it (#109). `pipefail` is
+      # what keeps the `tee` from reporting the example's failure as success: a
+      # pipeline's status is its LAST command's unless told otherwise.
       - name: The whole loop works against a real warehouse
         run: |
+          set -o pipefail
           uv run --no-project --with-editable . --with 'dagster>=1.13' \
             --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 --with duckdb \
-            python examples/walk_the_whole_loop.py
+            python examples/walk_the_whole_loop.py | tee "$RUNNER_TEMP/whole-loop.txt"
+
+      # The README's first screen quotes lines the step above printed. A quote
+      # of output is a copy, and nothing else here would notice the example's
+      # line changing under it, so every quoted line has to be one this run
+      # printed, whole. A README with no marked excerpt is refused, not passed.
+      - name: The README quotes what the whole loop printed
+        run: python3 scripts/check_readme_excerpt.py "$RUNNER_TEMP/whole-loop.txt"
 
       # `DEX_UPSTREAM_CONTRACT_REQUIRED=1` turns a missing upstream contract from
       # a green skip into a collection error. Without it, a dex-core that stopped
