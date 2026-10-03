@@ -252,6 +252,13 @@ else here would notice `from_asset_graph` breaking against the objects Dagster
 actually hands it. The `[dagster]` extra was declared and installed by nothing
 until that step existed.
 
+**The README quotes the whole loop's output, and CI holds the quote to the
+run.** The `suite` step that runs `examples/walk_the_whole_loop.py` keeps its
+stdout, and `scripts/check_readme_excerpt.py` refuses any line in the README's
+marked excerpt that the run did not print, whole. Change a leg's printed line and
+the README excerpt moves in the same change; `tests/test_readme_excerpt.py`
+calibrates the checker in the control step, where no example runs.
+
 `--with-editable` is not optional - without it every test errors at collection
 on `No module named 'dagster_dex'`. Never `uv run --python X` without
 `--no-project`; it recreates a `.venv` here.

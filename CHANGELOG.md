@@ -14,8 +14,66 @@ if you depend on the contract.
 
 ## Unreleased
 
+**Changed.**
+
+- **The README opens with what the package does for a Dagster user, and
+  shows it** (#109). It is also the package's page on PyPI, so its first
+  screen is the package's first screen. The first sentence is the repository's
+  About line rather than a description of the format, and after the install
+  comes a short excerpt of what `examples/walk_the_whole_loop.py` prints
+  against a local DuckDB warehouse, with the command that prints it. The
+  excerpt is a copy of output, so it is held to the run: the CI step that runs
+  the example captures its output, and `scripts/check_readme_excerpt.py`
+  refuses any quoted line the run did not print.
+- **The README's `## Status` says only what is true now**, and the history it
+  narrated is recorded here (#109). Four passages there described what earlier
+  text had said. Three predate the first tag, since the repository's first
+  commit already carried them, so no release made those changes; the fourth
+  was made in 0.2.0. A released entry is history and is not rewritten, so all
+  of it lands in this section:
+  - **The entry point was inert, then registered wrong**, before the first
+    tag. Status once ended *"nothing resolves it today, and an entry point
+    nobody looks up is inert."* dex-core 1.6.0 added resolution for the
+    `exmergo_dex_core.projects` group on 2026-08-08, through
+    exmergo/dex#171, which this package's constraint shaped: a host reaching
+    dex as a subprocess cannot hand an object in, so name resolution was the
+    only door that worked. The paragraph announcing it then ended *"what is
+    left between here and a resolvable format is packaging, not design"*,
+    written before anyone had run it. Resolution found the entry point and
+    refused: it named the class, and dex-core's `ProjectFactory` calls what it
+    resolves with a `ProjectContext`, so the context bound to `models`. Behind
+    that, a bare `DagsterProject` was refused as *"missing name, definitions"*,
+    because this package says `format`/`declarations()` where the seam says
+    `name`/`definitions()`. Both were fixed by registering
+    `dex:project_from_context`, which wraps the project. The lesson the
+    passage carried: a declared-but-unresolved extension point is not
+    evidence that registration works, because there is no moment before the
+    first lookup at which it can fail.
+  - **A hand-counted end-to-end result**, before the first tag. Status gave a
+    model count, a source count, semantic models and metrics from dex driven
+    as a subprocess against a private asset graph. True where it was written,
+    unverifiable anywhere else, and four numbers in a document. It was
+    replaced by the table of what CI verifies on every commit, which anyone
+    can re-run.
+  - **An import-time figure from a private project**, removed in 0.2.0
+    (#18) from the section on the two ways to name a project, the same
+    defect as the hand count left standing a screen below it. What replaced
+    it is where to take the number so it is true: time
+    `dagster definitions list` against your own code location.
+
 **Corrected.**
 
+- **The 0.1.0 entry dates the entry-point fix to 0.2.0, and the published
+  0.1.0 already carried it.** Read 2026-10-03 at the tag the wheel was built
+  from: `git show v0.1.0:pyproject.toml` registers
+  `dagster_dex.dex:project_from_context`, under a comment dating the
+  correction 2026-08-08, and `git show v0.1.0:README.md` already says both
+  gaps are fixed. The class-named registration that failed on first contact
+  was in the tree before the first tag, not in any wheel, and the "0.1.0" the
+  entry says it was inert from is a version string that predates publication.
+  Found while moving the README's account of the same history into the entry
+  above. Dated here rather than edited there, for the reason the next
+  correction gives.
 - **The 0.6.2 entry's first claim - that no code path in the package changed -
   was false on the day it was written, and it shipped.** Measured after the
   release (2026-09-14): `git diff --stat v0.6.1..v0.6.2 -- src/` is five files,
