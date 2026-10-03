@@ -72,4 +72,5 @@ Autoclose: none
 - [ ] Branched off `main`, not committed to it directly
 - [ ] No decision restated rather than cited
 - [ ] Any new control ships with proof it can fire and proof it can go quiet
-- [ ] Exactly one `deploy:` label, required: it says what merging does to a box. Merging here deploys nothing, because publication runs on a `v*` tag, so the value is `deploy:none`, or `deploy:by-hand` for a pull request that owes a tag after it merges. A `review:` clock beside it is applied by hand and read by no guard. Only a maintainer can apply labels, so from a fork leave this box unticked: `pr-hygiene` reads red on the label step until the maintainer labels the pull request at triage, and that red is expected (see `CONTRIBUTING.md`).
+- [ ] Exactly one `deploy:` label, required; a `review:` clock, applied by hand and read by no guard.
+- [ ] In this repository that label is `deploy:none`, or `deploy:by-hand` for a pull request that owes a tag after it merges: publication runs on a `v*` tag, never on a merge (`AGENTS.md`, *Change workflow*). Applying a label takes triage access, so from a fork leave both boxes unticked: `pr-hygiene`'s label step reads red until the maintainer labels the pull request, and that red is expected (`CONTRIBUTING.md`, *Opening a pull request*).

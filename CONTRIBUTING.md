@@ -156,8 +156,12 @@ re-vendor is a defect at the source, and that test is the first to see it.
   `Exactly one deploy label` refuses a pull request carrying no `deploy:` label,
   and applying a label takes triage access, which a contributor outside the
   repository does not have. Nothing on your side clears it: the maintainer
-  applies a label at triage, and the step re-runs by itself on the label change,
-  with no push needed.
+  applies a label at triage, and the label change re-runs the step with no push
+  needed. On a first pull request here, every workflow run, that one included,
+  waits for the maintainer's approval before it starts, because this repository
+  requires approval for first-time contributors; until then the checks read as
+  awaiting approval rather than red. The red run from before the label stays
+  listed beside the green one, and the latest run is the one that counts.
 - **`scripts/check_closing_keywords.py` and `scripts/check_pr_title.py` are
   vendored copies** of shared guards - the first so the hook works offline, the
   second because a public repository cannot call the private shared action.
