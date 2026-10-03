@@ -72,4 +72,4 @@ Autoclose: none
 - [ ] Branched off `main`, not committed to it directly
 - [ ] No decision restated rather than cited
 - [ ] Any new control ships with proof it can fire and proof it can go quiet
-- [ ] Exactly one `deploy:` label, required; a `review:` clock, applied by hand and read by no guard. Both axes, their values and what each requires are ruled in [`constellation#214`'s 2026-09-17 ruling](https://github.com/catincloud-labs/constellation/issues/214#issuecomment-5720653048).
+- [ ] Exactly one `deploy:` label, required: it says what merging does to a box. Merging here deploys nothing, because publication runs on a `v*` tag, so the value is `deploy:none`, or `deploy:by-hand` for a pull request that owes a tag after it merges. A `review:` clock beside it is applied by hand and read by no guard. Only a maintainer can apply labels, so from a fork leave this box unticked: `pr-hygiene` reads red on the label step until the maintainer labels the pull request at triage, and that red is expected (see `CONTRIBUTING.md`).
