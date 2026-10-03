@@ -513,6 +513,16 @@ found.
     assuming a red here blocks a merge.
   - Dependabot is exempt by author, and the exemption prints its closing
     condition at every firing: a `labels:` key in `.github/dependabot.yml`.
+  - **The template's label line is the estate's shared line with its link
+    sentence cut, and nothing else changed.** The shared line is identical in
+    every estate template by ruling and links a private issue, so here, the
+    one public repository that carries a template, it ends after its first
+    sentence (#108). Ruled 2026-10-03 on the private side (constellation #214,
+    comment 5973354633), as an exception to "the identical line yields to
+    nobody". The line beneath it is this
+    repository's own: the two values above, and what a contributor from a fork
+    should expect. Do not re-add the link, and do not merge the two lines: the
+    first stays a byte-identical prefix of the shared one.
 - **Never put a `close` / `fix` / `resolve` verb immediately before `#N`** in a
   commit message or PR body unless you mean it - including inside backticks, and
   including in a sentence warning against it. Only *adjacency* fires, so "part of
