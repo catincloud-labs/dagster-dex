@@ -445,3 +445,42 @@ the schedule, so the code above cannot silently rot. What CI deliberately does
 not decide is the schedule *values*: scheduling is a decision, and a library
 that made it for you would be wrong in every deployment that differs - which
 is why the sketch stays here, with placeholders, as user code.
+
+## Verifying a release
+
+Each file on PyPI carries a PEP 740 attestation, which PyPI checks and shows:
+it names this repository's `publish.yml`, run at the release's `v*` tag. From
+the first release after `v0.6.2`, that tag is also signed by the maintainer, so
+the chain ends at a public key rather than at repository settings you cannot
+read. `v0.6.2` and every tag before it are unsigned and stay that way: a
+signature added now would vouch for them after the fact, not at their release.
+
+To check one, with git 2.34 or newer and OpenSSH 8.8 or newer, put the version
+you installed in place of `vX.Y.Z`:
+
+```bash
+git clone https://github.com/catincloud-labs/dagster-dex
+cd dagster-dex
+cat .github/allowed_signers
+curl -s https://api.github.com/users/catincloudlabs/ssh_signing_keys
+git -c gpg.ssh.allowedSignersFile=.github/allowed_signers tag -v vX.Y.Z
+```
+
+- **The key comes before the file.** Every key in
+  [`.github/allowed_signers`](https://github.com/catincloud-labs/dagster-dex/blob/main/.github/allowed_signers)
+  has to be one GitHub lists as a signing key of the maintainer's account,
+  `catincloudlabs`, which is what `curl` prints. The file travels in the same
+  repository as the tag it vouches for, so on its own it proves nothing.
+- **Then the tag.** `tag -v` prints the tag, then `Good "git" signature for`
+  the principal in that file, and exits 0. Anything else (`no signature
+  found`, `No principal matched`) means the tag is not one the maintainer
+  signed.
+- **Then two lines of what it printed.** `tag` has to name the version you
+  asked for: a signature covers the name written inside the tag, so a tag
+  signed under another name still verifies wherever it is moved. `object` is
+  the commit the release was built from, the same commit its PyPI attestation
+  names.
+- **The release workflow runs the same checks first.** Its `build` job
+  verifies the tag, and the name inside it, before it runs a test or builds
+  anything, and a tag that fails stops the release before anything is
+  uploaded.

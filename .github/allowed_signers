@@ -1,0 +1,26 @@
+# Who may sign a release tag of this repository, in the format git's
+# `gpg.ssh.allowedSignersFile` reads (ssh-keygen(1), ALLOWED SIGNERS).
+#
+# `publish.yml`'s `build` job verifies every `v*` tag against this file and
+# stops the release on one it cannot verify. README.md, "Verifying a release",
+# is how anyone else checks one - and why this file is not the anchor on its
+# own: it travels in the same repository as the tag it vouches for, so a reader
+# compares its key with the signing keys GitHub lists for the account.
+#
+# The principal is the address the tags already carry as tagger, so this file
+# publishes nothing the tags did not.
+#
+# ROTATION, edited in the same change that starts using the new key:
+#   - RETIRED key: keep its line, add valid-before="YYYYMMDD" at least TWO
+#     days after the UTC date of the last tag it signed, and keep the key
+#     registered on GitHub as a signing key (README tells a reader to match
+#     this file against the account). git checks a key against the tag's own
+#     date, so the tags it signed keep verifying; deleting the line un-verifies
+#     all of them. Why two days: a bare date is midnight at the START of that
+#     day in the VERIFIER'S time zone. So "the day it stopped signing"
+#     un-verifies that day's tags, and one day later still un-verifies a late
+#     one for a verifier east of UTC (both measured).
+#   - COMPROMISED key: delete its line. A tag's date is whatever its signer
+#     wrote, so valid-before cannot fence off a stolen key; the tags it signed
+#     stop verifying, which is the honest state for them.
+dave@catincloudlabs.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMZtVbH+5Ot07V40VwQ5XwSvqdQ5/FIk1ketnmstRBin
