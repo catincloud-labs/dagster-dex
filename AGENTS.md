@@ -470,10 +470,15 @@ found.
 - **`0.1.0` is published** (2026-08-15, from `v0.1.0`). That makes the version bump
   mandatory for every release after it: an index refuses a version it already
   holds, so a tag cut without one stops at the workflow's match gate.
-- **A `v*` tag is signed by the owner (`git tag -s`), and `build`'s first
-  step refuses one that does not verify against `.github/allowed_signers`**
-  (#112). Commits are not signed. Two things in that step look like gaps and
-  are not, so do not "fix" them; the step's comment gives the reasons. It has
+- **A `v*` tag is signed by the owner (`git tag -s`), and the first step after
+  checkout in `build` refuses one that does not verify against
+  `.github/allowed_signers`, or whose own name is not the ref's** (#112).
+  Commits are not signed. Tags up to `v0.6.2` stay unsigned because a
+  signature added now would vouch after the fact. **The reason #112 first
+  gave is dead, so do not re-derive it:** re-cutting would NOT change what
+  their attestations name, which is the ref and the commit, never the tag
+  object (read off the 0.6.2 wheel's certificate). Two things in that step
+  look like gaps and are not, so do not "fix" them; the step's comment gives the reasons. It has
   **no `git fetch` of the tag**, because checkout already delivers the signed
   tag object bound to `github.sha` and a forced re-fetch would undo that. And
   the file is **not the trust anchor**, because it comes from the tagged

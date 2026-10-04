@@ -11,9 +11,15 @@
 # publishes nothing the tags did not.
 #
 # ROTATION, edited in the same change that starts using the new key:
-#   - RETIRED key: keep its line and add valid-before="YYYYMMDD", the day it
-#     stopped signing. git checks a key against the tag's own date, so the tags
-#     it signed keep verifying. Deleting the line instead un-verifies all of them.
+#   - RETIRED key: keep its line, add valid-before="YYYYMMDD" at least TWO
+#     days after the UTC date of the last tag it signed, and keep the key
+#     registered on GitHub as a signing key (README tells a reader to match
+#     this file against the account). git checks a key against the tag's own
+#     date, so the tags it signed keep verifying; deleting the line un-verifies
+#     all of them. Why two days: a bare date is midnight at the START of that
+#     day in the VERIFIER'S time zone. So "the day it stopped signing"
+#     un-verifies that day's tags, and one day later still un-verifies a late
+#     one for a verifier east of UTC (both measured).
 #   - COMPROMISED key: delete its line. A tag's date is whatever its signer
 #     wrote, so valid-before cannot fence off a stolen key; the tags it signed
 #     stop verifying, which is the honest state for them.
