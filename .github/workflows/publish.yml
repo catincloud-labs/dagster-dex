@@ -13,9 +13,17 @@ name: publish
 #      on PyPI, and an index refuses a version it already holds. A tag cut
 #      without a bump stops at the match gate below, which is the cheap place to
 #      discover it.
-#   2. Tag the merged bump -- ANNOTATED, with the one-line summary -- and push:
-#        git tag -a v0.1.1 -m "dagster-dex 0.1.1: <summary>; see CHANGELOG.md"
+#   2. Tag the merged bump -- SIGNED, which is also annotated, with the one-line
+#      summary -- verify it the way `build` will, and push:
+#        git tag -s v0.1.1 -m "dagster-dex 0.1.1: <summary>; see CHANGELOG.md"
+#        git -c gpg.ssh.allowedSignersFile=.github/allowed_signers tag -v v0.1.1
 #        git push origin v0.1.1
+#      `-s` signs with the owner's key through two settings local to the
+#      owner's clone, `gpg.format ssh` and `user.signingkey`. Commits are not
+#      signed and `commit.gpgsign` stays unset; only the tag is (#112). An
+#      unsigned or wrongly signed tag stops at `build`'s signature step, before
+#      anything below it runs; the `tag -v` above finds that out before the tag
+#      is public. Tags up to and including v0.6.2 are unsigned and stay so.
 #      `build` runs, then `publish` WAITS on the `pypi` environment's required
 #      reviewer. That pause is the last moment at which nothing has been
 #      uploaded; everything after it is irreversible.
@@ -109,6 +117,42 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # A RELEASE TAG IS SIGNED BY THE OWNER, AND THIS REFUSES ONE THAT IS NOT
+      # (#112). The PyPI attestation names `publish.yml` at the tag; the tag
+      # itself was vouched for only by an organisation ruleset a stranger cannot
+      # read. A signed tag ends that chain at a public key, and this step makes
+      # the release fail closed on an unsigned tag, a lightweight one, or one
+      # signed by a key `.github/allowed_signers` does not name. It is first so
+      # it fails in seconds, and it sits in `build` so it stops the run before
+      # the version match gate and before the `pypi` reviewer is ever asked.
+      #
+      # NO `git fetch` OF THE TAG, and do not add one. Checkout at this pin
+      # fetches a tag push BY REF (`+refs/tags/vX:refs/tags/vX`, read in the
+      # v0.6.2 run's log and in its `ref-helper.ts`), so the signed tag object
+      # is already here; it then refuses the run unless that tag peels to
+      # `github.sha`, and checks HEAD out from it. A `--force` re-fetch would
+      # swap in whatever the tag names NOW and undo that binding: the signature
+      # read would no longer be the one over the commit being built. If a later
+      # checkout delivers a bare commit instead, `verify-tag` goes red here
+      # ("non-tag object"), never green.
+      #
+      # WHAT IT DOES NOT PROVE: the file and this workflow both come from the
+      # tagged commit, so whoever can cut a `v*` tag could point it at a tree
+      # that trusts their own key. The ruleset is what stops that; the
+      # stranger's anchor is the account's key on GitHub (README, "Verifying a
+      # release"). The step catches an unsigned tag or the wrong key, and makes
+      # the signature a gate rather than a badge.
+      - name: The release tag is signed by a key in .github/allowed_signers
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! git -c gpg.ssh.allowedSignersFile="${GITHUB_WORKSPACE}/.github/allowed_signers" \
+              verify-tag "${TAG}"; then
+            echo "::error::${TAG} reached this job as a $(git cat-file -t "refs/tags/${TAG}") object and did not verify: it is unsigned, lightweight, or signed by a key .github/allowed_signers does not name. Nothing has been uploaded. Delete the tag and cut it again with git tag -s (see the header)."
+            exit 1
+          fi
+
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
@@ -462,8 +506,13 @@ jobs:
             exit 0
           fi
 
-          # checkout fetched the commit; the annotation lives on the TAG
-          # OBJECT, so fetch the tag itself before reading it.
+          # The annotation lives on the TAG OBJECT. Until 2026-10-04 this
+          # comment said checkout fetched only the commit; it has fetched a tag
+          # push by ref, annotation included, since its v6.0.2 ("preserve
+          # annotations", its changelog), before this job was written (#112).
+          # The fetch stays: this job only READS the annotation, so it costs
+          # nothing here and survives a checkout that stops doing so. `build`'s
+          # signature step must not copy it; the reason is there.
           git fetch --force --depth=1 origin "refs/tags/${TAG}:refs/tags/${TAG}"
           if [ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]; then
             echo "::error::${TAG} is a lightweight tag, so no hand-written summary exists for the Release body. Annotate future tags (see the header); for this one, create the Release by hand."

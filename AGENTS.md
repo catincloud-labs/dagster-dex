@@ -470,6 +470,16 @@ found.
 - **`0.1.0` is published** (2026-08-15, from `v0.1.0`). That makes the version bump
   mandatory for every release after it: an index refuses a version it already
   holds, so a tag cut without one stops at the workflow's match gate.
+- **A `v*` tag is signed by the owner (`git tag -s`), and `build`'s first
+  step refuses one that does not verify against `.github/allowed_signers`**
+  (#112). Commits are not signed. Two things in that step look like gaps and
+  are not, so do not "fix" them; the step's comment gives the reasons. It has
+  **no `git fetch` of the tag**, because checkout already delivers the signed
+  tag object bound to `github.sha` and a forced re-fetch would undo that. And
+  the file is **not the trust anchor**, because it comes from the tagged
+  commit just as the workflow does; a stranger anchors on the account's key on
+  GitHub (README, *Verifying a release*). A key rotation edits that file in
+  the same change, the way its header says.
 - The rehearsal is the `rehearse` job in the same workflow: `workflow_dispatch`
   only, TestPyPI, with its **own** `testpypi` environment and publisher - a Trusted
   Publisher matches on environment name, so the two identities cannot share one. It

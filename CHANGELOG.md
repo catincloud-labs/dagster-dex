@@ -14,6 +14,21 @@ if you depend on the contract.
 
 ## Unreleased
 
+**Added.**
+
+- **A release tag is signed by the maintainer, and the release refuses one
+  that is not** (#112). The chain a stranger could check ran from the wheel to
+  its PEP 740 attestation to `publish.yml` at the tag, and stopped at a tag
+  object with no signature. `.github/allowed_signers` names the maintainer's
+  public signing key, and the first step of `publish.yml`'s `build` job runs
+  `git verify-tag` against it on a tag push, so an unsigned tag, a lightweight
+  one, or one signed by any other key stops the run before a test, a build or
+  the `pypi` reviewer. The README's new *Verifying a release* section is the
+  same check from a fresh clone. The first release after 0.6.2 is the first
+  signed one; 0.6.2 and every tag before it stay unsigned, because re-cutting
+  a tag changes what its published attestation names. Nothing changes at
+  install time, and commits are not signed.
+
 **Changed.**
 
 - **The README opens with what the package does for a Dagster user, and
