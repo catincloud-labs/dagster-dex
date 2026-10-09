@@ -12,7 +12,16 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
-## Unreleased
+## 0.6.3 - 2026-10-09
+
+Documentation and the release path. Nothing under `src/` changed but the
+version string, and `pyproject.toml` moved only its version and a comment.
+That was measured at the bump with the command the second correction below
+names, not carried forward, and anyone can re-run it as `git diff
+v0.6.2..v0.6.3 -- src/ pyproject.toml`. The seam did not move and nothing
+here is breaking. A patch exists for two reasons: an index is immutable, so
+the README rewrite below reaches the package's page on PyPI only as a new
+version; and this is the first release whose tag is signed (#112).
 
 **Added.**
 
@@ -26,10 +35,10 @@ if you depend on the contract.
   lightweight one, one signed by any other key, or a signed tag moved from
   another name stops the run before a test, a build or the `pypi` reviewer.
   The README's new *Verifying a release* section is the same check from a
-  fresh clone. The first release after 0.6.2 is the first signed one. 0.6.2
-  and every tag before it stay unsigned, because a signature added now would
-  vouch for them after the fact, not at their release. Nothing changes at
-  install time, and commits are not signed.
+  fresh clone. 0.6.3 is the first signed release. 0.6.2 and every tag before
+  it stay unsigned, because a signature added now would vouch for them after
+  the fact, not at their release. Nothing changes at install time, and commits
+  are not signed.
 
 **Changed.**
 
