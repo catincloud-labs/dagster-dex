@@ -203,11 +203,21 @@ class TestDeclarations:
         assert len(declarations.declared_joins) == 1
 
 
+#: The note an entry declaring both keys gets, whole. Asserted whole because a
+#: note that says something false - that one list is ignored, say - would pass
+#: any check for a word in it.
+BOTH_KEYS = (
+    "{} declares both `tests` and `data_tests`; what each lists is read here, "
+    "but dbt and dex-core can refuse an entry declaring both, so keep one key"
+)
+
+
 class TestATestListUnderEitherKey:
     """#115: dbt reads an entry's test list under `tests:` or `data_tests:`,
-    and exmergo-dex-core 1.12.7 began writing `data_tests:` into a column with
-    no list to follow. The parser read `tests:` alone, so a key reconcile wrote
-    was read as nothing, with no note.
+    and the parser read `tests:` alone, so every `data_tests:` list was read as
+    nothing, with no note. Reconcile writes that spelling itself: from
+    exmergo-dex-core 1.10.0 where a file already uses it, and from 1.12.7 where
+    a file has no spelling to follow.
 
     Each arm asserts the exact result for its key rather than that the two
     keys agree: two keys that both read as nothing agree as well. Asserted on
@@ -263,7 +273,10 @@ class TestATestListUnderEitherKey:
         assert declarations.notes == ()
 
     def test_a_column_carrying_both_is_read_as_the_union_and_says_so(self):
-        """`unique` under both keys is one key, not two: the union, not the sum."""
+        """The union, in order, and nothing more. `unique` under both keys is
+        one key, not two. The two relationships share a name and differ in
+        their payload, so a union by test name alone drops the second, and
+        reading `data_tests` first reverses the joins."""
 
         text = (
             "models:\n"
@@ -272,19 +285,24 @@ class TestATestListUnderEitherKey:
             "      - name: date\n"
             "        tests:\n"
             "          - unique\n"
+            "          - relationships:\n"
+            "              to: ref('dim_date')\n"
+            "              field: date\n"
             "        data_tests:\n"
             "          - unique\n"
             "          - relationships:\n"
             "              to: ref('dim_date')\n"
-            "              field: date\n"
+            "              field: date_key\n"
         )
         declarations = a_project(declaration_sources={"f": text}).declarations()
         assert declarations.declared_keys == (
             DeclaredKey(model="fact_orders", columns=("date",), source="unique"),
         )
-        assert [j.to_model for j in declarations.declared_joins] == ["dim_date"]
-        both = [n for n in declarations.notes if "data_tests" in n]
-        assert len(both) == 1 and "fact_orders.date" in both[0], declarations.notes
+        assert [(j.to_model, j.to_columns) for j in declarations.declared_joins] == [
+            ("dim_date", ("date",)),
+            ("dim_date", ("date_key",)),
+        ]
+        assert declarations.notes == (BOTH_KEYS.format("fact_orders.date"),)
 
     def test_a_model_carrying_both_is_read_as_the_union_and_says_so(self):
         """The composite sits under the SECOND key, so reading only the first
@@ -305,8 +323,45 @@ class TestATestListUnderEitherKey:
         assert declarations.declared_keys == (
             DeclaredKey(model="fact_orders", columns=("date", "provider"), source="combination"),
         )
-        both = [n for n in declarations.notes if "data_tests" in n]
-        assert len(both) == 1 and "'fact_orders'" in both[0], declarations.notes
+        assert declarations.notes == (BOTH_KEYS.format("'fact_orders'"),)
+
+    def test_both_keys_are_noted_even_when_one_lists_nothing(self):
+        """The note turns on both keys being present, not on both listing
+        something, because that is where dex-core 1.12.7 draws its line: it
+        refuses to edit a file with an entry like this one."""
+
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: order_id\n"
+            "        tests:\n"
+            "        data_tests:\n"
+            "          - unique\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("order_id",), source="unique"),
+        )
+        assert declarations.notes == (BOTH_KEYS.format("fact_orders.order_id"),)
+
+    @pytest.mark.parametrize("key", ["tests", "data_tests"])
+    def test_a_test_key_that_is_not_a_list_is_ignored_and_says_so(self, key):
+        """`unique` written where a list belongs reads as no test at all. It was
+        dropped silently before, and the module's rule is a note."""
+
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: order_id\n"
+            f"        {key}: unique\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == (
+            f"fact_orders.order_id declares `{key}` as something other than a list; ignored",
+        )
 
 
 class TestDeclarationsIsMemoized:

@@ -1494,10 +1494,11 @@ models:
 # trailing comment: keep me
 """
 
-#: The engine minor whose `maintain/declare.py` began splicing a declaration
-#: instead of reprinting it (exmergo/dex#432, closing our exmergo/dex#429,
-#: released in 1.10.0). A fact about upstream's release history, which is why
-#: it may be written down: released versions do not change.
+#: The engine minor in which reconcile began splicing a declaration instead
+#: of reprinting it, in `maintain/declare.py`, new in that release
+#: (exmergo/dex#432, closing our exmergo/dex#429, released in 1.10.0). A fact
+#: about upstream's release history, which is why it may be written down:
+#: released versions do not change.
 SPLICE_FROM = (1, 10)
 
 
@@ -1631,10 +1632,56 @@ models:
 """
 
 
+#: A declaration whose one list is spelled `data_tests:`, beside a column with
+#: none. From 1.10.0 reconcile follows the file's spelling, so a key added to
+#: `is_weekend` is a `data_tests:` list whatever upstream's default; before
+#: 1.10.0 it is a `tests:` list, and `date`'s key is still a `data_tests:`
+#: one. So at every engine the parser has a `data_tests:` list to read back,
+#: and this fixture, unlike the one above, does not lean on the default.
+DATA_TESTS_SPELLED = """version: 2
+models:
+  - name: dim_date
+    columns:
+      - name: date
+        data_tests:
+          - unique
+      - name: is_weekend
+"""
+
+#: (declaration, the column reconcile adds `unique` to, the keys read back).
+ROUND_TRIPS = [
+    pytest.param(NO_TEST_LIST, "date", [("dim_date", "date")], id="no-test-list"),
+    pytest.param(
+        DATA_TESTS_SPELLED,
+        "is_weekend",
+        [("dim_date", "date"), ("dim_date", "is_weekend")],
+        id="spelled-data-tests",
+    ),
+]
+
+
 #: The engine minor `maintain.declare` arrived in: absent at 1.9.2, the last
-#: 1.9 release, and present at 1.10.0. A fact about released versions, which
-#: do not change, like `SPLICE_FROM` above.
+#: 1.9 release, and present at 1.10.0, the release `SPLICE_FROM` names for
+#: the splice. Kept apart because they are two facts that happen to share a
+#: release, and released versions do not change.
 DECLARE_FROM = (1, 10)
+
+
+def _read_back(tmp_path):
+    """The declared keys dex reads from the directory as it now stands, and any
+    note besides the one every reduction carries.
+
+    Through `definitions()`, the layer dex reads, rather than the parser that
+    feeds it. And through a FRESH instance: one instance lives for one command
+    and memoizes what it read (`DagsterProject`'s docstring), so the instance
+    that made the edit still answers from before it.
+    """
+
+    definitions = project_from_context(
+        _context(assets=f"{__name__}:FACTORY_ASSETS", declarations=str(tmp_path / "declarations"))
+    ).definitions()
+    keys = sorted((k.model, k.column) for k in definitions.declared_keys)
+    return keys, [n for n in definitions.notes if "manifest_stale" not in n]
 
 
 def _declaration_edits():
@@ -1653,7 +1700,7 @@ def _declaration_edits():
     if _engine_minor() < DECLARE_FROM:
         pytest.skip(
             f"exmergo-dex-core {md.version('exmergo-dex-core')} predates "
-            "maintain.declare, which arrived in 1.10.0"
+            f"maintain.declare, which arrived in {DECLARE_FROM[0]}.{DECLARE_FROM[1]}.0"
         )
     from exmergo_dex_core.maintain.declare import DeclarationEdits
 
@@ -1661,13 +1708,14 @@ def _declaration_edits():
 
 
 class TestTheKeyReconcileWritesIsAKeyThisPackageReads:
-    """#115: a key `maintain reconcile` proposed into a declaration with no
-    test list was written, applied, and then read as nothing, with no note.
+    """#115: a key `maintain reconcile` proposed in the `data_tests` spelling
+    was written, applied, and then read as nothing, with no note.
 
     The class above did not catch it because its declaration already carries
-    a `tests:` list, which every engine follows. The declaration here has none.
-    Neither test pins which key dex-core writes: that spelling is upstream's,
-    and the claim here is only that whatever it writes, this parser reads.
+    a `tests:` list, which every engine follows. The declarations here have no
+    list, or a `data_tests:` one. Neither test pins which key dex-core writes:
+    that spelling is upstream's, and the claim here is only that whatever it
+    writes, dex reads back.
 
     **Two depths, and only the shallow one skips.** The first drives
     `DeclarationEdits` directly, the accumulator that picks the key and the
@@ -1678,28 +1726,26 @@ class TestTheKeyReconcileWritesIsAKeyThisPackageReads:
     green over a skip - the argument the class above makes for itself.
     """
 
-    def test_the_key_declaration_edits_stages_is_read_back(self, tmp_path):
-        from dagster_dex.declarations import parse_declarations
-
+    @pytest.mark.parametrize(("declaration", "column", "expected"), ROUND_TRIPS)
+    def test_the_key_declaration_edits_stages_is_read_back(
+        self, tmp_path, declaration, column, expected
+    ):
         declaration_edits = _declaration_edits()
-        project = _editable(tmp_path, {"dim_date.yml": NO_TEST_LIST})
+        project = _editable(tmp_path, {"dim_date.yml": declaration})
 
         edits = declaration_edits(project.load(), project)
-        placed = edits.resolve("dim_date")
-        warning = edits.want_tests(placed, "date", add=("unique",))
+        warning = edits.want_tests(edits.resolve("dim_date"), column, add=("unique",))
         assert warning is None, warning
         (edit,) = edits.edits()
         assert edit.path == "declarations/dim_date.yml", edit.path
 
-        keys, _joins, notes = parse_declarations({edit.path: edit.new_content})
-        assert [(k.model, k.columns) for k in keys] == [("dim_date", ("date",))], edit.new_content
-        assert notes == [], notes
+        # Staged, not applied: write it where it would land, then read it back.
+        (tmp_path / edit.path).write_text(edit.new_content, encoding="utf-8", newline="\n")
+        assert _read_back(tmp_path) == (expected, []), edit.new_content
 
-    def test_the_key_a_reconcile_applies_is_read_back_at_every_engine(self, tmp_path):
-        from dagster_dex.declarations import parse_declarations
-
-        after = _apply_a_unique_test(tmp_path, NO_TEST_LIST, column="date")
-        keys, _joins, notes = parse_declarations({"declarations/dim_date.yml": after})
-
-        assert [(k.model, k.columns) for k in keys] == [("dim_date", ("date",))], after
-        assert notes == [], notes
+    @pytest.mark.parametrize(("declaration", "column", "expected"), ROUND_TRIPS)
+    def test_the_key_a_reconcile_applies_is_read_back_at_every_engine(
+        self, tmp_path, declaration, column, expected
+    ):
+        after = _apply_a_unique_test(tmp_path, declaration, column=column)
+        assert _read_back(tmp_path) == (expected, []), after

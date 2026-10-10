@@ -16,18 +16,27 @@ if you depend on the contract.
 
 ### Fixed
 
-- **A key `maintain reconcile` wrote into a declaration with no test list
-  was read back as nothing, with no note** (#115). dbt reads an entry's tests
-  under `tests:` or `data_tests:`. From exmergo-dex-core 1.12.7
-  (exmergo/dex#513), reconcile gives a column with no test list to follow
-  `data_tests:`, where 1.12.6 gave it `tests:`. The declaration parser read
-  `tests:` alone, so the proposal was written and applied through the write
-  tier, and the project went on describing itself as if the key were not
-  declared. The parser now reads both keys, on a model and on a column. An
-  entry carrying both is read as one list, with a test listed under both read
-  once, and a note says so rather than the entry being refused. A declaration
-  that already spelled its lists `tests:` was not affected, because reconcile
-  follows the spelling a file already uses.
+- **Every `data_tests:` list was read as nothing, with no note** (#115). dbt
+  reads an entry's tests under `tests:` or `data_tests:`, its current
+  spelling. The declaration parser read `tests:` alone, at every engine and
+  whoever wrote the list. `maintain reconcile` writes that spelling itself.
+  From exmergo-dex-core 1.10.0 it follows a file's `data_tests:` spelling and
+  appends to an existing `data_tests:` list. From 1.12.7 (exmergo/dex#513) it
+  also writes `data_tests:` into a file with no spelling to follow, where
+  1.12.6 wrote `tests:`. Each such proposal was written and applied through
+  the write tier, and the project went on describing itself as if the key
+  were not declared. The parser now reads both keys, on a model and on a
+  column. **A project that spells its lists `data_tests:` will now report
+  keys and joins it did not report before**, through `declarations()` and on
+  to dex's `definitions()`.
+- **An entry declaring both `tests:` and `data_tests:` is read as the union,
+  and noted with the remedy, rather than refused.** `tests` comes first, and
+  an identical entry under both is read once. The note says to keep one key,
+  because dbt refuses such an entry when `tests` lists anything, and dex-core
+  1.12.7 refuses to edit a file that carries one. Reconcile can create one: at
+  1.8.0, a `unique` added to a column with a `data_tests:` list lands in a
+  separate `tests:` list beside it. A test key holding something other than a
+  list or nothing is now noted and ignored, where it was ignored silently.
 
 ## 0.6.3 - 2026-10-09
 
