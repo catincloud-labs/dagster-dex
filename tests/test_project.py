@@ -203,6 +203,112 @@ class TestDeclarations:
         assert len(declarations.declared_joins) == 1
 
 
+class TestATestListUnderEitherKey:
+    """#115: dbt reads an entry's test list under `tests:` or `data_tests:`,
+    and exmergo-dex-core 1.12.7 began writing `data_tests:` into a column with
+    no list to follow. The parser read `tests:` alone, so a key reconcile wrote
+    was read as nothing, with no note.
+
+    Each arm asserts the exact result for its key rather than that the two
+    keys agree: two keys that both read as nothing agree as well. Asserted on
+    the project's declarations, not on the parser, so a key or a note that
+    fails to arrive there goes red here.
+    """
+
+    @pytest.mark.parametrize("key", ["tests", "data_tests"])
+    def test_a_column_level_list_is_read_under_either_key(self, key):
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: order_id\n"
+            f"        {key}:\n"
+            "          - unique\n"
+            "      - name: date\n"
+            f"        {key}:\n"
+            "          - relationships:\n"
+            "              to: ref('dim_date')\n"
+            "              field: date\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("order_id",), source="unique"),
+        )
+        assert declarations.declared_joins == (
+            DeclaredJoin(
+                from_model="fact_orders",
+                from_columns=("date",),
+                to_model="dim_date",
+                to_columns=("date",),
+                source="relationships",
+            ),
+        )
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize("key", ["tests", "data_tests"])
+    def test_a_model_level_list_is_read_under_either_key(self, key):
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            f"    {key}:\n"
+            "      - unique_combination_of_columns:\n"
+            "          combination_of_columns:\n"
+            "            - date\n"
+            "            - provider\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("date", "provider"), source="combination"),
+        )
+        assert declarations.notes == ()
+
+    def test_a_column_carrying_both_is_read_as_the_union_and_says_so(self):
+        """`unique` under both keys is one key, not two: the union, not the sum."""
+
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: date\n"
+            "        tests:\n"
+            "          - unique\n"
+            "        data_tests:\n"
+            "          - unique\n"
+            "          - relationships:\n"
+            "              to: ref('dim_date')\n"
+            "              field: date\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("date",), source="unique"),
+        )
+        assert [j.to_model for j in declarations.declared_joins] == ["dim_date"]
+        both = [n for n in declarations.notes if "data_tests" in n]
+        assert len(both) == 1 and "fact_orders.date" in both[0], declarations.notes
+
+    def test_a_model_carrying_both_is_read_as_the_union_and_says_so(self):
+        """The composite sits under the SECOND key, so reading only the first
+        key present would drop it, and this goes red."""
+
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    tests:\n"
+            "      - not_empty\n"
+            "    data_tests:\n"
+            "      - unique_combination_of_columns:\n"
+            "          combination_of_columns:\n"
+            "            - date\n"
+            "            - provider\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("date", "provider"), source="combination"),
+        )
+        both = [n for n in declarations.notes if "data_tests" in n]
+        assert len(both) == 1 and "'fact_orders'" in both[0], declarations.notes
+
+
 class TestDeclarationsIsMemoized:
     """The memo is a performance property, so it is asserted by counting parses.
 

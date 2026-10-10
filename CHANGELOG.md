@@ -12,6 +12,23 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
+## Unreleased
+
+### Fixed
+
+- **A key `maintain reconcile` wrote into a declaration with no test list
+  was read back as nothing, with no note** (#115). dbt reads an entry's tests
+  under `tests:` or `data_tests:`. From exmergo-dex-core 1.12.7
+  (exmergo/dex#513), reconcile gives a column with no test list to follow
+  `data_tests:`, where 1.12.6 gave it `tests:`. The declaration parser read
+  `tests:` alone, so the proposal was written and applied through the write
+  tier, and the project went on describing itself as if the key were not
+  declared. The parser now reads both keys, on a model and on a column. An
+  entry carrying both is read as one list, with a test listed under both read
+  once, and a note says so rather than the entry being refused. A declaration
+  that already spelled its lists `tests:` was not affected, because reconcile
+  follows the spelling a file already uses.
+
 ## 0.6.3 - 2026-10-09
 
 Documentation and the release path. Nothing under `src/` changed but the

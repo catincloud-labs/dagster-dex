@@ -68,8 +68,8 @@ def _referenced_model(text: object) -> str | None:
     return bare if bare.replace("_", "").isalnum() else None
 
 
-def _test_names(tests: Any) -> list[tuple[str, Any]]:
-    """Normalize a dbt-style ``tests:`` list to ``(name, payload)`` pairs.
+def _test_pairs(tests: Any) -> list[tuple[str, Any]]:
+    """Normalize one dbt-style test list to ``(name, payload)`` pairs.
 
     Entries are either a bare string (``unique``) or a single-key mapping
     (``{relationships: {...}}``). Anything else is skipped rather than guessed.
@@ -85,6 +85,30 @@ def _test_names(tests: Any) -> list[tuple[str, Any]]:
             (name, payload), = entry.items()
             pairs.append((str(name), payload))
     return pairs
+
+
+def _test_names(entry: dict[str, Any], where: str, notes: list[str]) -> list[tuple[str, Any]]:
+    """An entry's tests, read under ``tests:`` and ``data_tests:`` both.
+
+    dbt reads either key, ``data_tests`` being its current spelling, and from
+    exmergo-dex-core 1.12.7 (``exmergo/dex#513``) reconcile writes
+    ``data_tests:`` into a column with no test list to follow. Reading
+    ``tests:`` alone read the key reconcile had just written as nothing, and
+    said nothing.
+
+    An entry carrying both is read as the union, ``tests`` first, with a test
+    listed under both read once, and it is noted. Two lists on one entry is an
+    authoring state worth seeing, and refusing the entry would break the rule
+    at the head of this module.
+    """
+
+    first = _test_pairs(entry.get("tests"))
+    second = _test_pairs(entry.get("data_tests"))
+    if "tests" in entry and "data_tests" in entry:
+        notes.append(
+            f"{where} declares both `tests` and `data_tests`; the two lists are read as one"
+        )
+    return first + [pair for pair in second if pair not in first]
 
 
 def parse_declarations(
@@ -142,7 +166,7 @@ def parse_declarations(
 def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> DeclaredKey | None:
     """A model-level ``unique_combination_of_columns``, when present and sane."""
 
-    for name, payload in _test_names(entry.get("tests")):
+    for name, payload in _test_names(entry, repr(model), notes):
         if name != "unique_combination_of_columns":
             continue
         columns = (payload or {}).get("combination_of_columns") if isinstance(payload, dict) else None
@@ -174,7 +198,7 @@ def _single_column_keys(
         column = column_entry.get("name")
         if not isinstance(column, str) or not column:
             continue
-        for name, payload in _test_names(column_entry.get("tests")):
+        for name, payload in _test_names(column_entry, f"{model}.{column}", notes):
             if name == "unique":
                 found.append(DeclaredKey(model=model, columns=(column,), source="unique"))
             elif name == "relationships" and isinstance(payload, dict):
