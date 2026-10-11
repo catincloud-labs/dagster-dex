@@ -188,6 +188,13 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
     rather than narrowed to ``dbt_utils.``. Comparing the bare name alone read
     ``dbt_utils.unique_combination_of_columns``, the spelling dbt-utils
     documents for its own test, as no key, with no note.
+
+    **Columns nested under ``arguments:`` are not read, and the note says so.**
+    That is the form dbt-utils' README shows. The same reader in dex-core
+    1.12.7 takes ``combination_of_columns`` from directly under the test, so
+    reading the nested form here alone would make ``declarations()`` and dex's
+    ``definitions()`` disagree about the model's grain. It was noted as a grain
+    with no columns, which sent the author looking for columns that are there.
     """
 
     for name, payload in _entry_tests(entry, repr(model), notes):
@@ -195,7 +202,13 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
             continue
         columns = (payload or {}).get("combination_of_columns") if isinstance(payload, dict) else None
         if not isinstance(columns, list) or not columns:
-            notes.append(f"{model!r} declares a composite grain with no columns; ignored")
+            if _nested_under_arguments(payload):
+                notes.append(
+                    f"{model!r} declares a composite grain with its columns nested under "
+                    "`arguments`, a form not read yet; ignored"
+                )
+            else:
+                notes.append(f"{model!r} declares a composite grain with no columns; ignored")
             continue
         named = tuple(str(c) for c in columns if isinstance(c, str) and c)
         if not named:
@@ -203,6 +216,20 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
             continue
         return DeclaredKey(model=model, columns=named, source="combination")
     return None
+
+
+def _nested_under_arguments(payload: Any) -> bool:
+    """Whether a composite test lists its columns under ``arguments:``.
+
+    Keyed on a non-empty ``combination_of_columns`` list inside the mapping,
+    not on the mapping alone: an ``arguments:`` with no columns in it has no
+    columns anywhere, and a note claiming otherwise would be false the other
+    way.
+    """
+
+    arguments = payload.get("arguments") if isinstance(payload, dict) else None
+    columns = arguments.get("combination_of_columns") if isinstance(arguments, dict) else None
+    return isinstance(columns, list) and bool(columns)
 
 
 def _single_column_keys(
