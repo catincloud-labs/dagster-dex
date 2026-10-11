@@ -50,7 +50,10 @@ if you depend on the contract.
   project never declared, where the bare spelling declines the edit and says
   why. **A project that spells its composite keys with a package prefix will
   now report keys it did not report before**, through `declarations()` and on
-  to dex's `definitions()`.
+  to dex's `definitions()`. The form dbt-utils' README documents, with the
+  columns nested under `arguments:`, is still not read: under either spelling
+  of the test name, in `tests:` or `data_tests:`, it gets the existing note
+  that the model declares a composite grain with no columns.
 
 ## 0.6.3 - 2026-10-09
 
