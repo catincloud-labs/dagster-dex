@@ -364,18 +364,22 @@ class TestATestListUnderEitherKey:
         )
 
 
-def a_composite_under(key: str, name: str) -> str:
+def a_composite_under(key: str, name: str, *, nested: bool = False) -> str:
     """A model-level composite key, its test list under ``key`` and its test
-    spelled ``name``."""
+    spelled ``name``. ``nested`` puts the columns one level down, under
+    ``arguments:``, and changes nothing else in the text."""
 
+    arguments = "          arguments:\n" if nested else ""
+    pad = "  " if nested else ""
     return (
         "models:\n"
         "  - name: fact_orders\n"
         f"    {key}:\n"
         f"      - {name}:\n"
-        "          combination_of_columns:\n"
-        "            - date\n"
-        "            - provider\n"
+        f"{arguments}"
+        f"{pad}          combination_of_columns:\n"
+        f"{pad}            - date\n"
+        f"{pad}            - provider\n"
     )
 
 
@@ -427,6 +431,63 @@ class TestAPackageQualifiedCompositeKey:
         ).declarations()
         assert declarations.declared_keys == ()
         assert declarations.notes == ()
+
+
+#: The two notes a composite key that reads as no key can get, whole. Asserted
+#: whole, because the defect this pins was a note that said something false.
+NO_COLUMNS = "'fact_orders' declares a composite grain with no columns; ignored"
+NESTED = (
+    "'fact_orders' declares a composite grain with its columns nested under "
+    "`arguments`, a form not read yet; ignored"
+)
+
+
+class TestACompositeKeyNestedUnderArguments:
+    """#119: a composite key whose columns sit under `arguments:`, the form
+    dbt-utils' README shows, was noted as declaring no columns. The columns are
+    there, one level down.
+
+    It still reads as no key, because exmergo-dex-core's reader does not read
+    it either (`exmergo_dex_core/dbt_project.py` in the 1.12.7 wheel), and
+    reading it here alone would make `declarations()` and dex's `definitions()`
+    disagree about the model's grain. Only the note changes.
+
+    The flat control is #117's test above, on the same builder: it reads the
+    key under both spellings and both keys, so a red arm here is the nesting
+    and not the probe. The entries with no columns anywhere are the second
+    control, and those carrying an `arguments:` mapping go red under a note
+    keyed on the mapping alone rather than on columns inside it.
+    """
+
+    @pytest.mark.parametrize("key", ["tests", "data_tests"])
+    @pytest.mark.parametrize(
+        "name",
+        ["unique_combination_of_columns", "dbt_utils.unique_combination_of_columns"],
+    )
+    def test_the_nested_form_reads_no_key_and_the_note_names_it(self, key, name):
+        declarations = a_project(
+            declaration_sources={"f": a_composite_under(key, name, nested=True)}
+        ).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == (NESTED,)
+
+    @pytest.mark.parametrize(
+        "test",
+        [
+            "      - dbt_utils.unique_combination_of_columns\n",
+            "      - dbt_utils.unique_combination_of_columns:\n"
+            "          arguments: {}\n",
+            "      - dbt_utils.unique_combination_of_columns:\n"
+            "          arguments:\n"
+            "            combination_of_columns: []\n",
+        ],
+        ids=["no-body", "empty-arguments", "empty-list-under-arguments"],
+    )
+    def test_an_entry_with_no_columns_anywhere_keeps_its_note(self, test):
+        text = "models:\n  - name: fact_orders\n    data_tests:\n" + test
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == (NO_COLUMNS,)
 
 
 class TestDeclarationsIsMemoized:
