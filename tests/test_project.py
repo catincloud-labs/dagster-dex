@@ -364,6 +364,71 @@ class TestATestListUnderEitherKey:
         )
 
 
+def a_composite_under(key: str, name: str) -> str:
+    """A model-level composite key, its test list under ``key`` and its test
+    spelled ``name``."""
+
+    return (
+        "models:\n"
+        "  - name: fact_orders\n"
+        f"    {key}:\n"
+        f"      - {name}:\n"
+        "          combination_of_columns:\n"
+        "            - date\n"
+        "            - provider\n"
+    )
+
+
+class TestAPackageQualifiedCompositeKey:
+    """#117: a model-level composite key was read under the bare test name
+    alone, so `dbt_utils.unique_combination_of_columns`, the spelling most dbt
+    projects write, was read as no key, with no note.
+
+    The rule is exmergo-dex-core's own, read from its schema-YAML reader
+    (`exmergo_dex_core/dbt_project.py` in the 1.12.7 wheel): the bare name, or
+    any name ending in `.unique_combination_of_columns`. So a prefix naming a
+    package other than `dbt_utils` counts too, and that arm is here so a fix
+    narrowed to `dbt_utils.` goes red. The bare name is the control: it reads
+    under both keys before the fix, so a red arm is the prefix and not the
+    probe.
+    """
+
+    @pytest.mark.parametrize("key", ["tests", "data_tests"])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "unique_combination_of_columns",
+            "dbt_utils.unique_combination_of_columns",
+            "my_package.unique_combination_of_columns",
+        ],
+    )
+    def test_a_composite_key_is_read_bare_or_under_a_package_prefix(self, key, name):
+        declarations = a_project(
+            declaration_sources={"f": a_composite_under(key, name)}
+        ).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("date", "provider"), source="combination"),
+        )
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "my_unique_combination_of_columns",
+            "dbt_utils.unique_combination_of_columns_where",
+        ],
+    )
+    def test_a_name_that_only_contains_the_test_name_is_not_a_composite_key(self, name):
+        """The prefix ends at a dot. Matching the suffix alone, or the name
+        anywhere in the string, reads a different test as this one."""
+
+        declarations = a_project(
+            declaration_sources={"f": a_composite_under("tests", name)}
+        ).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == ()
+
+
 class TestDeclarationsIsMemoized:
     """The memo is a performance property, so it is asserted by counting parses.
 
