@@ -51,9 +51,21 @@ if you depend on the contract.
   why. **A project that spells its composite keys with a package prefix will
   now report keys it did not report before**, through `declarations()` and on
   to dex's `definitions()`. The form dbt-utils' README documents, with the
-  columns nested under `arguments:`, is still not read: under either spelling
-  of the test name, in `tests:` or `data_tests:`, it gets the existing note
-  that the model declares a composite grain with no columns.
+  columns nested under `arguments:`, is still not read, under either spelling
+  of the test name and in `tests:` or `data_tests:`. The next entry says how
+  it is noted.
+- **A composite key with its columns nested under `arguments:` was noted as
+  declaring no columns** (#119). That is the form dbt-utils' README shows,
+  and the columns are there, one level down. It still reads as no key, under
+  either spelling of the test name and in `tests:` or `data_tests:`, because
+  exmergo-dex-core does not read it either: its schema-YAML reader takes
+  `combination_of_columns` from directly under the test
+  (`exmergo_dex_core/dbt_project.py` in 1.12.7). Reading it here alone would
+  make `declarations()` and dex's `definitions()` disagree about the model's
+  grain. The note now says the columns are nested under `arguments`, a form
+  not read yet. An entry with no columns anywhere keeps the old note,
+  including one whose `arguments:` lists none. **Nothing a project declares
+  changes; only that note's text does.**
 
 ## 0.6.3 - 2026-10-09
 
