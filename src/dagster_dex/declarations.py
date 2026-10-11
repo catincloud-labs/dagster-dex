@@ -87,6 +87,41 @@ def _test_names(tests: Any) -> list[tuple[str, Any]]:
     return pairs
 
 
+#: The two keys dbt reads an entry's tests under. `data_tests` is its current
+#: spelling and `tests` the older alias for it.
+_TEST_KEYS = ("tests", "data_tests")
+
+
+def _entry_tests(entry: dict[str, Any], where: str, notes: list[str]) -> list[tuple[str, Any]]:
+    """An entry's tests, read under ``tests:`` and ``data_tests:`` both.
+
+    Reading ``tests:`` alone read every ``data_tests:`` list as nothing, and
+    said nothing, whoever wrote it. Reconcile writes that spelling itself: from
+    exmergo-dex-core 1.10.0 it follows a file's or a list's ``data_tests``
+    spelling, and from 1.12.7 (``exmergo/dex#513``) it writes ``data_tests:``
+    where the file has no spelling to follow.
+
+    A key holding something other than a list or nothing is noted and ignored.
+    An entry declaring both keys is read as the union, ``tests`` first, with an
+    identical entry under both read once, and noted with the remedy: dbt
+    refuses such an entry when ``tests`` lists anything, and dex-core 1.12.7
+    refuses to edit a file that carries one. Refusing it here instead would
+    break the rule at the head of this module.
+    """
+
+    for key in _TEST_KEYS:
+        value = entry.get(key)
+        if value is not None and not isinstance(value, list):
+            notes.append(f"{where} declares `{key}` as something other than a list; ignored")
+    if all(key in entry for key in _TEST_KEYS):
+        notes.append(
+            f"{where} declares both `tests` and `data_tests`; what each lists is read "
+            "here, but dbt and dex-core can refuse an entry declaring both, so keep one key"
+        )
+    first = _test_names(entry.get("tests"))
+    return first + [pair for pair in _test_names(entry.get("data_tests")) if pair not in first]
+
+
 def parse_declarations(
     sources: dict[str, str],
 ) -> tuple[list[DeclaredKey], list[DeclaredJoin], list[str]]:
@@ -142,7 +177,7 @@ def parse_declarations(
 def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> DeclaredKey | None:
     """A model-level ``unique_combination_of_columns``, when present and sane."""
 
-    for name, payload in _test_names(entry.get("tests")):
+    for name, payload in _entry_tests(entry, repr(model), notes):
         if name != "unique_combination_of_columns":
             continue
         columns = (payload or {}).get("combination_of_columns") if isinstance(payload, dict) else None
@@ -174,7 +209,7 @@ def _single_column_keys(
         column = column_entry.get("name")
         if not isinstance(column, str) or not column:
             continue
-        for name, payload in _test_names(column_entry.get("tests")):
+        for name, payload in _entry_tests(column_entry, f"{model}.{column}", notes):
             if name == "unique":
                 found.append(DeclaredKey(model=model, columns=(column,), source="unique"))
             elif name == "relationships" and isinstance(payload, dict):

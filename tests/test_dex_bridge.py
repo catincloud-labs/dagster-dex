@@ -1494,10 +1494,11 @@ models:
 # trailing comment: keep me
 """
 
-#: The engine minor whose `maintain/declare.py` began splicing a declaration
-#: instead of reprinting it (exmergo/dex#432, closing our exmergo/dex#429,
-#: released in 1.10.0). A fact about upstream's release history, which is why
-#: it may be written down: released versions do not change.
+#: The engine minor in which reconcile began splicing a declaration instead
+#: of reprinting it, in `maintain/declare.py`, new in that release
+#: (exmergo/dex#432, closing our exmergo/dex#429, released in 1.10.0). A fact
+#: about upstream's release history, which is why it may be written down:
+#: released versions do not change.
 SPLICE_FROM = (1, 10)
 
 
@@ -1506,6 +1507,48 @@ def _engine_minor() -> tuple[int, int]:
 
     major, minor = md.version("exmergo-dex-core").split(".")[:2]
     return int(major), int(minor)
+
+
+def _apply_a_unique_test(tmp_path, declaration=COMMENTED_DECLARATION, column="is_weekend"):
+    """Reconcile a lost grain on `column`, then plan and apply the edit through
+    this format, and return the declaration as it reads afterwards."""
+
+    from exmergo_dex_core.maintain import reconcile
+    from exmergo_dex_core.maintain.drift import DriftFinding
+    from exmergo_dex_core.maintain.snapshot import Snapshot
+    from exmergo_dex_core.storage.memory import MemoryStore
+    from exmergo_dex_core.transform import plans
+
+    project = _editable(tmp_path, {"dim_date.yml": declaration})
+    finding = DriftFinding(
+        axis="grain",
+        code="key_lost_uniqueness",
+        identifier="warehouse.analytics.dim_date",
+        column=column,
+        detail="the declared grain no longer holds",
+    )
+    _proposals, edits, warnings = reconcile.build(
+        [finding],
+        Snapshot(created_at="2026-01-01T00:00:00Z"),
+        None,
+        project.load(),
+        placement=project,
+    )
+    assert edits, f"reconcile produced no edit for the grain finding; warnings: {warnings!r}"
+
+    store = MemoryStore()
+    plan, _diffs, _warnings = plans.plan(
+        "add the unique test the grain lost",
+        edits,
+        repo_root=tmp_path,
+        store=store,
+        project_format=project,
+    )
+    result = plans.apply(plan.plan_id, repo_root=tmp_path, store=store, project_format=project)
+    assert result.written == ["declarations/dim_date.yml"], result
+    assert not result.conflicts, result
+
+    return (tmp_path / "declarations" / "dim_date.yml").read_text(encoding="utf-8")
 
 
 class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
@@ -1529,44 +1572,6 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
     it cannot show the reprint at all (measured 2026-09-09, on #88).
     """
 
-    def _apply_a_unique_test(self, tmp_path):
-        from exmergo_dex_core.maintain import reconcile
-        from exmergo_dex_core.maintain.drift import DriftFinding
-        from exmergo_dex_core.maintain.snapshot import Snapshot
-        from exmergo_dex_core.storage.memory import MemoryStore
-        from exmergo_dex_core.transform import plans
-
-        project = _editable(tmp_path, {"dim_date.yml": COMMENTED_DECLARATION})
-        finding = DriftFinding(
-            axis="grain",
-            code="key_lost_uniqueness",
-            identifier="warehouse.analytics.dim_date",
-            column="is_weekend",
-            detail="the declared grain no longer holds",
-        )
-        _proposals, edits, warnings = reconcile.build(
-            [finding],
-            Snapshot(created_at="2026-01-01T00:00:00Z"),
-            None,
-            project.load(),
-            placement=project,
-        )
-        assert edits, f"reconcile produced no edit for the grain finding; warnings: {warnings!r}"
-
-        store = MemoryStore()
-        plan, _diffs, _warnings = plans.plan(
-            "add the unique test the grain lost",
-            edits,
-            repo_root=tmp_path,
-            store=store,
-            project_format=project,
-        )
-        result = plans.apply(plan.plan_id, repo_root=tmp_path, store=store, project_format=project)
-        assert result.written == ["declarations/dim_date.yml"], result
-        assert not result.conflicts, result
-
-        return (tmp_path / "declarations" / "dim_date.yml").read_text(encoding="utf-8")
-
     def test_the_unique_test_is_read_back_as_a_declared_key_at_every_engine(self, tmp_path):
         """The parse, not the spelling: the splice writes `tests: [unique]`, a
         flow sequence, and the reprint writes a block sequence. Both are the
@@ -1575,7 +1580,7 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
 
         from dagster_dex.declarations import parse_declarations
 
-        after = self._apply_a_unique_test(tmp_path)
+        after = _apply_a_unique_test(tmp_path)
         keys, _joins, _notes = parse_declarations({"declarations/dim_date.yml": after})
 
         assert {(k.model, k.columns) for k in keys} == {
@@ -1586,7 +1591,7 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
     def test_comments_survive_from_the_splicing_engine_and_are_lost_before_it(self, tmp_path):
         import importlib.metadata as md
 
-        after = self._apply_a_unique_test(tmp_path)
+        after = _apply_a_unique_test(tmp_path)
         comments = re.findall(r"#[^\n]*", COMMENTED_DECLARATION)
         lost = [comment for comment in comments if comment not in after]
         engine = md.version("exmergo-dex-core")
@@ -1612,3 +1617,135 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
                 f"every comment here and lost {lost}. If it lost none, SPLICE_FROM is stale "
                 "and that warning is dead one version earlier than recorded."
             )
+
+
+#: A declaration with no test list anywhere in it. dex-core 1.12.7 gives such
+#: a column `data_tests:` where 1.12.6 gave it `tests:` (exmergo/dex PR 513):
+#: with no list in the file to follow, upstream's `prevailing_test_key` falls
+#: back to dbt's current key.
+NO_TEST_LIST = """version: 2
+models:
+  - name: dim_date
+    columns:
+      - name: date
+      - name: is_weekend
+"""
+
+
+#: A declaration whose one list is spelled `data_tests:`, beside a column with
+#: none. From 1.10.0 reconcile follows the file's spelling, so a key added to
+#: `is_weekend` is a `data_tests:` list whatever upstream's default; before
+#: 1.10.0 it is a `tests:` list, and `date`'s key is still a `data_tests:`
+#: one. So at every engine the parser has a `data_tests:` list to read back,
+#: and this fixture, unlike the one above, does not lean on the default.
+DATA_TESTS_SPELLED = """version: 2
+models:
+  - name: dim_date
+    columns:
+      - name: date
+        data_tests:
+          - unique
+      - name: is_weekend
+"""
+
+#: (declaration, the column reconcile adds `unique` to, the keys read back).
+ROUND_TRIPS = [
+    pytest.param(NO_TEST_LIST, "date", [("dim_date", "date")], id="no-test-list"),
+    pytest.param(
+        DATA_TESTS_SPELLED,
+        "is_weekend",
+        [("dim_date", "date"), ("dim_date", "is_weekend")],
+        id="spelled-data-tests",
+    ),
+]
+
+
+#: The engine minor `maintain.declare` arrived in: absent at 1.9.2, the last
+#: 1.9 release, and present at 1.10.0, the release `SPLICE_FROM` names for
+#: the splice. Kept apart because they are two facts that happen to share a
+#: release, and released versions do not change.
+DECLARE_FROM = (1, 10)
+
+
+def _read_back(tmp_path):
+    """The declared keys dex reads from the directory as it now stands, and any
+    note besides the one every reduction carries.
+
+    Through `definitions()`, the layer dex reads, rather than the parser that
+    feeds it. And through a FRESH instance: one instance lives for one command
+    and memoizes what it read (`DagsterProject`'s docstring), so the instance
+    that made the edit still answers from before it.
+    """
+
+    definitions = project_from_context(
+        _context(assets=f"{__name__}:FACTORY_ASSETS", declarations=str(tmp_path / "declarations"))
+    ).definitions()
+    keys = sorted((k.model, k.column) for k in definitions.declared_keys)
+    return keys, [n for n in definitions.notes if "manifest_stale" not in n]
+
+
+def _declaration_edits():
+    """dex-core's reconcile accumulator, or a skip on an engine that predates it.
+
+    The engine's version decides the skip, not a failed import. That is why
+    this is not `pytest.importorskip`, which skips on any `ModuleNotFoundError`:
+    importing `maintain.declare` needs `sqlglot`, so a run without it would
+    skip at 1.12.7 while the reconcile tests beside this one error, and a
+    release that moved the module would skip rather than go red. From 1.10.0
+    a failed import is a failure.
+    """
+
+    import importlib.metadata as md
+
+    if _engine_minor() < DECLARE_FROM:
+        pytest.skip(
+            f"exmergo-dex-core {md.version('exmergo-dex-core')} predates "
+            f"maintain.declare, which arrived in {DECLARE_FROM[0]}.{DECLARE_FROM[1]}.0"
+        )
+    from exmergo_dex_core.maintain.declare import DeclarationEdits
+
+    return DeclarationEdits
+
+
+class TestTheKeyReconcileWritesIsAKeyThisPackageReads:
+    """#115: a key `maintain reconcile` proposed in the `data_tests` spelling
+    was written, applied, and then read as nothing, with no note.
+
+    The class above did not catch it because its declaration already carries
+    a `tests:` list, which every engine follows. The declarations here have no
+    list, or a `data_tests:` one. Neither test pins which key dex-core writes:
+    that spelling is upstream's, and the claim here is only that whatever it
+    writes, dex reads back.
+
+    **Two depths, and only the shallow one skips.** The first drives
+    `DeclarationEdits` directly, the accumulator that picks the key and the
+    seam the issue's reproduction names. The second goes through
+    `reconcile.build`, `plans.plan` and `plans.apply` into this format's own
+    `write_edits`, all of which exist at every engine in the range, so `suite`
+    at the demonstrated pin still asserts the round trip instead of reading
+    green over a skip - the argument the class above makes for itself.
+    """
+
+    @pytest.mark.parametrize(("declaration", "column", "expected"), ROUND_TRIPS)
+    def test_the_key_declaration_edits_stages_is_read_back(
+        self, tmp_path, declaration, column, expected
+    ):
+        declaration_edits = _declaration_edits()
+        project = _editable(tmp_path, {"dim_date.yml": declaration})
+
+        edits = declaration_edits(project.load(), project)
+        warning = edits.want_tests(edits.resolve("dim_date"), column, add=("unique",))
+        assert warning is None, warning
+        (edit,) = edits.edits()
+        assert edit.path == "declarations/dim_date.yml", edit.path
+
+        # Staged, not applied: write it where it would land, then read it back.
+        (tmp_path / edit.path).write_text(edit.new_content, encoding="utf-8", newline="\n")
+        assert _read_back(tmp_path) == (expected, []), edit.new_content
+
+    @pytest.mark.parametrize(("declaration", "column", "expected"), ROUND_TRIPS)
+    def test_the_key_a_reconcile_applies_is_read_back_at_every_engine(
+        self, tmp_path, declaration, column, expected
+    ):
+        after = _apply_a_unique_test(tmp_path, declaration, column=column)
+        assert _read_back(tmp_path) == (expected, []), after
