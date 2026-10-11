@@ -174,11 +174,24 @@ def parse_declarations(
     return keys, joins, notes
 
 
+#: The test that declares a model-level composite grain.
+_COMPOSITE_TEST = "unique_combination_of_columns"
+
+
 def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> DeclaredKey | None:
-    """A model-level ``unique_combination_of_columns``, when present and sane."""
+    """A model-level ``unique_combination_of_columns``, when present and sane.
+
+    The test is read bare or under any package prefix: the bare name, or any
+    name ending in ``.unique_combination_of_columns``. That is
+    exmergo-dex-core's own rule for schema YAML, read from
+    ``exmergo_dex_core/dbt_project.py`` in its 1.12.7 wheel, and it is matched
+    rather than narrowed to ``dbt_utils.``. Comparing the bare name alone read
+    ``dbt_utils.unique_combination_of_columns``, the spelling dbt-utils
+    documents for its own test, as no key, with no note.
+    """
 
     for name, payload in _entry_tests(entry, repr(model), notes):
-        if name != "unique_combination_of_columns":
+        if name != _COMPOSITE_TEST and not name.endswith(f".{_COMPOSITE_TEST}"):
             continue
         columns = (payload or {}).get("combination_of_columns") if isinstance(payload, dict) else None
         if not isinstance(columns, list) or not columns:

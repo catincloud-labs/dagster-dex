@@ -37,6 +37,20 @@ if you depend on the contract.
   1.8.0, a `unique` added to a column with a `data_tests:` list lands in a
   separate `tests:` list beside it. A test key holding something other than a
   list or nothing is now noted and ignored, where it was ignored silently.
+- **A composite key spelled `dbt_utils.unique_combination_of_columns` was
+  read as no key, with no note** (#117). The declaration parser read a
+  model-level composite key under the bare test name alone, under `tests:`
+  and `data_tests:` both, and the prefixed name is the spelling dbt-utils
+  documents for its own test. It now reads the bare name or any name ending
+  in `.unique_combination_of_columns`, which is exmergo-dex-core's own rule
+  for schema YAML (`exmergo_dex_core/dbt_project.py` in 1.12.7), so a prefix
+  naming another package is read too. `maintain reconcile` reads the grain
+  through `definitions()`, so with the key unread, at 1.8.0 and at 1.12.7, it
+  proposed a column-level `unique` on a column of that grain, a key the
+  project never declared, where the bare spelling declines the edit and says
+  why. **A project that spells its composite keys with a package prefix will
+  now report keys it did not report before**, through `declarations()` and on
+  to dex's `definitions()`.
 
 ## 0.6.3 - 2026-10-09
 

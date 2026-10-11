@@ -381,8 +381,8 @@ def a_composite_under(key: str, name: str) -> str:
 
 class TestAPackageQualifiedCompositeKey:
     """#117: a model-level composite key was read under the bare test name
-    alone, so `dbt_utils.unique_combination_of_columns`, the spelling most dbt
-    projects write, was read as no key, with no note.
+    alone, so `dbt_utils.unique_combination_of_columns`, the spelling dbt-utils
+    documents for its own test, was read as no key, with no note.
 
     The rule is exmergo-dex-core's own, read from its schema-YAML reader
     (`exmergo_dex_core/dbt_project.py` in the 1.12.7 wheel): the bare name, or
