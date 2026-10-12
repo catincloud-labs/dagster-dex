@@ -12,7 +12,19 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
-## Unreleased
+## 0.6.4 - 2026-10-12
+
+Three fixes to the declaration parser (#115, #117, #119), in four entries
+because #115's takes two. Under `src/`, only `declarations.py` and the version
+string changed, every name added there is private, and `pyproject.toml` moved
+only its version, so the seam, the engine floor and the tested pin are where
+0.6.3 left them. That was measured at the bump, and anyone can re-run it as
+`git diff v0.6.3..v0.6.4 -- src/ pyproject.toml`. A patch exists because an
+installed copy sees a fix only as a new version. No public name or signature
+changed, but two of the fixes change what a project reports, and each says so
+in bold below: keys and joins a project declared and this package did not
+read are now read, and #115's also adds two notes. The third changes one
+note's text.
 
 ### Fixed
 
