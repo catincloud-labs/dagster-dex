@@ -746,9 +746,9 @@ it.
 - **Never run `python -`,** which reads its program from standard input. Here
   it can hang until it is killed, with an empty heredoc or `</dev/null` as its
   input, or end silently having done nothing, and a script fed to it is
-  decoded as cp1252. A Claude Code hook on the workstation refuses its
-  plainest spelling, but an option before the `-` (`python -I -`,
-  `python -X utf8 -`) passes the hook, and those have hung too. Write a script,
+  decoded as cp1252. A Claude Code hook on the workstation refuses it whether
+  or not interpreter options precede the `-` (`python -I -`,
+  `python -X utf8 -`). Write a script,
   a commit message or a pull request body to a file and use it by path
   (`python <file>`, `git commit -F <file>`, `gh pr create --body-file <file>`).
   A heredoc through an agent's shell can halve backslashes, so text that holds
