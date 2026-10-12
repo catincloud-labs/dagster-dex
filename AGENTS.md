@@ -519,6 +519,17 @@ found.
     plus the `pr title` job in `checks.yml`, byte-compared from the private
     side, advisory rather than ruleset-required. Do not edit the vendored copy
     here.
+  - Passing the guard is not the convention. The owner reads the title, so it
+    says what was done to what, in plain words and the diff's own nouns: a verb
+    and its object, about 70 characters, with no thesis, no contrast clause and
+    no imperative the owner could take as addressed to them. A title about an
+    agent rule names the artifact and the actor. A `fix:` title names the
+    process that misbehaves today and what it does after the change. An
+    `argument:` title is *whether X*, X being the decision in the governing
+    document's words. Measure the length before creating
+    (`T='...'; echo "${#T}"`), and retitle a pull request rather than amend a
+    pushed commit. The same form holds for a filing in a repository outside
+    the organisation. Ruled by the owner from 2026-10-01 to 2026-10-10.
 - **A pull request carries exactly one `deploy:` label.** It says what merging
   does to a box, which is a fact about the change. Merging deploys nothing
   here: publication runs on a `v*` tag (`publish.yml`), never on a merge, so
