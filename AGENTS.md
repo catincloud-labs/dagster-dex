@@ -739,7 +739,8 @@ This repository is authored on Windows, with Git Bash and Windows PowerShell
   answer that looks real.
 - **Git Bash `grep` cannot see a carriage return,** so a CR count from it is
   wrong in either direction. Check line endings with `git ls-files --eol` or a
-  byte count in Python, and write files from Python with `newline="\n"`.
+  byte count in Python, and have Python write LF explicitly: bytes, or
+  `newline` set to a line feed.
 - **`jq` is not installed.** `gh --jq` works because it is built into `gh`;
   everything else filters with `--jq`, `grep` or Python.
 - **The console encoding is cp1252.** Python that prints non-ASCII runs as
