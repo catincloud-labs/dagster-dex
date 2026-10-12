@@ -670,3 +670,47 @@ say it better. Use `=>` for an arrow and `...` for an ellipsis.
     new entries may use real sub-headings again.
 - **Never put a number in a document that something else can change.** A test
   count, an export count, a timing - cite the command instead.
+
+## The owner's workstation
+
+This repository is authored on the owner's Windows workstation, with Git Bash
+and Windows PowerShell 5.1 side by side. Each trap below was read there on
+2026-10-12 and has been paid for at least once; re-read one before relying on
+it.
+
+- **A command handed to the owner runs in either shell.** One command per
+  block; paths as `C:/...`; no `&&`, `||`, `;` chains, `$VAR`, `$(...)`,
+  heredocs, `2>/dev/null` or line continuations. A command that needs Git Bash
+  says so on the line above it, or comes with its PowerShell twin. A Windows
+  command with `/flag` arguments (`schtasks`, `reg`) is marked as PowerShell. A
+  handed-over `gh` command names `--repo <owner>/<repo>`, and a handed-over
+  `ssh` command reaches one host.
+- **Never run `python -`,** which reads its program from standard input. Here
+  it can hang until it is killed, with an empty heredoc or `</dev/null` as its
+  input, or end silently having done nothing, and a script fed to it is
+  decoded as cp1252. A Claude Code hook on the workstation refuses its
+  plainest spelling, but an option before the `-` (`python -I -`,
+  `python -X utf8 -`) passes the hook, and those have hung too. Write a script,
+  a commit message or a pull request body to a file and use it by path
+  (`python <file>`, `git commit -F <file>`, `gh pr create --body-file <file>`).
+  A heredoc through an agent's shell can halve backslashes, so text that holds
+  one goes through a file too.
+- **Git Bash rewrites path-shaped arguments.** Set `MSYS_NO_PATHCONV=1` on the
+  one command that passes a `rev:path`, a `/`-leading pattern or a `/flag`.
+  Never export it: it breaks `/c/...` paths for the rest of the shell. A
+  rewritten argument fails quietly, so a probe through it can print an empty
+  answer that looks real.
+- **Git Bash `grep` cannot see a carriage return,** so a CR count from it is
+  wrong in either direction. Check line endings with `git ls-files --eol` or a
+  byte count in Python, and have Python write LF explicitly: bytes, or
+  `newline` set to a line feed.
+- **`jq` is not installed** (`command -v jq` prints nothing). `gh --jq` works
+  because it is built into `gh`; everything else filters with `--jq`, `grep` or
+  Python.
+- **Python's default encoding here is cp1252,** so Python that prints
+  non-ASCII runs as `python -X utf8`. A PowerShell 5.1 `Get-Content` and
+  `Set-Content` round trip turns LF into CRLF, and mangles UTF-8 once either
+  side names an encoding: never round-trip a tracked file through it.
+- **An agent's permission layer may refuse an act** (a secret read, an `ssh`, a
+  merge, a scheduled task). Do not retry it in another form: hand the owner the
+  exact command, one per block, and read the result back after it runs.
