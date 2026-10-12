@@ -501,6 +501,27 @@ found.
   and assert it names this repository, `publish.yml`, and the environment they ran
   in - presence alone would pass an attestation signed by anyone.
 
+## Verification method
+
+That a control observed only to pass has not been shown to be a control is a
+rule with a method behind it, and this is the method as the organisation has
+paid for it:
+
+- **Calibrate on both arms first.** Before reading an instrument's answer about
+  the subject, show it answer yes on a known positive and no on a known
+  negative that you built, in the shape of the defect it is for. A refusal on
+  a day when nothing could have passed is not a calibration.
+- **A count is not an attribution.** Before a number names a cause, map it to
+  the identities it counts, and ask what else produces the same reading. The
+  count that matches the prediction is the one least likely to be checked.
+- **Independence lives in the premise, not the author.** A second check that
+  shares the first one's assumption agrees with it for the same reason. Vary
+  the method: parse a different way, or enumerate a superset and subtract.
+- **Empty and blind are the same input.** An empty list, a zero or a missing
+  line is also what an unauthorised, filtered or never-run read returns. Run a
+  positive control, a query that must return something, before reading
+  absence as a fact.
+
 ## Change workflow
 
 - **Branch per change** off `main`. Never commit to `main` directly.
