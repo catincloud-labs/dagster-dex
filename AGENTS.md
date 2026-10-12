@@ -714,3 +714,37 @@ say it better. Use `=>` for an arrow and `...` for an ellipsis.
     new entries may use real sub-headings again.
 - **Never put a number in a document that something else can change.** A test
   count, an export count, a timing - cite the command instead.
+
+## The owner's workstation
+
+This repository is authored on Windows, with Git Bash and Windows PowerShell
+5.1 side by side. Each trap below has been paid for more than once:
+
+- **A command handed to the owner runs in either shell.** One command per
+  block; paths as `C:/...`; no `&&`, `||`, `$VAR`, `$(...)`, heredocs or
+  `2>/dev/null`. A Windows command with `/flag` arguments (`schtasks`, `reg`)
+  is marked as PowerShell. A handed-over `gh` command names
+  `--repo <owner>/<repo>`, and a handed-over `ssh` command reaches one host.
+- **Never run `python -`,** which reads its program from standard input. Here
+  it opens an interactive prompt that cannot start and loops until it is
+  killed, whatever is redirected into it, and a hook on the workstation
+  refuses it. Write a script, a commit message or a pull request body to a
+  file and use it by path (`python <file>`, `git commit -F <file>`,
+  `gh pr create --body-file <file>`). A heredoc through an agent's shell can
+  halve backslashes, so text that holds one goes through a file too.
+- **Git Bash rewrites path-shaped arguments.** Set `MSYS_NO_PATHCONV=1` on the
+  one command that passes a `rev:path`, a `/`-leading pattern or a `/flag`.
+  Never export it: it breaks `/c/...` paths for the rest of the shell. A
+  rewritten argument fails quietly, so a probe through it can print an empty
+  answer that looks real.
+- **Git Bash `grep` cannot see a carriage return,** so a CR count from it is
+  wrong in either direction. Check line endings with `git ls-files --eol` or a
+  byte count in Python, and write files from Python with `newline="\n"`.
+- **`jq` is not installed.** `gh --jq` works because it is built into `gh`;
+  everything else filters with `--jq`, `grep` or Python.
+- **The console encoding is cp1252.** Python that prints non-ASCII runs as
+  `python -X utf8`, and a PowerShell 5.1 `Get-Content` and `Set-Content` round
+  trip mangles UTF-8.
+- **An agent's permission layer may refuse an act** (a secret read, an `ssh`, a
+  merge, a scheduled task). Do not retry it in another form: hand the owner the
+  exact command, one per block, and read the result back after it runs.
