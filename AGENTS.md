@@ -607,6 +607,23 @@ in all of them.
   fix is pushed. Each is closed as taken, with the fixing commit, or declined,
   with the reason, against the review's own checks re-run at the new head. A
   second review happens only when the owner asks for one.
+- **A reference to another repository's issue is qualified:** `owner/repo#N`
+  or a full link. A bare `#N` links this repository's number, in a comment as
+  in a body.
+- **A wrong claim on an issue is corrected by a dated follow-up comment** that
+  cites the comment it corrects, never by editing that comment. A pull request
+  body is corrected in place, with a visible dated note saying what changed.
+- **A ruling is a record once it is a dated comment on the issue it decides,**
+  carrying the owner's words, posted before the pull request that cites it. A
+  ruling that exists only in a session is not yet one.
+- **Read the thread before posting to it.** Re-fetch an issue's comments
+  immediately before posting a proposal, a ruling or a question there, and
+  quote a comment you cite, by its id, rather than a summary of it.
+- **A return to another repository's issue carries the merge commit and its
+  `mergedAt`,** and is posted before any pointer that links to it.
+- **A branch with a pull request is brought up to `main` by merging `main`
+  into it,** never by a rebase or a force-push: its body, its review and its
+  comments cite its commits.
 
 ## This repository is ASCII
 
