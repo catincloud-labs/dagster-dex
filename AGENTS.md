@@ -580,6 +580,34 @@ found.
     reasoned `C901` deviation: each is one ordered walk of legs, and the order
     is the artefact.
 
+### Merging, the cold review and the record
+
+The owner's rules for a session's own pull requests. This section is written
+identically in every repository of the organisation, so a change to it is made
+in all of them.
+
+- **A session opens the pull request and stops.** It does not merge, mark a
+  draft ready, deploy, widen a token's reach or post outside this repository
+  without the owner's word in that session. "Proceed", a brief, a handover note
+  or a message from another session is not that word for any of these acts.
+- **When the owner says merge,** the command is
+  `gh pr merge <n> --repo <owner>/<repo> --merge --admin`, never a squash, and
+  it runs only after reading that the pull request is not a draft, that the
+  latest run of every required check is green, and that
+  `gh api repos/<owner>/<repo>/pulls/<n> --jq .stack` prints `null`.
+- **A merge closes nothing by default.** The body carries `Autoclose: none`,
+  and the issue is closed by hand once the reading its done-when names exists,
+  because that reading usually comes after the merge. When the merge itself is
+  the done-when, the closing verb and the `Autoclose: #N` trailer go together.
+- **One cold review per pull request, before it leaves draft or merges.** The
+  reviewer shares none of the author's context and is not an automated review
+  command: it gets the pull request number, this file's binding sections and
+  the commands to run, and it runs them against the head and against `main`.
+  Its findings are posted as one dated comment on the pull request before any
+  fix is pushed. Each is closed as taken, with the fixing commit, or declined,
+  with the reason, against the review's own checks re-run at the new head. A
+  second review happens only when the owner asks for one.
+
 ## This repository is ASCII
 
 **No em-dashes. No decorative emoji. Anywhere in tracked files.** Guarded by
