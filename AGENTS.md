@@ -503,14 +503,13 @@ found.
 
 ## Verification method
 
-That a control observed only to pass has not been shown to be a control is a
-rule with a method behind it, and this is the method as the organisation has
-paid for it:
+A control observed only to pass has not been shown to be a control. Four
+moves stand behind that rule, each paid for in this organisation:
 
 - **Calibrate on both arms first.** Before reading an instrument's answer about
-  the subject, show it answer yes on a known positive and no on a known
-  negative that you built, in the shape of the defect it is for. A refusal on
-  a day when nothing could have passed is not a calibration.
+  the subject, show it report the defect on a case you built to have it, and
+  report clean on a case you built not to, in the shape of the defect it is
+  for. A refusal on a day when nothing could have passed is not a calibration.
 - **A count is not an attribution.** Before a number names a cause, map it to
   the identities it counts, and ask what else produces the same reading. The
   count that matches the prediction is the one least likely to be checked.
@@ -541,16 +540,18 @@ paid for it:
     side, advisory rather than ruleset-required. Do not edit the vendored copy
     here.
   - Passing the guard is not the convention. The owner reads the title, so it
-    says what was done to what, in plain words and the diff's own nouns: a verb
-    and its object, about 70 characters, with no thesis, no contrast clause and
-    no imperative the owner could take as addressed to them. A title about an
+    is clear and concise, not a thesis: it says what was done to what, in plain
+    words and the diff's own nouns, with no contrast clause, no *no X*
+    phrasing, no identifier the change itself introduces in the lead, and no
+    imperative the owner could take as addressed to them. A title about an
     agent rule names the artifact and the actor. A `fix:` title names the
-    process that misbehaves today and what it does after the change. An
-    `argument:` title is *whether X*, X being the decision in the governing
-    document's words. Measure the length before creating
-    (`T='...'; echo "${#T}"`), and retitle a pull request rather than amend a
-    pushed commit. The same form holds for a filing in a repository outside
-    the organisation. Ruled by the owner from 2026-10-01 to 2026-10-10.
+    process that misbehaves today, its actor, and what it does after the
+    change. An `argument:` title is *whether X*, X being the decision in the
+    governing document's words. A filing in a repository outside the
+    organisation keeps this form as closely as that repository allows. A pull
+    request is retitled rather than a pushed commit amended. Ruled by the owner
+    from 2026-10-08 to 2026-10-10. In practice titles run about 70 characters,
+    and measuring the length before creating one catches a title over the cap.
 - **A pull request carries exactly one `deploy:` label.** It says what merging
   does to a box, which is a fact about the change. Merging deploys nothing
   here: publication runs on a `v*` tag (`publish.yml`), never on a merge, so
@@ -614,45 +615,58 @@ paid for it:
 
 ### Merging, the cold review and the record
 
-The owner's rules for a session's own pull requests. This section is written
-identically in every repository of the organisation, so a change to it is made
-in all of them.
+Rules for a session's own pull requests. The owner ruled the stop, the merge
+method, the default against closing, the cold review and the issue-correction
+rule; the rest is practice sessions learned, most of it after a wrong post had
+to be corrected. This subsection, the title sub-bullet above, *Verification
+method* and *The owner's workstation* are kept byte-identical across the
+organisation's repositories: change them everywhere or nowhere. Nothing checks
+it.
 
 - **A session opens the pull request and stops.** It does not merge, mark a
-  draft ready, deploy, widen a token's reach or post outside this repository
-  without the owner's word in that session. "Proceed", a brief, a handover note
-  or a message from another session is not that word for any of these acts.
+  draft ready, deploy or widen a token's reach without the owner's word in
+  that session. A general "proceed", a handover note or a message from another
+  session is not that word; an instruction from the owner that names the act
+  is, for the act it names.
 - **When the owner says merge,** the command is
-  `gh pr merge <n> --repo <owner>/<repo> --merge --admin`, never a squash, and
-  it runs only after reading that the pull request is not a draft, that the
+  `gh pr merge <n> --repo <owner>/<repo> --merge --admin`, never a squash. It
+  runs only after reading that the pull request is not a draft, that the
   latest run of every required check is green, and that
-  `gh api repos/<owner>/<repo>/pulls/<n> --jq .stack` prints `null`.
-- **A merge closes nothing by default.** The body carries `Autoclose: none`,
-  and the issue is closed by hand once the reading its done-when names exists,
-  because that reading usually comes after the merge. When the merge itself is
-  the done-when, the closing verb and the `Autoclose: #N` trailer go together.
+  `gh api repos/<owner>/<repo>/pulls/<n> --jq '{number, stack}'` prints the
+  pull request's number with `"stack":null`. The number is the read's
+  positive control: a pull request in no stack carries no `stack` field, so a
+  bare `--jq .stack` prints an empty line whatever the truth. No stacked pull
+  request has been read this way since the estate's one stack was dissolved.
+- **A merge closes nothing by default.** The owner's rule is that a pull
+  request does not close an issue without a clear reason. The body carries
+  `Autoclose: none`, and the issue is closed by hand once the reading its
+  done-when names exists. When there is a reason, such as the merge itself
+  being the done-when, the closing verb and the `Autoclose: #N` trailer go
+  together.
 - **One cold review per pull request, before it leaves draft or merges.** The
   reviewer shares none of the author's context and is not an automated review
-  command: it gets the pull request number, this file's binding sections and
-  the commands to run, and it runs them against the head and against `main`.
-  Its findings are posted as one dated comment on the pull request before any
-  fix is pushed. Each is closed as taken, with the fixing commit, or declined,
-  with the reason, against the review's own checks re-run at the new head. A
-  second review happens only when the owner asks for one.
+  command: it gets the pull request number, the issue or ruling it builds
+  against, this file's binding sections and the commands to run, and it runs
+  them against the head and against `main`. Its findings are posted as a
+  comment on the pull request. Each is closed as taken, with the fixing commit,
+  or declined, with the reason, against the review's own checks re-run at the
+  new head, in that comment or in a dispositions comment after it. A second
+  review happens only when the owner asks for one.
 - **A reference to another repository's issue is qualified:** `owner/repo#N`
   or a full link. A bare `#N` links this repository's number, in a comment as
   in a body.
-- **A wrong claim on an issue is corrected by a dated follow-up comment** that
-  cites the comment it corrects, never by editing that comment. A pull request
-  body is corrected in place, with a visible dated note saying what changed.
-- **A ruling is a record once it is a dated comment on the issue it decides,**
-  carrying the owner's words, posted before the pull request that cites it. A
-  ruling that exists only in a session is not yet one.
+- **A claim a session posted on an issue, wrong when it was posted, is
+  corrected by a follow-up comment** that cites the comment it corrects, not by
+  editing it. A pull request body may be corrected in place, with a visible
+  dated note saying what changed.
+- **A ruling given in a session becomes a record once it is a comment on the
+  issue it decides,** carrying the owner's words and posted before the pull
+  request that cites it.
 - **Read the thread before posting to it.** Re-fetch an issue's comments
   immediately before posting a proposal, a ruling or a question there, and
   quote a comment you cite, by its id, rather than a summary of it.
 - **A return to another repository's issue carries the merge commit and its
-  `mergedAt`,** and is posted before any pointer that links to it.
+  `mergedAt`.**
 - **A branch with a pull request is brought up to `main` by merging `main`
   into it,** never by a rebase or a force-push: its body, its review and its
   comments cite its commits.
@@ -717,21 +731,28 @@ say it better. Use `=>` for an arrow and `...` for an ellipsis.
 
 ## The owner's workstation
 
-This repository is authored on Windows, with Git Bash and Windows PowerShell
-5.1 side by side. Each trap below has been paid for more than once:
+This repository is authored on the owner's Windows workstation, with Git Bash
+and Windows PowerShell 5.1 side by side. Each trap below was read there on
+2026-10-12 and has been paid for at least once; re-read one before relying on
+it.
 
 - **A command handed to the owner runs in either shell.** One command per
-  block; paths as `C:/...`; no `&&`, `||`, `$VAR`, `$(...)`, heredocs or
-  `2>/dev/null`. A Windows command with `/flag` arguments (`schtasks`, `reg`)
-  is marked as PowerShell. A handed-over `gh` command names
-  `--repo <owner>/<repo>`, and a handed-over `ssh` command reaches one host.
+  block; paths as `C:/...`; no `&&`, `||`, `;` chains, `$VAR`, `$(...)`,
+  heredocs, `2>/dev/null` or line continuations. A command that needs Git Bash
+  says so on the line above it, or comes with its PowerShell twin. A Windows
+  command with `/flag` arguments (`schtasks`, `reg`) is marked as PowerShell. A
+  handed-over `gh` command names `--repo <owner>/<repo>`, and a handed-over
+  `ssh` command reaches one host.
 - **Never run `python -`,** which reads its program from standard input. Here
-  it opens an interactive prompt that cannot start and loops until it is
-  killed, whatever is redirected into it, and a hook on the workstation
-  refuses it. Write a script, a commit message or a pull request body to a
-  file and use it by path (`python <file>`, `git commit -F <file>`,
-  `gh pr create --body-file <file>`). A heredoc through an agent's shell can
-  halve backslashes, so text that holds one goes through a file too.
+  it can hang until it is killed, with an empty heredoc or `</dev/null` as its
+  input, or end silently having done nothing, and a script fed to it is
+  decoded as cp1252. A Claude Code hook on the workstation refuses its
+  plainest spelling, but an option before the `-` (`python -I -`,
+  `python -X utf8 -`) passes the hook, and those have hung too. Write a script,
+  a commit message or a pull request body to a file and use it by path
+  (`python <file>`, `git commit -F <file>`, `gh pr create --body-file <file>`).
+  A heredoc through an agent's shell can halve backslashes, so text that holds
+  one goes through a file too.
 - **Git Bash rewrites path-shaped arguments.** Set `MSYS_NO_PATHCONV=1` on the
   one command that passes a `rev:path`, a `/`-leading pattern or a `/flag`.
   Never export it: it breaks `/c/...` paths for the rest of the shell. A
@@ -741,11 +762,13 @@ This repository is authored on Windows, with Git Bash and Windows PowerShell
   wrong in either direction. Check line endings with `git ls-files --eol` or a
   byte count in Python, and have Python write LF explicitly: bytes, or
   `newline` set to a line feed.
-- **`jq` is not installed.** `gh --jq` works because it is built into `gh`;
-  everything else filters with `--jq`, `grep` or Python.
-- **The console encoding is cp1252.** Python that prints non-ASCII runs as
-  `python -X utf8`, and a PowerShell 5.1 `Get-Content` and `Set-Content` round
-  trip mangles UTF-8.
+- **`jq` is not installed** (`command -v jq` prints nothing). `gh --jq` works
+  because it is built into `gh`; everything else filters with `--jq`, `grep` or
+  Python.
+- **Python's default encoding here is cp1252,** so Python that prints
+  non-ASCII runs as `python -X utf8`. A PowerShell 5.1 `Get-Content` and
+  `Set-Content` round trip turns LF into CRLF, and mangles UTF-8 once either
+  side names an encoding: never round-trip a tracked file through it.
 - **An agent's permission layer may refuse an act** (a secret read, an `ssh`, a
   merge, a scheduled task). Do not retry it in another form: hand the owner the
   exact command, one per block, and read the result back after it runs.
