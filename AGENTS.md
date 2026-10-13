@@ -764,7 +764,10 @@ it.
   wrong in either direction. Check line endings with `git ls-files --eol` or a
   byte count in Python, and have Python write LF explicitly: bytes, or
   `newline` set to a line feed.
-- **`jq` is not installed** (`command -v jq` prints nothing). `gh --jq` works
+- **`jq` is not installed** (read 2026-10-13: `jq --version` prints an error
+  in either shell, where `python --version` prints a version; `command -v jq`
+  is no check in PowerShell, which runs it as `Get-Command -Verb jq` and
+  prints nothing whether or not the tool exists). `gh --jq` works
   because it is built into `gh`; everything else filters with `--jq`, `grep` or
   Python.
 - **Python's default encoding here is cp1252,** so Python that prints
