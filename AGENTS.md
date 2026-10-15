@@ -616,18 +616,18 @@ moves stand behind that rule, each paid for in this organisation:
 ### Merging, the cold review and the record
 
 Rules for a session's own pull requests. The owner ruled the stop, the merge
-method, the default against closing, the cold review and the issue-correction
-rule; the rest is practice sessions learned, most of it after a wrong post had
-to be corrected. This subsection, the title sub-bullet above, *Verification
-method* and *The owner's workstation* are kept byte-identical across the
-organisation's repositories: change them everywhere or nowhere. Nothing checks
-it.
+method, the default against closing, the cold review, when a pull request
+leaves draft and the issue-correction rule; the rest is practice sessions
+learned, most of it after a wrong post had to be corrected. This subsection,
+the title sub-bullet above, *Verification method* and *The owner's workstation*
+are kept byte-identical across the organisation's repositories: change them
+everywhere or nowhere. Nothing checks it.
 
-- **A session opens the pull request and stops.** It does not merge, mark a
-  draft ready, deploy or widen a token's reach without the owner's word in
-  that session. A general "proceed", a handover note or a message from another
-  session is not that word; an instruction from the owner that names the act
-  is, for the act it names.
+- **A session opens the pull request and stops.** It does not merge, deploy
+  or widen a token's reach without the owner's word in that session. A
+  general "proceed", a handover note or a message from another session is not
+  that word; an instruction from the owner that names the act is, for the act
+  it names.
 - **When the owner says merge,** the command is
   `gh pr merge <n> --repo <owner>/<repo> --merge --admin`, never a squash. It
   runs only after reading that the pull request is not a draft, that the
@@ -652,6 +652,17 @@ it.
   or declined, with the reason, against the review's own checks re-run at the
   new head, in that comment or in a dispositions comment after it. A second
   review happens only when the owner asks for one.
+- **A pull request leaves draft when its code is ready, not when its slot
+  comes.** It opens as a draft, so its cold review comes before it leaves.
+  Ready means its one cold review is dispositioned, the latest run of every
+  required check is green at its head, and nothing its body lists as owed
+  before it leaves draft is open. The session that built it takes it out of
+  draft once that holds, and says so on the pull request. `draft` means the
+  code is not ready; the merge's slot lives on its day card and its row on the
+  [estate board](https://github.com/orgs/catincloud-labs/projects/1), never in
+  the draft flag. Leaving draft removes the last lock GitHub enforces against
+  an `--admin` merge of a green pull request, so after it the guard is the
+  owner's word to merge and the permission layer.
 - **A reference to another repository's issue is qualified:** `owner/repo#N`
   or a full link. A bare `#N` links this repository's number, in a comment as
   in a body.
