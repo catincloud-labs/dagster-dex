@@ -12,6 +12,30 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
+## Unreleased
+
+### Changed
+
+- **The vendored `scripts/power_of_ten_requirements.txt` had its header
+  sentence rewritten and its `ruff` and `mypy` pins moved.** This change
+  touches that file and this changelog and nothing else, so the package, its
+  seam, its engine floor and the tested pin do not change. The file is the
+  dev-tool manifest that the `power of ten` job and the suite's type check
+  install their tools from. It sits outside the package, and it is re-copied
+  byte-for-byte from the canonical copy it is vendored from rather than edited
+  here. The pins moved from ruff 0.16.9 and mypy 2.3.1 to ruff 0.17.1 and
+  mypy 2.4.0. The header sentence that was replaced read, verbatim:
+
+  > Both versions are the ones the record's readings were taken with, so the
+  > day-one counts it prices are the counts this action reports.
+
+  It held while the pins were the ones the file was vendored with in #80 on
+  2026-09-06, ruff 0.16.6 and mypy 2.3.1. Its ruff half stopped being true on
+  2026-10-01, when #106 moved ruff to 0.16.9 and left the sentence as it was.
+  Its mypy half held until this change, read on 2026-10-18 against `main` at
+  `e08df43`. The two sentences that replace it name no version, so a later
+  bump of the pins cannot make them false.
+
 ## 0.6.4 - 2026-10-12
 
 Three fixes to the declaration parser (#115, #117, #119), in four entries
