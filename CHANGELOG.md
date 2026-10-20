@@ -36,6 +36,32 @@ if you depend on the contract.
   `e08df43`. The two sentences that replace it name no version, so a later
   bump of the pins cannot make them false.
 
+### Fixed
+
+- **A test's inputs under `arguments:`, and a test named by `test_name:`,
+  were read as no key and no join** (#119). dbt asks for a generic test's
+  inputs under `arguments:`, the form dbt-utils' README shows for
+  `unique_combination_of_columns`, and merges that mapping over the keys
+  beside the test's name, `arguments` winning. A test can also be named by a
+  `test_name:` key beside the rest of its mapping. The declaration parser
+  read inputs only beside the test's name, and a test only by its single
+  key, so a composite key or a `relationships` join written either way, or a
+  column-level `unique` named by `test_name:`, was read as nothing; where an
+  input was written in both places, it read the one beside the name. It now reads both forms, with
+  `arguments` winning, which is the rule exmergo-dex-core's schema-YAML
+  reader follows from 1.13.1 (exmergo/dex#565). **A project that writes its
+  tests' inputs under `arguments:`, or names its tests with `test_name:`,
+  will now report keys and joins it did not report before**, through
+  `declarations()` and on to dex's `definitions()`. On the eighteen cases
+  #119's readings measure, the same YAML read as an uncompiled dbt project,
+  this package now agrees with exmergo-dex-core's own reader from 1.13.1,
+  read at every release through 1.15.1. It stops agreeing with that reader
+  from 1.8.0 to 1.13.0, which the `[dex]` extra still admits and which reads
+  neither form, on the eleven of those cases that use either form. 0.6.4's
+  note for a composite key nested under `arguments:`, "a form not read yet",
+  is retired with the form now read. An entry with no columns in either
+  place keeps the note that it declares none.
+
 ## 0.6.4 - 2026-10-12
 
 Three fixes to the declaration parser (#115, #117, #119), in four entries

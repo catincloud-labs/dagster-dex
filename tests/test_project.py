@@ -433,30 +433,24 @@ class TestAPackageQualifiedCompositeKey:
         assert declarations.notes == ()
 
 
-#: The two notes a composite key that reads as no key can get, whole. Asserted
-#: whole, because the defect this pins was a note that said something false.
+#: The note a composite key that reads as no key gets, whole. Asserted whole,
+#: because the defect 0.6.4 pinned here was a note that said something false.
 NO_COLUMNS = "'fact_orders' declares a composite grain with no columns; ignored"
-NESTED = (
-    "'fact_orders' declares a composite grain with its columns nested under "
-    "`arguments`, a form not read yet; ignored"
-)
 
 
 class TestACompositeKeyNestedUnderArguments:
     """#119: a composite key whose columns sit under `arguments:`, the form
-    dbt-utils' README shows, was noted as declaring no columns. The columns are
-    there, one level down.
-
-    It still reads as no key, because exmergo-dex-core's reader does not read
-    it either (`exmergo_dex_core/dbt_project.py` in the 1.12.7 wheel), and
-    reading it here alone would make `declarations()` and dex's `definitions()`
-    disagree about the model's grain. Only the note changes.
+    dbt-utils' README shows, was read as no key. 0.6.4 named the form in its
+    note and left it unread, because exmergo-dex-core's schema-YAML reader did
+    not read it either. From 1.13.1 that reader merges `arguments:` over the
+    keys beside the test's name, `arguments` winning (exmergo/dex#565), so the
+    form is read here by the same rule.
 
     The flat control is #117's test above, on the same builder: it reads the
     key under both spellings and both keys, so a red arm here is the nesting
     and not the probe. The entries with no columns anywhere are the second
-    control, and those carrying an `arguments:` mapping go red under a note
-    keyed on the mapping alone rather than on columns inside it.
+    control: they keep their note, so a fix that takes an `arguments:` mapping
+    for columns in itself goes red there.
     """
 
     @pytest.mark.parametrize("key", ["tests", "data_tests"])
@@ -464,12 +458,14 @@ class TestACompositeKeyNestedUnderArguments:
         "name",
         ["unique_combination_of_columns", "dbt_utils.unique_combination_of_columns"],
     )
-    def test_the_nested_form_reads_no_key_and_the_note_names_it(self, key, name):
+    def test_the_nested_form_reads_the_key(self, key, name):
         declarations = a_project(
             declaration_sources={"f": a_composite_under(key, name, nested=True)}
         ).declarations()
-        assert declarations.declared_keys == ()
-        assert declarations.notes == (NESTED,)
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("date", "provider"), source="combination"),
+        )
+        assert declarations.notes == ()
 
     @pytest.mark.parametrize(
         "test",
@@ -488,6 +484,216 @@ class TestACompositeKeyNestedUnderArguments:
         declarations = a_project(declaration_sources={"f": text}).declarations()
         assert declarations.declared_keys == ()
         assert declarations.notes == (NO_COLUMNS,)
+
+
+#: `fact_orders.date` -> `dim_date.date`, the join every relationship arm below
+#: declares.
+DATE_JOIN = DeclaredJoin(
+    from_model="fact_orders",
+    from_columns=("date",),
+    to_model="dim_date",
+    to_columns=("date",),
+    source="relationships",
+)
+
+
+def a_date_column_testing(key: str, test: str) -> str:
+    """`fact_orders.date`, with ``test`` in its test list under ``key``.
+    ``test`` is written at the list's own indent."""
+
+    return (
+        "models:\n"
+        "  - name: fact_orders\n"
+        "    columns:\n"
+        "      - name: date\n"
+        f"        {key}:\n"
+        f"{test}"
+    )
+
+
+class TestATestReadTheWayDbtReadsIt:
+    """#119's other rows: the same upstream change, reaching past the composite
+    key. From 1.13.1, exmergo-dex-core's schema-YAML reader reads a
+    `relationships` test's inputs through `arguments:` too, and names a test
+    by its `test_name:` when the entry carries one (`_test_arguments` and
+    `_named_tests` in `exmergo_dex_core/dbt_project.py`). On 0.6.4's parser
+    each arm read something else: nothing, or, where an input is written in
+    both places, the one beside the test's name. The last two arms are the
+    exception, and they are guards rather than red-first arms: a `test_name:`
+    that is not a string, and an `arguments:` that is not a mapping, read the
+    same before and after, and a fix that drops either check raises.
+
+    The flat forms are the controls, and they are tests above: #117's for the
+    composite key, and `TestATestListUnderEitherKey`'s column-level arm for a
+    flat `relationships` and a bare `unique`, under both keys. So a red arm
+    here is the form and not the probe.
+    """
+
+    def test_an_input_under_arguments_wins_over_the_same_input_beside_it(self):
+        """dbt merges `arguments:` over the keys beside the test's name, so the
+        columns under it are the grain the test checks. Reading the keys beside
+        it first, or alone, reads a grain the test does not check."""
+
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    data_tests:\n"
+            "      - dbt_utils.unique_combination_of_columns:\n"
+            "          combination_of_columns: [date, provider]\n"
+            "          arguments:\n"
+            "            combination_of_columns: [product_id, order_type]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(
+                model="fact_orders", columns=("product_id", "order_type"), source="combination"
+            ),
+        )
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize(
+        "test",
+        [
+            "          - relationships:\n"
+            "              to: ref('dim_date')\n"
+            "              field: date_key\n"
+            "              arguments:\n"
+            "                field: date\n",
+            "          - name: date_is_a_dim_date\n"
+            "            test_name: relationships\n"
+            "            to: ref('dim_date')\n"
+            "            field: date_key\n"
+            "            arguments:\n"
+            "              field: date\n",
+        ],
+        ids=["single-key", "test_name"],
+    )
+    def test_a_relationship_merges_its_inputs_from_both_places(self, test):
+        """`to` beside the test's name and `field` under `arguments:`, over a
+        second `field` beside it. This is the merge's other caller, so a
+        caller that reads one place alone, or lets the wrong one win, goes red
+        here even when the composite key's caller is right. Under `test_name:`
+        the inputs beside the name sit in the entry itself, so a fix that
+        takes the entry's `arguments:` for its payload reads no `to`."""
+
+        declarations = a_project(
+            declaration_sources={"f": a_date_column_testing("data_tests", test)}
+        ).declarations()
+        assert declarations.declared_joins == (DATE_JOIN,)
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize("key", ["tests", "data_tests"])
+    def test_a_relationship_under_arguments_is_read(self, key):
+        test = (
+            "          - relationships:\n"
+            "              arguments:\n"
+            "                to: ref('dim_date')\n"
+            "                field: date\n"
+        )
+        declarations = a_project(
+            declaration_sources={"f": a_date_column_testing(key, test)}
+        ).declarations()
+        assert declarations.declared_joins == (DATE_JOIN,)
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize("nested", [False, True], ids=["beside", "arguments"])
+    def test_a_composite_key_named_by_test_name_is_read(self, nested):
+        """The `beside` arm pins the payload: the inputs sit in the entry
+        itself, beside `test_name:`, so a fix that reads an `arguments:`
+        mapping alone reads no columns there."""
+
+        arguments = "        arguments:\n" if nested else ""
+        pad = "  " if nested else ""
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    data_tests:\n"
+            "      - name: fact_orders_grain\n"
+            "        test_name: dbt_utils.unique_combination_of_columns\n"
+            f"{arguments}"
+            f"{pad}        combination_of_columns: [date, provider]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("date", "provider"), source="combination"),
+        )
+        assert declarations.notes == ()
+
+    def test_a_relationship_named_by_test_name_is_read(self):
+        test = (
+            "          - name: date_is_a_dim_date\n"
+            "            test_name: relationships\n"
+            "            arguments:\n"
+            "              to: ref('dim_date')\n"
+            "              field: date\n"
+        )
+        declarations = a_project(
+            declaration_sources={"f": a_date_column_testing("data_tests", test)}
+        ).declarations()
+        assert declarations.declared_joins == (DATE_JOIN,)
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize(
+        "test",
+        [
+            "          - name: date_is_unique\n"
+            "            test_name: unique\n",
+            "          - test_name: unique\n",
+        ],
+        ids=["beside-a-name", "its-only-key"],
+    )
+    def test_a_unique_named_by_test_name_is_read(self, test):
+        """Its `name:` names the test, not what the test runs, so a fix that
+        reads `name:` as the test reads `date_is_unique`, and no key. An entry
+        whose only key is `test_name:` also fits the single-key rule, as a test
+        called `test_name`, so `test_name:` is checked first, as dbt checks
+        it."""
+
+        declarations = a_project(
+            declaration_sources={"f": a_date_column_testing("data_tests", test)}
+        ).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("date",), source="unique"),
+        )
+        assert declarations.notes == ()
+
+    def test_a_test_name_that_is_not_a_string_names_no_test(self):
+        """dbt refuses such an entry, so it reaches here only in a broken file,
+        and the module's rule is that a broken file does not raise. The entry
+        has more than one key, so it reads as nothing, as it does in dex-core's
+        reader. A fix that takes `test_name:` whatever its type raises here."""
+
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    data_tests:\n"
+            "      - name: fact_orders_grain\n"
+            "        test_name: 5\n"
+            "        arguments:\n"
+            "          combination_of_columns: [date, provider]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == ()
+
+    def test_an_arguments_that_is_not_a_mapping_is_ignored(self):
+        """The inputs beside the test's name are read, as dex-core's reader
+        reads them. A fix that merges `arguments:` without checking it is a
+        mapping raises here."""
+
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    data_tests:\n"
+            "      - dbt_utils.unique_combination_of_columns:\n"
+            "          combination_of_columns: [date, provider]\n"
+            "          arguments: [date, provider]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("date", "provider"), source="combination"),
+        )
+        assert declarations.notes == ()
 
 
 class TestDeclarationsIsMemoized:

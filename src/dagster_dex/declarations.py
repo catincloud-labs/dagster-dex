@@ -71,8 +71,13 @@ def _referenced_model(text: object) -> str | None:
 def _test_names(tests: Any) -> list[tuple[str, Any]]:
     """Normalize a dbt-style ``tests:`` list to ``(name, payload)`` pairs.
 
-    Entries are either a bare string (``unique``) or a single-key mapping
-    (``{relationships: {...}}``). Anything else is skipped rather than guessed.
+    Entries are a bare string (``unique``), a single-key mapping
+    (``{relationships: {...}}``), or a mapping that names its test under
+    ``test_name:``, whose payload is the whole mapping
+    (``{name: ..., test_name: unique, arguments: {...}}``). dbt documents both
+    mapping spellings, and exmergo-dex-core's schema-YAML reader names a test
+    by ``test_name:`` from 1.13.1 (``_named_tests``), when it is a string.
+    Anything else is skipped rather than guessed.
     """
 
     pairs: list[tuple[str, Any]] = []
@@ -81,10 +86,30 @@ def _test_names(tests: Any) -> list[tuple[str, Any]]:
     for entry in tests:
         if isinstance(entry, str):
             pairs.append((entry, None))
+        elif isinstance(entry, dict) and isinstance(entry.get("test_name"), str):
+            pairs.append((entry["test_name"], entry))
         elif isinstance(entry, dict) and len(entry) == 1:
             (name, payload), = entry.items()
             pairs.append((str(name), payload))
     return pairs
+
+
+def _test_arguments(payload: Any) -> dict[str, Any]:
+    """A test's inputs, read beside its name and under ``arguments:``.
+
+    dbt asks for a generic test's inputs under ``arguments:``, and merges that
+    mapping over the keys beside the test's name, ``arguments`` winning.
+    exmergo-dex-core's schema-YAML reader does the same from 1.13.1
+    (``_test_arguments``, ``exmergo/dex#565``), and this matches it, so
+    ``declarations()`` and its reader agree about a model's grain and joins.
+    An ``arguments:`` that is not a mapping is ignored, as it is there, and a
+    payload that is not a mapping has no inputs.
+    """
+
+    if not isinstance(payload, dict):
+        return {}
+    arguments = payload.get("arguments")
+    return {**payload, **arguments} if isinstance(arguments, dict) else payload
 
 
 #: The two keys dbt reads an entry's tests under. `data_tests` is its current
@@ -184,31 +209,26 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
     The test is read bare or under any package prefix: the bare name, or any
     name ending in ``.unique_combination_of_columns``. That is
     exmergo-dex-core's own rule for schema YAML, read from
-    ``exmergo_dex_core/dbt_project.py`` in its 1.12.7 wheel, and it is matched
+    ``exmergo_dex_core/dbt_project.py`` in its 1.13.1 wheel, and it is matched
     rather than narrowed to ``dbt_utils.``. Comparing the bare name alone read
     ``dbt_utils.unique_combination_of_columns``, the spelling dbt-utils
     documents for its own test, as no key, with no note.
 
-    **Columns nested under ``arguments:`` are not read, and the note says so.**
-    That is the form dbt-utils' README shows. The same reader in dex-core
-    1.12.7 takes ``combination_of_columns`` from directly under the test, so
-    reading the nested form here alone would make ``declarations()`` and dex's
-    ``definitions()`` disagree about the model's grain. It was noted as a grain
-    with no columns, which sent the author looking for columns that are there.
+    **The columns are read beside the test's name or under ``arguments:``**
+    (:func:`_test_arguments`), and a test named by ``test_name:`` is read too
+    (:func:`_test_names`). ``arguments:`` is the form dbt-utils' README shows.
+    Up to 1.13.0 the same reader took ``combination_of_columns`` from directly
+    under the test alone, and this one matched it, so a key written the way
+    dbt asks was read as none. An entry with no columns in either place is
+    noted as declaring none.
     """
 
     for name, payload in _entry_tests(entry, repr(model), notes):
         if name != _COMPOSITE_TEST and not name.endswith(f".{_COMPOSITE_TEST}"):
             continue
-        columns = (payload or {}).get("combination_of_columns") if isinstance(payload, dict) else None
+        columns = _test_arguments(payload).get("combination_of_columns")
         if not isinstance(columns, list) or not columns:
-            if _nested_under_arguments(payload):
-                notes.append(
-                    f"{model!r} declares a composite grain with its columns nested under "
-                    "`arguments`, a form not read yet; ignored"
-                )
-            else:
-                notes.append(f"{model!r} declares a composite grain with no columns; ignored")
+            notes.append(f"{model!r} declares a composite grain with no columns; ignored")
             continue
         named = tuple(str(c) for c in columns if isinstance(c, str) and c)
         if not named:
@@ -218,20 +238,6 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
     return None
 
 
-def _nested_under_arguments(payload: Any) -> bool:
-    """Whether a composite test lists its columns under ``arguments:``.
-
-    Keyed on a non-empty ``combination_of_columns`` list inside the mapping,
-    not on the mapping alone: an ``arguments:`` with no columns in it has no
-    columns anywhere, and a note claiming otherwise would be false the other
-    way.
-    """
-
-    arguments = payload.get("arguments") if isinstance(payload, dict) else None
-    columns = arguments.get("combination_of_columns") if isinstance(arguments, dict) else None
-    return isinstance(columns, list) and bool(columns)
-
-
 def _single_column_keys(
     model: str, entry: dict[str, Any], joins: list[DeclaredJoin], notes: list[str]
 ) -> list[DeclaredKey]:
@@ -239,7 +245,9 @@ def _single_column_keys(
 
     Joins are appended rather than returned because they are found here but do
     not belong to the key result; threading them back through a second return
-    value would make both callers unpack something they do not use.
+    value would make both callers unpack something they do not use. A
+    relationship's ``to`` and ``field`` are read beside the test's name or
+    under ``arguments:`` (:func:`_test_arguments`).
     """
 
     found: list[DeclaredKey] = []
@@ -253,8 +261,9 @@ def _single_column_keys(
             if name == "unique":
                 found.append(DeclaredKey(model=model, columns=(column,), source="unique"))
             elif name == "relationships" and isinstance(payload, dict):
-                target = _referenced_model(payload.get("to"))
-                field = payload.get("field")
+                inputs = _test_arguments(payload)
+                target = _referenced_model(inputs.get("to"))
+                field = inputs.get("field")
                 if target is None or not isinstance(field, str) or not field:
                     notes.append(
                         f"{model}.{column} declares a relationship that names no "
