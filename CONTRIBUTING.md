@@ -165,20 +165,21 @@ re-vendor is a defect at the source, and that test is the first to see it.
   awaiting approval rather than red. The red run from before the label stays
   listed beside the green one, and the latest run is the one that counts.
 - **Approval and merge are separate, and every merge into `main` is the
-  maintainer's.** A pull request needs an approving review from a code owner
-  of the files it changes, and `.github/CODEOWNERS` names the maintainer on
-  every path. On the seam files it names a second code owner beside the
-  maintainer, and that owner's approval counts as the code-owner review there,
-  just as the maintainer's would; a change to any other path still needs the
-  maintainer's. Whoever approved, the maintainer merges: since 2026-10-20 a
-  repository ruleset lets only the maintainer update `main`, so an approved
-  pull request waits for the maintainer to merge it, and write access to this
-  repository does not change that. Anyone can read the two rules this rests on
-  with `gh api repos/catincloud-labs/dagster-dex/rules/branches/main`: the
-  code-owner review is the `pull_request` rule's `require_code_owner_review`,
-  and the restriction is the `update` rule. That output does not say who is
-  exempt from the `update` rule, and GitHub returns a ruleset's bypass list
-  only to a reader who can edit the ruleset.
+  maintainer's.** A pull request from anyone but the maintainer needs an
+  approving review from a code owner of each file it changes.
+  `.github/CODEOWNERS` names the maintainer on every path, and a second code
+  owner beside the maintainer on the seam files: there, either one's approval
+  counts, and any other path needs the maintainer's. Since 2026-10-20 a
+  repository ruleset lets only the maintainer update `main`, so once your pull
+  request is approved it waits for the maintainer to merge it, and write access
+  does not change that. Anyone can read the two rules this rests on, with no
+  account at `https://api.github.com/repos/catincloud-labs/dagster-dex/rules/branches/main`
+  or signed in with `gh api repos/catincloud-labs/dagster-dex/rules/branches/main`:
+  the review is the `pull_request` rule's `require_code_owner_review`, and the
+  restriction is the `update` rule. That output does not say who is exempt from
+  either rule (the maintainer's own pull requests merge without a review that
+  way), and GitHub returns a ruleset's bypass list only to a reader who can
+  edit the ruleset.
 - **`scripts/check_closing_keywords.py` and `scripts/check_pr_title.py` are
   vendored copies** of shared guards - the first so the hook works offline, the
   second because a public repository cannot call the private shared action.
