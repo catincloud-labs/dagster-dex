@@ -12,7 +12,31 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
-## Unreleased
+## 0.6.5 - 2026-10-20
+
+One fix to the declaration parser (#119), and a re-vendored dev-tool manifest
+(#129) that reaches neither the wheel nor a consumer. Under `src/`, only
+`declarations.py` and the version string changed, every name added there is
+private, and `pyproject.toml` moved only its version, so the seam, the engine
+floor and the tested pin are where 0.6.4 left them. That was measured at the
+bump, and anyone can re-run it as `git diff v0.6.4..v0.6.5 -- src/
+pyproject.toml`. A patch exists because an installed copy sees a fix only as a
+new version. No public name or signature changed, but the fix changes what a
+project reports, and its entry says so in bold: keys and joins written under
+`arguments:` or named by `test_name:`, which 0.6.4 did not read, are now read.
+
+**Reading those two forms also reaches three older rules of this parser, so
+0.6.5 ships three disagreements with exmergo-dex-core's reader that 0.6.4 did
+not have** (#131). On each shape below, 0.6.4 agreed with every engine #131
+measured (1.8.0, 1.13.0 and 1.15.1), because it read neither form. A
+`combination_of_columns` under `arguments:` that is not two or more strings now
+reads as a key on its string columns: `[a]` and `[a, 1]` as a key on `a`, and
+`[a, b, 1]` as a key on `(a, b)`, where every engine reads none. A bare model
+name in a
+`relationships` test's `to:` under `arguments:` now reads as a join to that
+model, where every engine reads none. A column's `unique` written once bare and
+once by `test_name:` now reads as two keys on that column, where every engine
+reads one. #131 asks whether to align each with the reader.
 
 ### Changed
 
