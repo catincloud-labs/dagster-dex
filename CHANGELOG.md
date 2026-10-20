@@ -45,9 +45,9 @@ if you depend on the contract.
   beside the test's name, `arguments` winning. A test can also be named by a
   `test_name:` key beside the rest of its mapping. The declaration parser
   read inputs only beside the test's name, and a test only by its single
-  key, so a composite key, a `relationships` join or a column-level `unique`
-  written either way was read as nothing; where an input was written in both
-  places, it read the one beside the name. It now reads both forms, with
+  key, so a composite key or a `relationships` join written either way, or a
+  column-level `unique` named by `test_name:`, was read as nothing; where an
+  input was written in both places, it read the one beside the name. It now reads both forms, with
   `arguments` winning, which is the rule exmergo-dex-core's schema-YAML
   reader follows from 1.13.1 (exmergo/dex#565). **A project that writes its
   tests' inputs under `arguments:`, or names its tests with `test_name:`,
