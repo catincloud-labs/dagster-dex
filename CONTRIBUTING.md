@@ -159,11 +159,13 @@ re-vendor is a defect at the source, and that test is the first to see it.
   and applying a label takes triage access, which a contributor outside the
   repository does not have. Nothing on your side clears it: the maintainer
   applies a label at triage, and the label change re-runs the step with no push
-  needed. On a first pull request here, every workflow run, that one included,
-  waits for the maintainer's approval before it starts, because this repository
-  requires approval for first-time contributors; until then the checks read as
-  awaiting approval rather than red. The red run from before the label stays
-  listed beside the green one, and the latest run is the one that counts.
+  needed. Until a commit or pull request of yours has been merged here, every
+  workflow run, that one included, waits for the maintainer's approval before
+  it starts, because this repository requires approval for first-time
+  contributors and GitHub counts you as one until that merge. While a run
+  waits, its checks read as awaiting approval rather than red. The red run from
+  before the label stays listed beside the green one, and the latest run is the
+  one that counts.
 - **Approval and merge are separate, and every merge into `main` is the
   maintainer's.** A pull request from anyone but the maintainer needs an
   approving review from a code owner of each file it changes.
