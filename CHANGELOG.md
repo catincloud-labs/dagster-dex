@@ -27,16 +27,17 @@ project reports, and its entry says so in bold: keys and joins written under
 
 **Reading those two forms also reaches three older rules of this parser, so
 0.6.5 ships three disagreements with exmergo-dex-core's reader that 0.6.4 did
-not have** (#131). On each shape below, 0.6.4 agreed with every engine #131
-measured (1.8.0, 1.13.0 and 1.15.1), because it read neither form. A
-`combination_of_columns` under `arguments:` that is not two or more strings now
-reads as a key on its string columns: `[a]` and `[a, 1]` as a key on `a`, and
-`[a, b, 1]` as a key on `(a, b)`, where every engine reads none. A bare model
-name in a
-`relationships` test's `to:` under `arguments:` now reads as a join to that
-model, where every engine reads none. A column's `unique` written once bare and
-once by `test_name:` now reads as two keys on that column, where every engine
-reads one. #131 asks whether to align each with the reader.
+not have** (#131). The same three rules already disagreed with the reader in
+0.6.4 on the flat forms it read: `[a]`, a bare `to:`, and `unique` written
+twice. What is new is the shapes below, written under `arguments:` or in a test
+named by `test_name:`, where 0.6.4 agreed with every engine #131 measured
+(1.8.0, 1.13.0 and 1.15.1), because it read neither form. A
+`combination_of_columns` of `[a]` or `[a, 1]` now reads as a key on `a`, and
+one of `[a, b, 1]` as a key on `(a, b)`, where every engine reads none. A bare
+model name in a `relationships` test's `to:` now reads as a join to that model,
+where every engine reads none. A column's `unique` written once bare and once
+by `test_name:` now reads as two keys on that column, where every engine reads
+one. #131 asks whether to align each with the reader.
 
 ### Changed
 
