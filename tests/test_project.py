@@ -518,7 +518,10 @@ class TestATestReadTheWayDbtReadsIt:
     by its `test_name:` when the entry carries one (`_test_arguments` and
     `_named_tests` in `exmergo_dex_core/dbt_project.py`). On 0.6.4's parser
     each arm read something else: nothing, or, where an input is written in
-    both places, the one beside the test's name.
+    both places, the one beside the test's name. The last two arms are the
+    exception, and they are guards rather than red-first arms: a `test_name:`
+    that is not a string, and an `arguments:` that is not a mapping, read the
+    same before and after, and a fix that drops either check raises.
 
     The flat forms are the controls, and they are tests above: #117's for the
     composite key, and `TestATestListUnderEitherKey`'s column-level arm for a
@@ -548,19 +551,31 @@ class TestATestReadTheWayDbtReadsIt:
         )
         assert declarations.notes == ()
 
-    def test_a_relationship_merges_its_inputs_from_both_places(self):
-        """`to` beside the test's name and `field` under `arguments:`, over a
-        second `field` beside it. This is the merge's other caller, so a
-        caller that reads one place alone, or lets the wrong one win, goes red
-        here even when the composite key's caller is right."""
-
-        test = (
+    @pytest.mark.parametrize(
+        "test",
+        [
             "          - relationships:\n"
             "              to: ref('dim_date')\n"
             "              field: date_key\n"
             "              arguments:\n"
-            "                field: date\n"
-        )
+            "                field: date\n",
+            "          - name: date_is_a_dim_date\n"
+            "            test_name: relationships\n"
+            "            to: ref('dim_date')\n"
+            "            field: date_key\n"
+            "            arguments:\n"
+            "              field: date\n",
+        ],
+        ids=["single-key", "test_name"],
+    )
+    def test_a_relationship_merges_its_inputs_from_both_places(self, test):
+        """`to` beside the test's name and `field` under `arguments:`, over a
+        second `field` beside it. This is the merge's other caller, so a
+        caller that reads one place alone, or lets the wrong one win, goes red
+        here even when the composite key's caller is right. Under `test_name:`
+        the inputs beside the name sit in the entry itself, so a fix that
+        takes the entry's `arguments:` for its payload reads no `to`."""
+
         declarations = a_project(
             declaration_sources={"f": a_date_column_testing("data_tests", test)}
         ).declarations()
@@ -618,19 +633,65 @@ class TestATestReadTheWayDbtReadsIt:
         assert declarations.declared_joins == (DATE_JOIN,)
         assert declarations.notes == ()
 
-    def test_a_unique_named_by_test_name_is_read(self):
-        """Its `name:` names the test, not what the test runs, so a fix that
-        reads `name:` as the test reads `date_is_unique`, and no key."""
-
-        test = (
+    @pytest.mark.parametrize(
+        "test",
+        [
             "          - name: date_is_unique\n"
-            "            test_name: unique\n"
-        )
+            "            test_name: unique\n",
+            "          - test_name: unique\n",
+        ],
+        ids=["beside-a-name", "its-only-key"],
+    )
+    def test_a_unique_named_by_test_name_is_read(self, test):
+        """Its `name:` names the test, not what the test runs, so a fix that
+        reads `name:` as the test reads `date_is_unique`, and no key. An entry
+        whose only key is `test_name:` also fits the single-key rule, as a test
+        called `test_name`, so `test_name:` is checked first, as dbt checks
+        it."""
+
         declarations = a_project(
             declaration_sources={"f": a_date_column_testing("data_tests", test)}
         ).declarations()
         assert declarations.declared_keys == (
             DeclaredKey(model="fact_orders", columns=("date",), source="unique"),
+        )
+        assert declarations.notes == ()
+
+    def test_a_test_name_that_is_not_a_string_names_no_test(self):
+        """dbt refuses such an entry, so it reaches here only in a broken file,
+        and the module's rule is that a broken file does not raise. The entry
+        has more than one key, so it reads as nothing, as it does in dex-core's
+        reader. A fix that takes `test_name:` whatever its type raises here."""
+
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    data_tests:\n"
+            "      - name: fact_orders_grain\n"
+            "        test_name: 5\n"
+            "        arguments:\n"
+            "          combination_of_columns: [date, provider]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == ()
+
+    def test_an_arguments_that_is_not_a_mapping_is_ignored(self):
+        """The inputs beside the test's name are read, as dex-core's reader
+        reads them. A fix that merges `arguments:` without checking it is a
+        mapping raises here."""
+
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    data_tests:\n"
+            "      - dbt_utils.unique_combination_of_columns:\n"
+            "          combination_of_columns: [date, provider]\n"
+            "          arguments: [date, provider]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=("date", "provider"), source="combination"),
         )
         assert declarations.notes == ()
 
