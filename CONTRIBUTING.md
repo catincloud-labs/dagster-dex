@@ -159,11 +159,29 @@ re-vendor is a defect at the source, and that test is the first to see it.
   and applying a label takes triage access, which a contributor outside the
   repository does not have. Nothing on your side clears it: the maintainer
   applies a label at triage, and the label change re-runs the step with no push
-  needed. On a first pull request here, every workflow run, that one included,
-  waits for the maintainer's approval before it starts, because this repository
-  requires approval for first-time contributors; until then the checks read as
-  awaiting approval rather than red. The red run from before the label stays
-  listed beside the green one, and the latest run is the one that counts.
+  needed. Until a commit or pull request of yours has been merged here, every
+  workflow run, that one included, waits for the maintainer's approval before
+  it starts, because this repository requires approval for first-time
+  contributors and GitHub counts you as one until that merge. While a run
+  waits, its checks read as awaiting approval rather than red. The red run from
+  before the label stays listed beside the green one, and the latest run is the
+  one that counts.
+- **Approval and merge are separate, and every merge into `main` is the
+  maintainer's.** A pull request from anyone but the maintainer needs an
+  approving review from a code owner of each file it changes.
+  `.github/CODEOWNERS` names the maintainer on every path, and a second code
+  owner beside the maintainer on the seam files: there, either one's approval
+  counts, and any other path needs the maintainer's. Since 2026-10-20 a
+  repository ruleset lets only the maintainer update `main`, so once your pull
+  request is approved it waits for the maintainer to merge it, and write access
+  does not change that. Anyone can read the two rules this rests on, with no
+  account at `https://api.github.com/repos/catincloud-labs/dagster-dex/rules/branches/main`
+  or signed in with `gh api repos/catincloud-labs/dagster-dex/rules/branches/main`:
+  the review is the `pull_request` rule's `require_code_owner_review`, and the
+  restriction is the `update` rule. That output does not say who is exempt from
+  either rule (the maintainer's own pull requests merge without a review that
+  way), and GitHub returns a ruleset's bypass list only to a reader who can
+  edit the ruleset.
 - **`scripts/check_closing_keywords.py` and `scripts/check_pr_title.py` are
   vendored copies** of shared guards - the first so the hook works offline, the
   second because a public repository cannot call the private shared action.
