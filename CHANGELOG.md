@@ -12,6 +12,25 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
+## Unreleased
+
+### Fixed
+
+- **The ASCII test passed a tracked file that did not decode as UTF-8**
+  (`tests/test_ascii_only.py`, #128). It skipped the file whole, so a lone
+  `0x97`, which is how cp1252 writes an em dash, passed the test written to
+  refuse em dashes, and also hid any valid U+2014 elsewhere in the same file.
+  The test now reads each tracked file as bytes and decodes it a line at a
+  time. A line that does not decode is reported by each byte above `0x7F`
+  and its offset in the file, and a tracked file that cannot be read is
+  reported rather than passed. It lists files with `git ls-files -z`, so a
+  file whose name git would quote, such as one holding a byte above `0x7F`,
+  is read rather than skipped. The issue's four arms are now self-tests that
+  go through the function the test calls, with a fifth for a line holding
+  both kinds of byte. This change touches that test and this changelog and
+  nothing else, so the package, its seam, its engine floor and the tested pin
+  do not change.
+
 ## 0.6.5 - 2026-10-20
 
 One fix to the declaration parser (#119), and a re-vendored dev-tool manifest
