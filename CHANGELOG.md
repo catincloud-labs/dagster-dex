@@ -30,6 +30,19 @@ if you depend on the contract.
   both kinds of byte. This change touches that test and this changelog and
   nothing else, so the package, its seam, its engine floor and the tested pin
   do not change.
+- **A composite key listing something other than a column name was read as a
+  key on its names alone** (#131). A `combination_of_columns` of `[a, 1]`
+  read as a key on `a`, and one of `[a, b, 1]` as a key on `(a, b)`: a key on
+  fewer columns than the test checks, which claims more than the test does.
+  That held beside the test's name, and since 0.6.5 under `arguments:` and
+  beside a `test_name:` too. exmergo-dex-core's schema-YAML reader takes a
+  composite only from a list of two or more columns that are all strings, so
+  it reads no key from either. Such a list now reads as no key here, and is
+  noted. **A project with such a list will now report one key fewer, and a
+  note it did not carry**, through `declarations()` and on to dex's
+  `definitions()`. A list of one name, `[a]`, still reads as a key on `a`,
+  where that reader reads none: the owner kept it here while exmergo/dex is
+  asked.
 
 ## 0.6.5 - 2026-10-20
 

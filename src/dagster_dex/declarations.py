@@ -221,6 +221,14 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
     under the test alone, and this one matched it, so a key written the way
     dbt asks was read as none. An entry with no columns in either place is
     noted as declaring none.
+
+    **A list holding something other than a column name reads as no key, and
+    is noted** (#131). Reading its names alone read ``[a, b, 1]`` as a key on
+    ``(a, b)``, fewer columns than the test checks, which claims more than the
+    test does. exmergo-dex-core's reader takes a composite only from a list
+    whose columns are all strings, and reads none from this one. A single
+    name, ``[a]``, is still read as a key on that column, where that reader
+    reads none: the owner kept it here while exmergo/dex is asked.
     """
 
     for name, payload in _entry_tests(entry, repr(model), notes):
@@ -233,6 +241,12 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
         named = tuple(str(c) for c in columns if isinstance(c, str) and c)
         if not named:
             notes.append(f"{model!r} declares a composite grain with no usable columns; ignored")
+            continue
+        if not all(isinstance(c, str) for c in columns):
+            notes.append(
+                f"{model!r} declares a composite grain listing something other "
+                "than a column name; ignored"
+            )
             continue
         return DeclaredKey(model=model, columns=named, source="combination")
     return None
