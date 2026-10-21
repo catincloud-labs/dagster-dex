@@ -12,7 +12,46 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
-## Unreleased
+## 0.6.6 - 2026-10-21
+
+Six fixes to the declaration parser (#131), and two to tests (#128, #136),
+which reach the sdist's `tests/` but neither the wheel nor an installed copy.
+Every entry is a fix. Under `src/`, only `declarations.py`, the docstring of
+`DeclaredJoin` in `model.py` and the version string changed, every name added
+or removed in `declarations.py` is private, and `pyproject.toml` moved only its
+version, so the seam and the engine floor are where 0.6.5 left them. That was
+measured at the bump, and anyone can re-run it as `git diff v0.6.5..v0.6.6 --
+src/ pyproject.toml`. The tested pin is written outside both, and is where
+0.6.5 left it too: `git diff v0.6.5..v0.6.6 -G 'core==[0-9]' --name-only`
+prints nothing. A patch exists because an installed copy sees a fix only as a
+new version. No public name, signature or dataclass field changed, but five of
+the parser fixes change the keys or joins a project reports and the sixth adds
+a note, and each entry says so in bold.
+
+**One change argues for a minor, and does not decide it.** A join's
+`to_model` can now name a source, as `<source>.<table>`, where 0.6.5 read a
+`relationships` test whose `to:` is a `source()` as no join (that test's entry
+below). A consumer that took `to_model` to name a model now meets one naming a
+table the project does not build, which `DeclaredJoin`'s docstring now says.
+It is not a minor here. The field is a string as it was. The new value is
+reached only from a declaration 0.6.5 already noted as naming no resolvable
+model and column. It is the name exmergo-dex-core's own schema-YAML reader
+gives the same declaration, read at 1.8.0 and at 1.15.2 for this bump. And
+this release does neither thing that made an earlier release a minor: 0.5.0
+and 0.6.0 raised the engine floor, and 0.2.0 to 0.4.0, on an unchanged floor,
+added to the public surface. It is a patch as 0.6.4 and 0.6.5 were, whose
+fixes also changed which keys and joins a project reports.
+
+Of the three disagreements with exmergo-dex-core's reader that 0.6.5's lead
+names, two now read as that reader reads them: a bare model name in `to:`, and
+a column's `unique` written twice. Of the third, a `combination_of_columns` of
+`[a, 1]` or `[a, b, 1]` now reads as that reader reads it, and `[a]` still
+reads as a key on `a`, kept while exmergo/dex is asked (exmergo/dex#768). A
+test entry dbt refuses for its keys, which that reader reads, is still
+skipped, now with a note, kept the same way (exmergo/dex#767). Those are not
+the only differences 0.6.6 ships: `[a, b, '']`, which the first composite
+entry below names, still reads as a key on `(a, b)` where that reader reads
+`(a, b, '')`, and is not ruled.
 
 ### Fixed
 
@@ -28,8 +67,8 @@ if you depend on the contract.
   is read rather than skipped. The issue's four arms are now self-tests that
   go through the function the test calls, with a fifth for a line holding
   both kinds of byte. This change touches that test and this changelog and
-  nothing else, so the package, its seam, its engine floor and the tested pin
-  do not change.
+  nothing else, so the installed package, its seam, its engine floor and the
+  tested pin do not change.
 - **A composite key listing something other than a column name was read as a
   key on its names alone** (#131). A `combination_of_columns` of `[a, 1]`
   read as a key on `a`, and one of `[a, b, 1]` as a key on `(a, b)`: a key on
@@ -102,7 +141,8 @@ if you depend on the contract.
   two still disagree here: the owner kept the skip while exmergo/dex is
   asked. The entry is still skipped, and now noted once with its keys. A
   mapping of one key, or an empty one, reads as it did. **Nothing
-  a project declares changes; it gains a note for each such entry**, through
+  a project declares changes; it gains a note for each such entry, one for
+  entries alike in their keys and where they sit**, through
   `declarations()` and on to dex's `definitions()`, where `maintain
   reconcile` carries notes into its warnings.
 - **The changelog test passed a version heading the release job cannot find**
@@ -118,7 +158,7 @@ if you depend on the contract.
   through the function the test calls, with two more that pin the line start
   and the literal version, and two that pin the line endings. This change
   touches that test and this changelog and nothing else, so nothing the
-  package ships changes.
+  wheel ships changes.
 
 ## 0.6.5 - 2026-10-20
 
