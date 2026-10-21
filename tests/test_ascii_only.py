@@ -70,6 +70,20 @@ def _text_files() -> list[str]:
     ]
 
 
+def _offenders_in(name: str, path: pathlib.Path) -> list[str]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return []
+    offenders: list[str] = []
+    for lineno, line in enumerate(text.split("\n"), 1):
+        bad = {c for c in line if ord(c) > 127}
+        if bad:
+            shown = ", ".join(f"U+{ord(c):04X}" for c in sorted(bad))
+            offenders.append(f"{name}:{lineno}: {shown}")
+    return offenders
+
+
 @pytest.mark.skipif(
     subprocess.run(
         ["git", "-C", str(REPO), "rev-parse", "--git-dir"], capture_output=True
@@ -88,16 +102,7 @@ def test_every_tracked_file_is_ascii():
 
     offenders: list[str] = []
     for name in _text_files():
-        path = REPO / name
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        for lineno, line in enumerate(text.split("\n"), 1):
-            bad = {c for c in line if ord(c) > 127}
-            if bad:
-                shown = ", ".join(f"U+{ord(c):04X}" for c in sorted(bad))
-                offenders.append(f"{name}:{lineno}: {shown}")
+        offenders.extend(_offenders_in(name, REPO / name))
 
     assert not offenders, (
         "non-ASCII characters in tracked files; this repository is public and "
@@ -186,3 +191,102 @@ def test_the_check_can_actually_fail():
     assert not f"an emoji {chr(0x1F534)} here".isascii()
     assert not f"a warning sign {chr(0x26A0)} here".isascii()
     assert "a plain hyphen - here".isascii()
+
+
+def _plant(count: int, planted: dict[int, bytes]) -> bytes:
+    """`count` lines of 20 ASCII bytes each, with the numbered lines replaced.
+
+    Twenty bytes a line is what lets an offset below be counted by hand.
+    """
+
+    return b"".join(
+        planted.get(n, b"line %02d: plain text\n" % n) for n in range(1, count + 1)
+    )
+
+
+# The four arms of #128, each placing its bytes where that issue's reading put
+# them. Bytes above 0x7F are written as escapes, so this file stays ASCII.
+# Arm 3: fifteen lines of 20 bytes (300), then 14 bytes into line 16: byte 314.
+# Arm 4: two lines (40), a 23-byte line 3 (63), 33 more lines (723), then 34
+# bytes into line 37: byte 757.
+_ARM_ASCII = _plant(20, {})
+_ARM_VALID = _plant(20, {16: b"line 16: plain\xe2\x80\x94 text\n"})
+_ARM_LONE = _plant(20, {16: b"line 16: plain\x97 text\n"})
+_ARM_BOTH = _plant(
+    40,
+    {
+        3: b"line 03: plain\xe2\x80\x94 text\n",
+        37: b"line 37: plain text, then a byte: \x97\n",
+    },
+)
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        pytest.param(_ARM_ASCII, [], id="1-ascii"),
+        pytest.param(_ARM_VALID, ["plant.txt:16: U+2014"], id="2-valid-u2014"),
+        pytest.param(
+            _ARM_LONE,
+            ["plant.txt:16: 0x97 at byte 314 (not UTF-8)"],
+            id="3-lone-0x97",
+        ),
+        pytest.param(
+            _ARM_BOTH,
+            [
+                "plant.txt:3: U+2014",
+                "plant.txt:37: 0x97 at byte 757 (not UTF-8)",
+            ],
+            id="4-valid-then-lone",
+        ),
+    ],
+)
+def test_the_file_check_reports_every_arm(tmp_path, data, expected):
+    """Calibration of the file check, through the function the real test calls.
+
+    `test_the_check_can_actually_fail` calibrates `str.isascii` on strings built
+    in memory, so it never reaches a read and could not see the read skip a
+    file. These arms write bytes to disk and go through `_offenders_in`, the
+    same call the whole-repository test makes for each tracked file.
+
+    Arm 3 is the em dash as cp1252 writes it, a lone 0x97, which is the
+    likeliest way one reaches this tree from a Windows editor or clipboard.
+    Arm 4 is why the check reads line by line: one undecodable line late in a
+    file must not hide a valid U+2014 earlier in it.
+    """
+
+    path = tmp_path / "plant.txt"
+    path.write_bytes(data)
+    assert _offenders_in("plant.txt", path) == expected
+
+
+def test_the_arms_put_each_byte_where_its_offset_says():
+    """The offsets above are counted by hand, so count them a second way.
+
+    The check finds a line and an offset by splitting on LF and summing line
+    lengths. This finds them with `bytes.index` and a count of the LFs before
+    the byte, so a fixture edited out from under its expected offset goes red
+    here rather than having the expectation edited to match the check.
+    """
+
+    assert _ARM_ASCII.isascii()
+    assert _ARM_VALID[: _ARM_VALID.index(b"\xe2\x80\x94")].count(b"\n") == 15
+    assert _ARM_LONE.index(b"\x97") == 314
+    assert _ARM_LONE[:314].count(b"\n") == 15
+    assert _ARM_BOTH[: _ARM_BOTH.index(b"\xe2\x80\x94")].count(b"\n") == 2
+    assert _ARM_BOTH.index(b"\x97") == 757
+    assert _ARM_BOTH[:757].count(b"\n") == 36
+
+
+def test_an_unreadable_tracked_file_is_an_offender(tmp_path):
+    """A file the check cannot read is not a file the check found clean.
+
+    `git ls-files` lists the index, so a tracked file deleted from the working
+    tree and not yet staged with `git rm` is listed and cannot be read. That is
+    a desk state, not a CI one, and the remedy is to stage the deletion.
+    """
+
+    gone = tmp_path / "gone.txt"
+    assert _offenders_in("gone.txt", gone) == [
+        "gone.txt: unreadable (FileNotFoundError)"
+    ]
