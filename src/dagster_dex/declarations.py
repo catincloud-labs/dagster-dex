@@ -212,7 +212,7 @@ def parse_declarations(
                 notes.append(f"declaration {origin!r} has a model with no name; skipped")
                 continue
 
-            composite = _composite_key(model, entry, notes)
+            composites = _composite_keys(model, entry, notes)
             singles = _single_column_keys(model, entry, joins, notes)
 
             # A model-level combination and a column-level uniqueness claim are
@@ -220,8 +220,9 @@ def parse_declarations(
             # they can disagree. Prefer the combination - it is the only one of
             # the two that can express a multi-column key - but say so, because
             # silently dropping the other would hide a real authoring conflict.
-            if composite is not None:
-                keys.append(composite)
+            # A model declaring two combinations keeps both.
+            if composites:
+                keys.extend(composites)
                 if singles:
                     dropped = ", ".join(sorted(k.columns[0] for k in singles))
                     notes.append(
@@ -238,8 +239,16 @@ def parse_declarations(
 _COMPOSITE_TEST = "unique_combination_of_columns"
 
 
-def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> DeclaredKey | None:
-    """A model-level ``unique_combination_of_columns``, when present and sane.
+def _composite_keys(model: str, entry: dict[str, Any], notes: list[str]) -> list[DeclaredKey]:
+    """Each model-level ``unique_combination_of_columns`` that is sane, once.
+
+    **Every one is read, in order, and one set of columns once** (#131). This
+    read the first alone, so a second composite on the model was unread, and
+    ``maintain reconcile``, which reads the grain through ``definitions()``,
+    would propose a column-level ``unique`` on one of its columns: a key the
+    project never declared. dbt runs every one, and exmergo-dex-core's
+    schema-YAML reader reads every one, keeping the first for each model and
+    set of columns compared without order or case. This keeps the same one.
 
     The test is read bare or under any package prefix: the bare name, or any
     name ending in ``.unique_combination_of_columns``. That is
@@ -266,6 +275,7 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
     reads none: the owner kept it here while exmergo/dex is asked.
     """
 
+    found: dict[tuple[str, ...], DeclaredKey] = {}
     for name, payload in _entry_tests(entry, repr(model), notes):
         if name != _COMPOSITE_TEST and not name.endswith(f".{_COMPOSITE_TEST}"):
             continue
@@ -283,8 +293,11 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
                 "than a column name; ignored"
             )
             continue
-        return DeclaredKey(model=model, columns=named, source="combination")
-    return None
+        found.setdefault(
+            tuple(sorted(c.lower() for c in named)),
+            DeclaredKey(model=model, columns=named, source="combination"),
+        )
+    return list(found.values())
 
 
 def _single_column_keys(

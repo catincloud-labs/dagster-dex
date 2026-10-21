@@ -65,6 +65,18 @@ if you depend on the contract.
   **A project whose `to:` names a source will now report a join it did not
   report before, and one note fewer**, through `declarations()` and on to
   dex's `definitions()`.
+- **A model declaring two composite keys was read as declaring the first
+  alone** (#131). dbt runs both tests, and exmergo-dex-core's schema-YAML
+  reader reads both. `maintain reconcile` reads the grain through
+  `definitions()`, so with the second unread it would propose a column-level
+  `unique` on one of its columns, a key the project never declared, where it
+  declines that edit when the grain is read; #117's entry under 0.6.4 is the
+  same defect for the prefixed spelling. Every composite key on a model is
+  now read, in order, with one set of columns read once, compared without
+  order or case as that reader compares them. A column-level `unique` beside
+  them is still dropped with the note that the composite wins. **A project
+  with a model declaring two composite keys will now report a key it did not
+  report before**, through `declarations()` and on to dex's `definitions()`.
 
 ## 0.6.5 - 2026-10-20
 
