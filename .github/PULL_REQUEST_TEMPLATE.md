@@ -31,12 +31,14 @@ gap is where this estate's defects have actually lived. So:
 ## Readings not reproducible from a clean checkout
 
 <!--
-List each reading above that a stranger with a clean checkout of this pull
-request cannot re-run, and where it ran: a warehouse, a scratch harness that
-is not committed, a credential. Such readings are welcome. Listed here, they
-tell a reviewer which claims rest on your word; the reviewer re-runs the rest.
+List each reading in this body that a stranger with a clean checkout of this
+pull request cannot re-run, and where it ran: a warehouse, a scratch harness
+that is not committed, a credential. Such readings are welcome. Listed here,
+they tell a reviewer which claims rest on your word; the reviewer re-runs the
+rest.
 
-If every reading above re-runs from a clean checkout, say "none" and move on:
+Keep this section even when nothing belongs in it, unlike the rule at the top:
+if every reading in this body re-runs from a clean checkout, say "none", since
 a deleted section reads the same as a forgotten one.
 -->
 

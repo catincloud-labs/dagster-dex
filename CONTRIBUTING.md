@@ -162,34 +162,41 @@ re-vendor is a defect at the source, and that test is the first to see it.
     looked at your pull request.** Applying a label takes triage access, so
     nothing on your side clears it: the maintainer applies a label at triage.
     Until a commit or pull request of yours has been merged here, every
-    workflow run, that one included, also waits for the maintainer's approval
-    before it starts, because this repository requires approval for
-    first-time contributors and GitHub counts you as one until that merge.
+    workflow run, that one included, also waits for approval from someone
+    with write access here before it starts, because this repository requires
+    approval for first-time contributors and GitHub counts you as one until
+    that merge.
     While a run waits, its checks read as awaiting approval rather than red.
   - **As a collaborator, holding write access, you apply your own `deploy:`
     label and a `review:` clock** when you open the pull request. The
-    template's checklist says which `deploy:` value, and each label's
-    description says when it applies. Your runs should start without
+    template's checklist says which `deploy:` value applies here, and the
+    clock is `review:this-week`, the default for a fix or small docs, unless
+    the maintainer sets another. The label descriptions are written for
+    several repositories, so take the values from here rather than from
+    them. Your runs should start without
     approval: on #135, the first pull request here from a collaborator's fork,
     they started at once, before its author had anything merged here. GitHub's
     documentation of the approval setting names only a prior merge as the
     exemption, so that is one observation, not a documented rule.
 
-  In both cases CI runs on the `pull_request` event: every workflow here that
-  runs on a pull request is triggered by it. From a fork, GitHub gives such a
-  run a read-only token and no repository secret, whoever the author is, so
-  write access changes who labels the pull request and whether a run waits,
-  not what a run can do.
+  In both cases CI runs on the `pull_request` event: every workflow file in
+  `.github/workflows` that runs on a pull request is triggered by it. From a
+  fork, GitHub gives such a run a read-only token and no repository secret,
+  whoever the author is, so write access changes who labels the pull request
+  and whether a run waits, not what such a run can do. GitHub's CodeQL
+  default setup also runs on pull requests here, as its own event with no
+  file in that directory; it did not run on #135.
 - **From a fork in your personal account, please tick the box that lets
   maintainers edit your branch** when you open the pull request. It lets
   anyone with write access here push to your branch, so a small fix a review
   asks for can land as a commit rather than a round trip through you. A fork
   of this repository carries its workflows, so GitHub labels the box *Allow
   edits and access to secrets by maintainers*, and warns that ticking it also
-  lets them edit your fork's workflows, which can reveal that fork's secrets.
-  GitHub offers the box only on a fork in a personal account: #135 came from a
-  fork owned by an organization, so it had no such box, and every change its
-  review asks for has to be made by its author.
+  lets them edit your fork's workflows, which can reveal that fork's secrets
+  and give access to its other branches. GitHub offers the box only on a fork
+  in a personal account: #135 came from a fork owned by an organization, so it
+  had no such box, and a change its review asked for could be pushed only by
+  someone with access to that fork.
 - **Approval and merge are separate, and every merge into `main` is the
   maintainer's.** A pull request from anyone but the maintainer needs an
   approving review from a code owner of each file it changes.
@@ -230,8 +237,8 @@ Each requested change carries a priority:
 
 - **P1:** the test can pass on a wrong result.
 - **P2:** a statement that would be false, or permanent, once merged. A commit
-  subject is one: `main` takes merge commits, never a squash, so a subject
-  lands as written.
+  subject is one: the maintainer merges with a merge commit, never a squash,
+  so a subject lands on `main` as written.
 - **P3:** clarity.
 
 The changes come in two groups: what must change before approval, and what is
