@@ -77,6 +77,16 @@ if you depend on the contract.
   them is still dropped with the note that the composite wins. **A project
   with a model declaring two composite keys will now report a key it did not
   report before**, through `declarations()` and on to dex's `definitions()`.
+- **A column's `unique` written twice was read as two keys on that column**
+  (#131). Written bare twice, it was read so in 0.6.4 too, on a file dbt
+  refuses. Written once bare and once by `test_name:`, or twice by
+  `test_name:`, it was read so since 0.6.5, on a file dbt parses into two
+  tests. exmergo-dex-core's schema-YAML reader reads one key per model and
+  column, and 0.6.4 already read a `unique` written under both `tests:` and
+  `data_tests:` once. A column's `unique` is now one key however often it is
+  written, a column listed twice included. **A project that writes a
+  column's `unique` twice will now report one key where it reported two**,
+  through `declarations()` and on to dex's `definitions()`.
 
 ## 0.6.5 - 2026-10-20
 

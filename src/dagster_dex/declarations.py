@@ -310,9 +310,15 @@ def _single_column_keys(
     value would make both callers unpack something they do not use. A
     relationship's ``to`` and ``field`` are read beside the test's name or
     under ``arguments:`` (:func:`_test_arguments`).
+
+    **A column's ``unique`` is one key, however often it is written** (#131).
+    Written twice, bare or by ``test_name:``, or on a column listed twice, it
+    read as two keys on one column. exmergo-dex-core's schema-YAML reader
+    keeps one key per model and column, and :func:`_entry_tests` already reads
+    one written under both test keys once, so this keeps the first.
     """
 
-    found: list[DeclaredKey] = []
+    found: dict[str, DeclaredKey] = {}
     for column_entry in entry.get("columns") or []:
         if not isinstance(column_entry, dict):
             continue
@@ -321,7 +327,7 @@ def _single_column_keys(
             continue
         for name, payload in _entry_tests(column_entry, f"{model}.{column}", notes):
             if name == "unique":
-                found.append(DeclaredKey(model=model, columns=(column,), source="unique"))
+                found.setdefault(column, DeclaredKey(model=model, columns=(column,), source="unique"))
             elif name == "relationships" and isinstance(payload, dict):
                 inputs = _test_arguments(payload)
                 target = _relationship_target(inputs.get("to"))
@@ -341,7 +347,7 @@ def _single_column_keys(
                         source="relationships",
                     )
                 )
-    return found
+    return list(found.values())
 
 
 def _absorb_source_tables(
