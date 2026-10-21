@@ -612,6 +612,23 @@ moves stand behind that rule, each paid for in this organisation:
     `main`s (`examples/walk_the_whole_loop.py`, the write-path driver) carry a
     reasoned `C901` deviation: each is one ordered walk of legs, and the order
     is the artefact.
+- **An outside contributor's pull request is merged as a squash.** This
+  repository's own rule, and the one departure from the subsection below: its
+  bullet *When the owner says merge* names `--merge`, never a squash. When the
+  owner says merge on such a pull request, the command is that bullet's with
+  `--squash` in place of `--merge`, and it runs only after the same reads that
+  bullet lists. The owner's own pull requests keep `--merge`, and so does a
+  bot's. Ruled by the owner on 2026-10-21; the first was #135, merged as
+  `65a9d2b`.
+  - An outside contributor is a person who is not the owner. A bot, such as
+    Dependabot, is not one.
+  - The squash lands the pull request's title, its number appended as
+    `(#N)`, as the commit's subject on `main`, and its body as the message:
+    the repository's squash defaults are `PR_TITLE` and `PR_BODY`. The
+    branch's commits do not land, so a review that cites one cites a commit
+    `main` does not contain.
+  - The rule sits here and not in that bullet because the subsection is kept
+    byte-identical across the organisation's repositories. Do not move it in.
 
 ### Merging, the cold review and the record
 
