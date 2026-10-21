@@ -32,9 +32,9 @@ if you depend on the contract.
   do not change.
 - **The changelog test passed a version heading the release job cannot find**
   (`tests/test_packaging.py`, #136). It asserted the substring
-  `## <version>`, where the `release` job in `publish.yml` greps
-  `^## <version> `, a line start and one space after the version, and runs
-  after the upload. So a heading with no date, `## 0.6.5`, passed the test
+  `## <version>`, where the `release` job in `publish.yml` greps for a line
+  that starts with `## <version>` and has one space after the version, and
+  runs after the upload. So a heading with no date, `## 0.6.5`, passed the test
   before the upload and gave that grep nothing after it. The test now reads
   the heading as the release job does, matching the version literally, and a
   failure names the heading it wanted. The issue's three arms, a dated
