@@ -87,6 +87,18 @@ if you depend on the contract.
   written, a column listed twice included. **A project that writes a
   column's `unique` twice will now report one key where it reported two**,
   through `declarations()` and on to dex's `definitions()`.
+- **A test entry dbt refuses for its shape was skipped with no note** (#131).
+  A test written as a mapping of more than one key with no string
+  `test_name:` naming it, such as a test with its `config:` beside its name
+  rather than inside it, or with a `test_name:` that is not a string, makes
+  dbt refuse the project. The parser skipped it silently, against this
+  module's rule that input it skips is noted. exmergo-dex-core's schema-YAML
+  reader reads the test among the keys, on purpose (exmergo/dex#566), so the
+  two still disagree here: the owner kept the skip while exmergo/dex is
+  asked. The entry is still skipped, and now noted with its keys. **Nothing
+  a project declares changes; it gains a note for each such entry**, through
+  `declarations()` and on to dex's `definitions()`, where `maintain
+  reconcile` carries notes into its warnings.
 
 ## 0.6.5 - 2026-10-20
 

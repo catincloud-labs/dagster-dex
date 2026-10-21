@@ -103,7 +103,7 @@ def _relationship_target(text: object) -> str | None:
     return f"{source.group(1)}.{source.group(2)}" if source else None
 
 
-def _test_names(tests: Any) -> list[tuple[str, Any]]:
+def _test_names(tests: Any, where: str, notes: list[str]) -> list[tuple[str, Any]]:
     """Normalize a dbt-style ``tests:`` list to ``(name, payload)`` pairs.
 
     Entries are a bare string (``unique``), a single-key mapping
@@ -113,6 +113,13 @@ def _test_names(tests: Any) -> list[tuple[str, Any]]:
     mapping spellings, and exmergo-dex-core's schema-YAML reader names a test
     by ``test_name:`` from 1.13.1 (``_named_tests``), when it is a string.
     Anything else is skipped rather than guessed.
+
+    **A mapping of more than one key with no string ``test_name:`` is skipped
+    and noted** (#131), such as a test with its ``config:`` beside its name
+    rather than inside it. dbt refuses the project over one. That reader reads
+    the test among the keys, on purpose (exmergo/dex#566), and the owner kept
+    the skip here while exmergo/dex is asked; the note is this module's rule
+    for input it skips, and it was skipped with none.
     """
 
     pairs: list[tuple[str, Any]] = []
@@ -126,6 +133,12 @@ def _test_names(tests: Any) -> list[tuple[str, Any]]:
         elif isinstance(entry, dict) and len(entry) == 1:
             (name, payload), = entry.items()
             pairs.append((str(name), payload))
+        elif isinstance(entry, dict) and entry:
+            keys = ", ".join(sorted(str(key) for key in entry))
+            notes.append(
+                f"{where} lists a test as a mapping of several keys ({keys}) with "
+                "no string `test_name`, which dbt refuses; skipped"
+            )
     return pairs
 
 
@@ -178,8 +191,9 @@ def _entry_tests(entry: dict[str, Any], where: str, notes: list[str]) -> list[tu
             f"{where} declares both `tests` and `data_tests`; what each lists is read "
             "here, but dbt and dex-core can refuse an entry declaring both, so keep one key"
         )
-    first = _test_names(entry.get("tests"))
-    return first + [pair for pair in _test_names(entry.get("data_tests")) if pair not in first]
+    first = _test_names(entry.get("tests"), where, notes)
+    second = _test_names(entry.get("data_tests"), where, notes)
+    return first + [pair for pair in second if pair not in first]
 
 
 def parse_declarations(
