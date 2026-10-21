@@ -28,6 +28,20 @@ gap is where this estate's defects have actually lived. So:
 
 **Dev:**
 
+## Readings not reproducible from a clean checkout
+
+<!--
+List each reading in this body that a stranger with a clean checkout of this
+pull request cannot re-run, and where it ran: a warehouse, a scratch harness
+that is not committed, a credential. Such readings are welcome. Listed here,
+they tell a reviewer which claims rest on your word; the reviewer re-runs the
+rest.
+
+Keep this section even when nothing belongs in it, unlike the rule at the top:
+if every reading in this body re-runs from a clean checkout, say "none", since
+a deleted section reads the same as a forgotten one.
+-->
+
 ## Does the new control fire?
 
 <!--
@@ -71,6 +85,7 @@ Autoclose: none
 - [ ] Conventional commit subject (`feat:`, `fix:`, `test:`, `docs:`, `chore:`)
 - [ ] Branched off `main`, not committed to it directly
 - [ ] No decision restated rather than cited
+- [ ] Every issue or pull request this body says was filed separately is linked: `#N` here, `owner/repo#N` or a full link elsewhere
 - [ ] Any new control ships with proof it can fire and proof it can go quiet
 - [ ] Exactly one `deploy:` label, required; a `review:` clock, applied by hand and read by no guard.
-- [ ] In this repository that label is `deploy:none`, or `deploy:by-hand` for a pull request that owes a tag after it merges: publication runs on a `v*` tag, never on a merge (`AGENTS.md`, *Change workflow*). Applying a label takes triage access, so from a fork leave both boxes unticked: `pr-hygiene`'s label step reads red until the maintainer labels the pull request, and that red is expected (`CONTRIBUTING.md`, *Opening a pull request*).
+- [ ] In this repository that label is `deploy:none`, or `deploy:by-hand` for a pull request that owes a tag after it merges: publication runs on a `v*` tag, never on a merge (`AGENTS.md`, *Change workflow*). Applying a label takes triage access, so from a fork without write access here leave both boxes unticked: `pr-hygiene`'s label step reads red until the maintainer labels the pull request, and that red is expected. A collaborator with write access applies both labels (`CONTRIBUTING.md`, *Opening a pull request*).

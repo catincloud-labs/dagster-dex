@@ -30,6 +30,81 @@ if you depend on the contract.
   both kinds of byte. This change touches that test and this changelog and
   nothing else, so the package, its seam, its engine floor and the tested pin
   do not change.
+- **A composite key listing something other than a column name was read as a
+  key on its names alone** (#131). A `combination_of_columns` of `[a, 1]`
+  read as a key on `a`, and one of `[a, b, 1]` as a key on `(a, b)`: a key on
+  fewer columns than the test checks, which claims more than the test does.
+  That held beside the test's name, and since 0.6.5 under `arguments:` and
+  beside a `test_name:` too. exmergo-dex-core's schema-YAML reader takes a
+  composite only from a list of two or more columns that are all strings, so
+  it reads no key from either. Such a list now reads as no key here, and is
+  noted. **A project with such a list will now report one key fewer, and a
+  note it did not carry**, through `declarations()` and on to dex's
+  `definitions()`. A list of one name, `[a]`, still reads as a key on `a`,
+  where that reader reads none: the owner kept it here while exmergo/dex is
+  asked. A list holding an empty string is not covered, because an empty
+  string is a string: `[a, b, '']` still reads as a key on `(a, b)`, where
+  that reader reads `(a, b, '')`. That is not ruled.
+- **A `relationships` test whose `to:` is a bare model name was read as a
+  join to that model** (#131). `to: customers` read as a join to `customers`,
+  beside the test's name, and since 0.6.5 under `arguments:` and beside a
+  `test_name:` too. dbt keeps a bare `to:` as the string and draws no edge to
+  it, and exmergo-dex-core's schema-YAML reader takes `to:` only as a `ref()`
+  or a `source()`, so it reads no join. Such a test now reads as no join here,
+  with the note every other unread target gets: that the relationship names
+  no resolvable model and column. **A project whose `to:` names a model bare
+  will now report one join fewer, and that note**, through `declarations()`
+  and on to dex's `definitions()`. A semantic model's `model:` is read as it
+  was, a bare name included.
+- **A `relationships` test whose `to:` is a `source()` was read as no join**
+  (#131), and noted as naming no resolvable model and column. exmergo-dex-core's
+  schema-YAML reader reads `to: source('s', 't')` as a join to `s.t`, the
+  source and its table joined by a dot: beside the test's name at every
+  release #131 measured, and under `arguments:` from 1.13.1 (exmergo/dex#566).
+  dbt makes the test depend on that source. The same join is now read here, in
+  each form this parser reads, so a join's `to_model` can name a source rather
+  than a model the project builds, and `DeclaredJoin`'s docstring says so.
+  **A project whose `to:` names a source will now report a join it did not
+  report before, and one note fewer**, through `declarations()` and on to
+  dex's `definitions()`.
+- **A model declaring two composite keys was read as declaring the first
+  alone** (#131). dbt runs both tests, and exmergo-dex-core's schema-YAML
+  reader reads both. `maintain reconcile` reads the grain through
+  `definitions()`, so with the second unread it would propose a column-level
+  `unique` on one of its columns, a key the project never declared, where it
+  declines that edit when the grain is read; #117's entry under 0.6.4 is the
+  same defect for the prefixed spelling. Every composite key on a model is
+  now read, in order. One set of columns is read once, compared without
+  order or case as that reader compares them, whether it is written again in
+  the same entry or in another entry or file that declares the model, as
+  that reader reads across files. A column-level `unique` in the same entry
+  is still dropped with the note that the composite wins. **A project
+  with a model declaring two composite keys will now report a key it did not
+  report before**, through `declarations()` and on to dex's `definitions()`.
+- **A column's `unique` written twice was read as two keys on that column**
+  (#131). Written bare twice, it was read so in 0.6.4 too, on a file dbt
+  refuses. Written once bare and once by `test_name:`, or twice by
+  `test_name:`, it was read so since 0.6.5, on a file dbt parses into two
+  tests. exmergo-dex-core's schema-YAML reader reads one key per model and
+  column, and 0.6.4 already read a `unique` written under both `tests:` and
+  `data_tests:` once. A column's `unique` is now one key however often it is
+  written: on a column listed twice, or in another entry or file that
+  declares the model, included. **A project that writes a
+  column's `unique` twice will now report one key where it reported two**,
+  through `declarations()` and on to dex's `definitions()`.
+- **A test entry dbt refuses for its shape was skipped with no note** (#131).
+  A test written as a mapping of two or more keys with no string
+  `test_name:` naming it, such as a test with its `config:` beside its name
+  rather than inside it, or a `test_name:` that is not a string beside the
+  test's own key, makes dbt refuse the project. The parser skipped it silently, against this
+  module's rule that input it skips is noted. exmergo-dex-core's schema-YAML
+  reader reads the test among the keys, on purpose (exmergo/dex#566), so the
+  two still disagree here: the owner kept the skip while exmergo/dex is
+  asked. The entry is still skipped, and now noted once with its keys. A
+  mapping of one key, or an empty one, reads as it did. **Nothing
+  a project declares changes; it gains a note for each such entry**, through
+  `declarations()` and on to dex's `definitions()`, where `maintain
+  reconcile` carries notes into its warnings.
 - **The changelog test passed a version heading the release job cannot find**
   (`tests/test_packaging.py`, #136). It asserted the substring
   `## <version>`, where the `release` job in `publish.yml` greps for a line
