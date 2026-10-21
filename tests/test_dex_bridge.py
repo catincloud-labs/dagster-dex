@@ -1509,17 +1509,51 @@ def _engine_minor() -> tuple[int, int]:
     return int(major), int(minor)
 
 
-def _apply_a_unique_test(tmp_path, declaration=COMMENTED_DECLARATION, column="is_weekend"):
-    """Reconcile a lost grain on `column`, then plan and apply the edit through
-    this format, and return the declaration as it reads afterwards."""
+def _reconcile_and_apply(tmp_path, declaration, finding):
+    """Reconcile one finding over `declaration` with no profiled baseline, then
+    plan and apply whatever edit came back through this format.
+
+    Returns the proposals and the declaration as it reads afterwards, which is
+    the original when reconcile produced no edit: below 1.10.0 a schema finding
+    with no baseline is advisory, and that is one of the arms under test rather
+    than a reason to stop.
+    """
 
     from exmergo_dex_core.maintain import reconcile
-    from exmergo_dex_core.maintain.drift import DriftFinding
     from exmergo_dex_core.maintain.snapshot import Snapshot
     from exmergo_dex_core.storage.memory import MemoryStore
     from exmergo_dex_core.transform import plans
 
     project = _editable(tmp_path, {"dim_date.yml": declaration})
+    proposals, edits, _warnings = reconcile.build(
+        [finding],
+        Snapshot(created_at="2026-01-01T00:00:00Z"),
+        None,
+        project.load(),
+        placement=project,
+    )
+    if edits:
+        store = MemoryStore()
+        plan, _diffs, _plan_warnings = plans.plan(
+            "reconcile one finding",
+            edits,
+            repo_root=tmp_path,
+            store=store,
+            project_format=project,
+        )
+        result = plans.apply(plan.plan_id, repo_root=tmp_path, store=store, project_format=project)
+        assert result.written == ["declarations/dim_date.yml"], result
+        assert not result.conflicts, result
+
+    return proposals, (tmp_path / "declarations" / "dim_date.yml").read_text(encoding="utf-8")
+
+
+def _apply_a_unique_test(tmp_path, declaration=COMMENTED_DECLARATION, column="is_weekend"):
+    """Reconcile a lost grain on `column`, then plan and apply the edit through
+    this format, and return the declaration as it reads afterwards."""
+
+    from exmergo_dex_core.maintain.drift import DriftFinding
+
     finding = DriftFinding(
         axis="grain",
         code="key_lost_uniqueness",
@@ -1527,28 +1561,9 @@ def _apply_a_unique_test(tmp_path, declaration=COMMENTED_DECLARATION, column="is
         column=column,
         detail="the declared grain no longer holds",
     )
-    _proposals, edits, warnings = reconcile.build(
-        [finding],
-        Snapshot(created_at="2026-01-01T00:00:00Z"),
-        None,
-        project.load(),
-        placement=project,
-    )
-    assert edits, f"reconcile produced no edit for the grain finding; warnings: {warnings!r}"
-
-    store = MemoryStore()
-    plan, _diffs, _warnings = plans.plan(
-        "add the unique test the grain lost",
-        edits,
-        repo_root=tmp_path,
-        store=store,
-        project_format=project,
-    )
-    result = plans.apply(plan.plan_id, repo_root=tmp_path, store=store, project_format=project)
-    assert result.written == ["declarations/dim_date.yml"], result
-    assert not result.conflicts, result
-
-    return (tmp_path / "declarations" / "dim_date.yml").read_text(encoding="utf-8")
+    proposals, after = _reconcile_and_apply(tmp_path, declaration, finding)
+    assert after != declaration, f"reconcile produced no edit for the grain finding; proposals: {proposals!r}"
+    return after
 
 
 class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
@@ -1617,6 +1632,134 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
                 f"every comment here and lost {lost}. If it lost none, SPLICE_FROM is stale "
                 "and that warning is dead one version earlier than recorded."
             )
+
+
+#: A declaration with a comment on every line a schema edit can replace, and
+#: on lines none of them touches. The edit that replaces a line takes that
+#: line's comment with it, and that one comment is the only loss a splice may
+#: have. So each case below names its loss, and a reprint, which loses all
+#: seven, reads differently from a splice, which loses one or none (#88, *How
+#: we would know it worked*).
+#:
+#: No full-line comment sits directly above a column a case drops. Whether one
+#: goes with the column is upstream's decision and is pinned in upstream's own
+#: suite, so a fixture here that leaned on it would be a second copy of that
+#: pin, and one that went red on the release changing it.
+COMMENTED_FOR_SCHEMA_DRIFT = """# dim_date: the calendar spine. Hand-written, version-controlled.
+version: 2
+models:
+  - name: dim_date  # one row per day
+    columns:
+      - name: date
+        tests:
+          - unique  # the grain
+          - not_null  # never empty
+      - name: is_weekend  # boolean
+        tests: [not_null]  # flow list
+      - name: fiscal_year  # last column
+# trailing comment: keep me
+"""
+
+
+def _schema_finding(code, column, **data):
+    from exmergo_dex_core.maintain.drift import DriftFinding
+
+    return DriftFinding(
+        axis="schema",
+        code=code,
+        identifier="warehouse.analytics.dim_date",
+        column=column,
+        detail=f"{code} on {column}",
+        data=data,
+    )
+
+
+#: (code, column, the finding's data, the comments the splice replaces).
+#: Measured at 1.15.1 before this was written down, and at 1.8.0 and 1.9.2
+#: for the other arm, where every case is advisory.
+SCHEMA_SPLICES = [
+    pytest.param("column_added", "fiscal_week", {"data_type": "INTEGER"}, [], id="added"),
+    pytest.param("column_dropped", "fiscal_year", {}, ["# last column"], id="dropped"),
+    pytest.param(
+        "nullability_changed",
+        "is_weekend",
+        {"nullable_after": True},
+        ["# flow list"],
+        id="nullable-flow-list",
+    ),
+    pytest.param(
+        "nullability_changed",
+        "date",
+        {"nullable_after": True},
+        ["# never empty"],
+        id="nullable-block-list",
+    ),
+    pytest.param(
+        "nullability_changed",
+        "fiscal_year",
+        {"nullable_after": False},
+        [],
+        id="not-null",
+    ),
+]
+
+
+class TestASchemaEditLosesOnlyTheCommentsOnTheLinesItReplaces:
+    """#88's falsifier, for the three schema codes upstream splices.
+
+    The class above shows the splice with an insertion, which loses nothing, so
+    it cannot tell a splice from a reprint that happened to keep the comments.
+    An edit that REPLACES bytes can: it must lose exactly the comments on the
+    lines it replaces and keep every other one, in order.
+
+    Two arms by installed engine minor and no skip, as above. From 1.10.0 each
+    code reaches `maintain/declare.py` and is spliced. Below it the same finding
+    with no profiled baseline is advisory and produces no edit, so the file must
+    come back unchanged, which is also what the drill could and could not show.
+    """
+
+    @pytest.mark.parametrize(("code", "column", "data", "expected"), SCHEMA_SPLICES)
+    def test_the_only_comments_lost_are_the_ones_on_the_replaced_lines(
+        self, tmp_path, code, column, data, expected
+    ):
+        import importlib.metadata as md
+
+        proposals, after = _reconcile_and_apply(
+            tmp_path, COMMENTED_FOR_SCHEMA_DRIFT, _schema_finding(code, column, **data)
+        )
+        comments = re.findall(r"#[^\n]*", COMMENTED_FOR_SCHEMA_DRIFT)
+        lost = [comment for comment in comments if comment not in after]
+        engine = md.version("exmergo-dex-core")
+
+        if _engine_minor() >= SPLICE_FROM:
+            assert after != COMMENTED_FOR_SCHEMA_DRIFT, (
+                f"dex-core {engine} splices {code} into a declaration since 1.10.0, "
+                "yet applying the reconcile plan left the file unchanged"
+            )
+            assert lost == expected, (
+                f"dex-core {engine}: {code} on {column} should lose exactly {expected}, "
+                f"the comments on the lines it replaces, and lost {lost}:\n{after}"
+            )
+            # Every line the edit did not replace is still there, in order. The
+            # replaced lines are the ones carrying an expected loss, plus the
+            # dropped column's own entry; `in` on an iterator is the order check.
+            replaced = {
+                line
+                for line in COMMENTED_FOR_SCHEMA_DRIFT.splitlines()
+                if any(comment in line for comment in expected)
+            }
+            remaining = iter(after.splitlines())
+            for line in COMMENTED_FOR_SCHEMA_DRIFT.splitlines():
+                if line in replaced:
+                    continue
+                assert line in remaining, f"the original line {line!r} is gone or reordered:\n{after}"
+        else:
+            assert after == COMMENTED_FOR_SCHEMA_DRIFT, (
+                f"dex-core {engine} predates the splice, where {code} with no profiled "
+                f"baseline is advisory and writes nothing, yet the file changed:\n{after}"
+            )
+            assert [p.kind for p in proposals] == ["advisory"], proposals
+            assert "no profiled baseline" in proposals[0].action, proposals[0].action
 
 
 #: A declaration with no test list anywhere in it. dex-core 1.12.7 gives such
