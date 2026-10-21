@@ -44,7 +44,7 @@ import pytest
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
 
-def _tracked_files() -> list[str]:
+def _tracked_files(repo: pathlib.Path = REPO) -> list[str]:
     """Ask git, rather than walking the tree.
 
     A walk would pick up `.venv`, build artifacts and anything else untracked,
@@ -53,7 +53,7 @@ def _tracked_files() -> list[str]:
     """
 
     out = subprocess.run(
-        ["git", "-C", str(REPO), "ls-files"],
+        ["git", "-C", str(repo), "ls-files"],
         capture_output=True,
         text=True,
         check=True,
@@ -235,10 +235,13 @@ def _plant(count: int, planted: dict[int, bytes]) -> bytes:
 
 
 # The four arms of #128, each placing its bytes where that issue's reading put
-# them. Bytes above 0x7F are written as escapes, so this file stays ASCII.
+# them, and a fifth that its cold review asked for. Bytes above 0x7F are
+# written as escapes, so this file stays ASCII.
 # Arm 3: fifteen lines of 20 bytes (300), then 14 bytes into line 16: byte 314.
 # Arm 4: two lines (40), a 23-byte line 3 (63), 33 more lines (723), then 34
 # bytes into line 37: byte 757.
+# Arm 5: fifteen lines (300), then 14 bytes into line 16 the three bytes of a
+# U+2014 at 314 to 316, then " and", then a lone byte at 321.
 _ARM_ASCII = _plant(20, {})
 _ARM_VALID = _plant(20, {16: b"line 16: plain\xe2\x80\x94 text\n"})
 _ARM_LONE = _plant(20, {16: b"line 16: plain\x97 text\n"})
@@ -249,6 +252,7 @@ _ARM_BOTH = _plant(
         37: b"line 37: plain text, then a byte: \x97\n",
     },
 )
+_ARM_MIXED = _plant(20, {16: b"line 16: plain\xe2\x80\x94 and\x97 text\n"})
 
 
 @pytest.mark.parametrize(
@@ -269,6 +273,14 @@ _ARM_BOTH = _plant(
             ],
             id="4-valid-then-lone",
         ),
+        pytest.param(
+            _ARM_MIXED,
+            [
+                "plant.txt:16: 0xE2 at byte 314, 0x80 at byte 315, "
+                "0x94 at byte 316, 0x97 at byte 321 (not UTF-8)"
+            ],
+            id="5-mixed-line",
+        ),
     ],
 )
 def test_the_file_check_reports_every_arm(tmp_path, data, expected):
@@ -282,7 +294,10 @@ def test_the_file_check_reports_every_arm(tmp_path, data, expected):
     Arm 3 is the em dash as cp1252 writes it, a lone 0x97, which is the
     likeliest way one reaches this tree from a Windows editor or clipboard.
     Arm 4 is why the check reads line by line: one undecodable line late in a
-    file must not hide a valid U+2014 earlier in it.
+    file must not hide a valid U+2014 earlier in it. Arm 5 is a line that holds
+    both, and pins two things: every byte above 0x7F on an undecodable line is
+    listed, not just the first, and a valid U+2014 on such a line is listed as
+    its three bytes, because "(not UTF-8)" describes the line.
     """
 
     path = tmp_path / "plant.txt"
@@ -306,6 +321,9 @@ def test_the_arms_put_each_byte_where_its_offset_says():
     assert _ARM_BOTH[: _ARM_BOTH.index(b"\xe2\x80\x94")].count(b"\n") == 2
     assert _ARM_BOTH.index(b"\x97") == 757
     assert _ARM_BOTH[:757].count(b"\n") == 36
+    assert _ARM_MIXED.index(b"\xe2\x80\x94") == 314
+    assert _ARM_MIXED.index(b"\x97") == 321
+    assert _ARM_MIXED[:321].count(b"\n") == 15
 
 
 def test_an_unreadable_tracked_file_is_an_offender(tmp_path):
@@ -319,4 +337,25 @@ def test_an_unreadable_tracked_file_is_an_offender(tmp_path):
     gone = tmp_path / "gone.txt"
     assert _offenders_in("gone.txt", gone) == [
         "gone.txt: unreadable (FileNotFoundError)"
+    ]
+
+
+def test_a_name_git_would_quote_is_listed_as_it_is(tmp_path):
+    """A tracked file whose name holds a byte above 0x7F is read, not lost.
+
+    By default `git ls-files` quotes such a name and escapes its bytes, which
+    names no file on disk, so the file used to be skipped as unreadable and its
+    contents never read. The name is built with `chr`, so this file stays
+    ASCII. Whether a non-ASCII name is itself an offender is a separate
+    question this does not answer.
+    """
+
+    name = f"caf{chr(0xE9)}.txt"
+    (tmp_path / name).write_bytes(b"line \x97\n")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", name], check=True)
+    listed = _tracked_files(tmp_path)
+    assert listed == [name]
+    assert [o for n in listed for o in _offenders_in(n, tmp_path / n)] == [
+        f"{name}:1: 0x97 at byte 5 (not UTF-8)"
     ]
