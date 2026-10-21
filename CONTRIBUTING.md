@@ -236,9 +236,11 @@ The dogfood runs in #135 were labelled this way.
 Each requested change carries a priority:
 
 - **P1:** the test can pass on a wrong result.
-- **P2:** a statement that would be false, or permanent, once merged. A commit
-  subject is one: the maintainer merges with a merge commit, never a squash,
-  so a subject lands on `main` as written.
+- **P2:** a statement that would be false, or permanent, once merged. Your
+  pull request's title and body are each one: the maintainer merges your pull
+  request as a squash, so its title, its number appended as `(#N)`, lands on
+  `main` as the commit's subject and its body as the commit's message, as
+  written. The commit subjects on your branch do not land on `main`.
 - **P3:** clarity.
 
 The changes come in two groups: what must change before approval, and what is

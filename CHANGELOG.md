@@ -779,3 +779,23 @@ as a live fact - `pyproject.toml` for the published range, the workflows and
 `AGENTS.md` for the tested pin. The measured range under 0.3.0 above is a
 different kind of claim: it names the versions a test was actually run against on
 a date, which is a result rather than a pin, and no guard has to keep it current.
+
+## How this section read before
+
+Every tracked document in this repository states the present. A sentence read
+dead is rewritten where it stands, with no marker left beside it, and the text
+it replaced moves here verbatim, under the file and section it came from, with
+the date it was read dead and what it was read against.
+
+### `CONTRIBUTING.md`, *What review looks like*, the P2 example
+
+Read dead on 2026-10-21, against the maintainer's ruling of that day that an
+outside contributor's pull request is merged as a squash, and against
+`65a9d2b`, the squash of #135, which has one parent and carries none of that
+branch's commits onto `main`. Part of #144. It read:
+
+```markdown
+- **P2:** a statement that would be false, or permanent, once merged. A commit
+  subject is one: the maintainer merges with a merge commit, never a squash,
+  so a subject lands on `main` as written.
+```
