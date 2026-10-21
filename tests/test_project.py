@@ -511,6 +511,15 @@ def a_date_column_testing(key: str, test: str) -> str:
     )
 
 
+#: The note a test entry dbt refuses for its shape gets, whole: where it sits,
+#: then its keys, sorted. Defined here because the first test to expect it is
+#: in the next class; `TestATestEntryDbtRefuses` says why it exists.
+REFUSED = (
+    "{} lists a test as a mapping of several keys ({}) with no string "
+    "`test_name`, which dbt refuses; skipped"
+)
+
+
 class TestATestReadTheWayDbtReadsIt:
     """#119's other rows: the same upstream change, reaching past the composite
     key. From 1.13.1, exmergo-dex-core's schema-YAML reader reads a
@@ -661,7 +670,9 @@ class TestATestReadTheWayDbtReadsIt:
         """dbt refuses such an entry, so it reaches here only in a broken file,
         and the module's rule is that a broken file does not raise. The entry
         has more than one key, so it reads as nothing, as it does in dex-core's
-        reader. A fix that takes `test_name:` whatever its type raises here."""
+        reader. A fix that takes `test_name:` whatever its type raises here.
+        Since #131's (a) the skip is noted, as `TestATestEntryDbtRefuses`
+        below says."""
 
         text = (
             "models:\n"
@@ -674,7 +685,9 @@ class TestATestReadTheWayDbtReadsIt:
         )
         declarations = a_project(declaration_sources={"f": text}).declarations()
         assert declarations.declared_keys == ()
-        assert declarations.notes == ()
+        assert declarations.notes == (
+            REFUSED.format("'fact_orders'", "arguments, name, test_name"),
+        )
 
     def test_an_arguments_that_is_not_a_mapping_is_ignored(self):
         """The inputs beside the test's name are read, as dex-core's reader
@@ -1067,6 +1080,81 @@ class TestUniqueWrittenTwiceOnOneColumn:
             DeclaredKey(model="fact_orders", columns=("order_id",), source="unique"),
         )
         assert declarations.notes == ()
+
+
+class TestATestEntryDbtRefuses:
+    """#131's (a): a test written as a mapping of more than one key with no
+    string `test_name:` naming it was skipped with no note. The common shape
+    is a test's `config:` written beside its name rather than inside it. dbt
+    refuses the project over such an entry: "test definition dictionary must
+    have exactly one key", or, for a `test_name:` that is not a string, "test
+    name must be a str" (#131, read from dbt-core 1.12.6). exmergo-dex-core's
+    schema-YAML reader reads the test among the keys, on purpose
+    (exmergo/dex#566 keeps it lenient about entries dbt itself refuses). The
+    owner ruled the skip kept here, with a note, while exmergo/dex is asked.
+    The note is what the module's first rule asks of input it skips.
+
+    Each arm read nothing before and reads nothing after; the note is what is
+    red. The test in the class above whose `test_name:` is not a string is a
+    fifth arm. The controls are the classes above: an entry of one key, and
+    one named by a string `test_name:`, each asserted to carry no note.
+    """
+
+    @pytest.mark.parametrize(
+        "text, where, keys",
+        [
+            (
+                "models:\n"
+                "  - name: fact_orders\n"
+                "    data_tests:\n"
+                "      - dbt_utils.unique_combination_of_columns:\n"
+                "          combination_of_columns: [date, provider]\n"
+                "        config:\n"
+                "          severity: warn\n",
+                "'fact_orders'",
+                "config, dbt_utils.unique_combination_of_columns",
+            ),
+            (
+                a_date_column_testing(
+                    "data_tests",
+                    "          - unique:\n"
+                    "            config:\n"
+                    "              where: \"date > '2026-01-01'\"\n",
+                ),
+                "fact_orders.date",
+                "config, unique",
+            ),
+            (
+                a_date_column_testing(
+                    "data_tests",
+                    "          - relationships:\n"
+                    "              to: ref('dim_date')\n"
+                    "              field: date\n"
+                    "            config:\n"
+                    "              severity: warn\n",
+                ),
+                "fact_orders.date",
+                "config, relationships",
+            ),
+            (
+                "models:\n"
+                "  - name: fact_orders\n"
+                "    data_tests:\n"
+                "      - name: fact_orders_grain\n"
+                "        test_name: 5\n"
+                "        dbt_utils.unique_combination_of_columns:\n"
+                "          combination_of_columns: [date, provider]\n",
+                "'fact_orders'",
+                "dbt_utils.unique_combination_of_columns, name, test_name",
+            ),
+        ],
+        ids=["composite-and-config", "unique-and-config", "relationship-and-config", "test_name-5"],
+    )
+    def test_the_entry_is_skipped_and_says_so(self, text, where, keys):
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.declared_joins == ()
+        assert declarations.notes == (REFUSED.format(where, keys),)
 
 
 class TestDeclarationsIsMemoized:
