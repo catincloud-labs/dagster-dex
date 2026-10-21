@@ -35,6 +35,7 @@ that case would be a mechanism whose every future use is the wrong answer.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import sys
@@ -50,15 +51,19 @@ def _tracked_files(repo: pathlib.Path = REPO) -> list[str]:
     A walk would pick up `.venv`, build artifacts and anything else untracked,
     and would then be asserting something about a working directory rather than
     about what this repository actually publishes.
+
+    `-z` makes git print each name as it is stored. Without it, git quotes a
+    name holding a byte above 0x7F, a quote, a backslash or a control
+    character, and the quoted string names no file on disk, so the file it
+    stands for would never be read.
     """
 
     out = subprocess.run(
-        ["git", "-C", str(repo), "ls-files"],
+        ["git", "-C", str(repo), "ls-files", "-z"],
         capture_output=True,
-        text=True,
         check=True,
     )
-    return [line for line in out.stdout.split("\n") if line]
+    return [os.fsdecode(name) for name in out.stdout.split(b"\0") if name]
 
 
 def _text_files() -> list[str]:
@@ -329,9 +334,12 @@ def test_the_arms_put_each_byte_where_its_offset_says():
 def test_an_unreadable_tracked_file_is_an_offender(tmp_path):
     """A file the check cannot read is not a file the check found clean.
 
-    `git ls-files` lists the index, so a tracked file deleted from the working
-    tree and not yet staged with `git rm` is listed and cannot be read. That is
-    a desk state, not a CI one, and the remedy is to stage the deletion.
+    `git ls-files` lists the index, not the working tree, so it can list a
+    path that does not read as a file. Two are known. A tracked file deleted
+    and not yet staged with `git rm` is one, at a desk, and staging the
+    deletion is its remedy. A submodule is the other, in CI as anywhere: its
+    path is a directory. None is tracked here, and adding one is a decision
+    this red would put in front of a reviewer rather than pass in silence.
     """
 
     gone = tmp_path / "gone.txt"
