@@ -77,9 +77,9 @@ def _relationship_target(text: object) -> str | None:
     """A ``relationships`` test's ``to:``: ``ref('dim_date')`` -> ``dim_date``,
     and ``source('erp', 'calendar')`` -> ``erp.calendar``.
 
-    Read as exmergo-dex-core's schema-YAML reader reads it
-    (``_parse_relation_ref`` in ``exmergo_dex_core/dbt_project.py``, read in
-    1.15.2), which the owner ruled on #131:
+    These two forms are read as exmergo-dex-core's schema-YAML reader reads
+    them (``_parse_relation_ref`` in ``exmergo_dex_core/dbt_project.py``,
+    read in 1.15.2), which the owner ruled on #131:
 
     - **A source is a target, named ``<source>.<table>``**, the name that
       reader gives it. So the join's ``to_model`` names a source, not a model
@@ -91,7 +91,11 @@ def _relationship_target(text: object) -> str | None:
       :func:`_referenced_model`, which a semantic model's ``model:`` still
       uses.
 
-    Anything else is ``None``, and the caller notes it.
+    Anything else is ``None``, and the caller notes it. That includes a
+    ``ref()`` with a second argument, ``ref('m', v=1)`` or
+    ``ref('pkg', 'm')``: ``_REF`` wants a ``)`` after the first argument, and
+    that reader does not, so it reads a join to the first argument. That
+    difference is older than #131 and not among its rows.
     """
 
     if not isinstance(text, str):
@@ -135,10 +139,12 @@ def _test_names(tests: Any, where: str, notes: list[str]) -> list[tuple[str, Any
             pairs.append((str(name), payload))
         elif isinstance(entry, dict) and entry:
             keys = ", ".join(sorted(str(key) for key in entry))
-            notes.append(
+            note = (
                 f"{where} lists a test as a mapping of several keys ({keys}) with "
                 "no string `test_name`, which dbt refuses; skipped"
             )
+            if note not in notes:
+                notes.append(note)
     return pairs
 
 
@@ -309,7 +315,10 @@ def _composite_keys(model: str, entry: dict[str, Any], notes: list[str]) -> list
     test does. exmergo-dex-core's reader takes a composite only from a list
     whose columns are all strings, and reads none from this one. A single
     name, ``[a]``, is still read as a key on that column, where that reader
-    reads none: the owner kept it here while exmergo/dex is asked.
+    reads none: the owner kept it here while exmergo/dex is asked. An empty
+    string is a string, so this check passes it, and ``named`` drops it:
+    ``[a, b, '']`` reads as ``(a, b)``, where that reader reads
+    ``(a, b, '')``. That is not ruled.
     """
 
     found: list[DeclaredKey] = []

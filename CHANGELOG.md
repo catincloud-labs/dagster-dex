@@ -42,7 +42,9 @@ if you depend on the contract.
   note it did not carry**, through `declarations()` and on to dex's
   `definitions()`. A list of one name, `[a]`, still reads as a key on `a`,
   where that reader reads none: the owner kept it here while exmergo/dex is
-  asked.
+  asked. A list holding an empty string is not covered, because an empty
+  string is a string: `[a, b, '']` still reads as a key on `(a, b)`, where
+  that reader reads `(a, b, '')`. That is not ruled.
 - **A `relationships` test whose `to:` is a bare model name was read as a
   join to that model** (#131). `to: customers` read as a join to `customers`,
   beside the test's name, and since 0.6.5 under `arguments:` and beside a
@@ -91,14 +93,15 @@ if you depend on the contract.
   column's `unique` twice will now report one key where it reported two**,
   through `declarations()` and on to dex's `definitions()`.
 - **A test entry dbt refuses for its shape was skipped with no note** (#131).
-  A test written as a mapping of more than one key with no string
+  A test written as a mapping of two or more keys with no string
   `test_name:` naming it, such as a test with its `config:` beside its name
-  rather than inside it, or with a `test_name:` that is not a string, makes
-  dbt refuse the project. The parser skipped it silently, against this
+  rather than inside it, or a `test_name:` that is not a string beside the
+  test's own key, makes dbt refuse the project. The parser skipped it silently, against this
   module's rule that input it skips is noted. exmergo-dex-core's schema-YAML
   reader reads the test among the keys, on purpose (exmergo/dex#566), so the
   two still disagree here: the owner kept the skip while exmergo/dex is
-  asked. The entry is still skipped, and now noted with its keys. **Nothing
+  asked. The entry is still skipped, and now noted once with its keys. A
+  mapping of one key, or an empty one, reads as it did. **Nothing
   a project declares changes; it gains a note for each such entry**, through
   `declarations()` and on to dex's `definitions()`, where `maintain
   reconcile` carries notes into its warnings.
