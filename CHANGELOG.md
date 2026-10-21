@@ -12,7 +12,38 @@ thinking.
 explicitly, because that is the reason a consumer opens this file. Pin the minor
 if you depend on the contract.
 
-## Unreleased
+## 0.6.6 - 2026-10-21
+
+Six fixes to the declaration parser (#131), and two to tests (#128, #136) that
+reach neither the wheel nor a consumer. Every entry is a fix. Under `src/`,
+only `declarations.py`, the docstring of `DeclaredJoin` in `model.py` and the
+version string changed, every name added or removed in `declarations.py` is
+private, and `pyproject.toml` moved only its version, so the seam, the engine
+floor and the tested pin are where 0.6.5 left them. That was measured at the
+bump, and anyone can re-run it as `git diff v0.6.5..v0.6.6 -- src/
+pyproject.toml`. A patch exists because an installed copy sees a fix only as a
+new version. No public name or signature changed, but five of the parser
+fixes change the keys or joins a project reports and the sixth adds a note, and
+each entry says so in bold.
+
+**One change argues for a minor, and does not decide it.** A join's
+`to_model` can now name a source, as `<source>.<table>`, where 0.6.5 read a
+`relationships` test whose `to:` is a `source()` as no join (that test's entry
+below). A consumer that took `to_model` to name a model now meets one naming a
+table the project does not build, which `DeclaredJoin`'s docstring now says.
+It is not a minor here: the field is a string as it was, the engine floor did
+not move (each floor raise is why 0.5.0 and 0.6.0 were minors, not patches),
+the new value is reached only from a declaration 0.6.5 already noted as naming
+no resolvable model and column, and it is the name exmergo-dex-core's own
+schema-YAML reader gives the same declaration.
+
+Of the three disagreements with exmergo-dex-core's reader that 0.6.5's lead
+names, two now read as that reader reads them: a bare model name in `to:`, and
+a column's `unique` written twice. Of the third, a `combination_of_columns` of
+`[a, 1]` or `[a, b, 1]` now reads as that reader reads it, and `[a]` still
+reads as a key on `a`, kept while exmergo/dex is asked (exmergo/dex#768). A
+test entry dbt refuses for its keys, which that reader reads, is still
+skipped, now with a note, kept the same way (exmergo/dex#767).
 
 ### Fixed
 
