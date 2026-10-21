@@ -511,6 +511,15 @@ def a_date_column_testing(key: str, test: str) -> str:
     )
 
 
+#: The note a test entry dbt refuses for its shape gets, whole: where it sits,
+#: then its keys, sorted. Defined here because the first test to expect it is
+#: in the next class; `TestATestEntryDbtRefuses` says why it exists.
+REFUSED = (
+    "{} lists a test as a mapping of several keys ({}) with no string "
+    "`test_name`, which dbt refuses; skipped"
+)
+
+
 class TestATestReadTheWayDbtReadsIt:
     """#119's other rows: the same upstream change, reaching past the composite
     key. From 1.13.1, exmergo-dex-core's schema-YAML reader reads a
@@ -661,7 +670,9 @@ class TestATestReadTheWayDbtReadsIt:
         """dbt refuses such an entry, so it reaches here only in a broken file,
         and the module's rule is that a broken file does not raise. The entry
         has more than one key, so it reads as nothing, as it does in dex-core's
-        reader. A fix that takes `test_name:` whatever its type raises here."""
+        reader. A fix that takes `test_name:` whatever its type raises here.
+        Since #131's (a) the skip is noted, as `TestATestEntryDbtRefuses`
+        below says."""
 
         text = (
             "models:\n"
@@ -674,7 +685,9 @@ class TestATestReadTheWayDbtReadsIt:
         )
         declarations = a_project(declaration_sources={"f": text}).declarations()
         assert declarations.declared_keys == ()
-        assert declarations.notes == ()
+        assert declarations.notes == (
+            REFUSED.format("'fact_orders'", "arguments, name, test_name"),
+        )
 
     def test_an_arguments_that_is_not_a_mapping_is_ignored(self):
         """The inputs beside the test's name are read, as dex-core's reader
@@ -693,6 +706,558 @@ class TestATestReadTheWayDbtReadsIt:
         assert declarations.declared_keys == (
             DeclaredKey(model="fact_orders", columns=("date", "provider"), source="combination"),
         )
+        assert declarations.notes == ()
+
+
+#: The three places dbt reads a test's inputs from, each a form the parser
+#: reads since 0.6.5: beside the test's name, under `arguments:`, and beside a
+#: `test_name:` that names the test.
+FORMS = ["beside", "arguments", "test_name"]
+
+
+def a_composite_listing(columns: str, form: str) -> str:
+    """A model-level composite key on `fact_orders` whose
+    `combination_of_columns` is ``columns``, a YAML flow list, written in
+    ``form``, one of :data:`FORMS`."""
+
+    if form == "test_name":
+        return (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    data_tests:\n"
+            "      - name: fact_orders_grain\n"
+            "        test_name: dbt_utils.unique_combination_of_columns\n"
+            f"        combination_of_columns: {columns}\n"
+        )
+    arguments = "          arguments:\n" if form == "arguments" else ""
+    pad = "  " if form == "arguments" else ""
+    return (
+        "models:\n"
+        "  - name: fact_orders\n"
+        "    data_tests:\n"
+        "      - dbt_utils.unique_combination_of_columns:\n"
+        f"{arguments}"
+        f"{pad}          combination_of_columns: {columns}\n"
+    )
+
+
+#: The note a composite key listing something other than a column name gets,
+#: whole.
+NOT_A_NAME = (
+    "'fact_orders' declares a composite grain listing something other than a "
+    "column name; ignored"
+)
+
+
+class TestACompositeKeyListingSomethingOtherThanAName:
+    """#131's (b), the mixed lists: a `combination_of_columns` holding a
+    non-string, such as `[date, 1]` or `[date, provider, 1]`, was read as a key
+    on its strings alone, on `date` or on `(date, provider)`. That is a key on
+    fewer columns than the test checks, so it claims more than the test does.
+    exmergo-dex-core's schema-YAML reader reads a composite only from a list of
+    two or more columns that are all strings (`_declared_from_yaml` in
+    `exmergo_dex_core/dbt_project.py`, read in 1.15.2), so it reads no key from
+    either list, in any form. The owner ruled this aligned here, with a note.
+
+    Each list is read in all three forms. The form beside the test's name read
+    the same way in 0.6.4, and the other two are the forms 0.6.5 added, so all
+    three go red. The lists of names are the controls, on the same builder:
+    `[date, provider]` reads the composite, and `[date]` keeps its key on
+    `date`, which the owner ruled kept here while exmergo/dex is asked. So a
+    red arm is the non-string, not the probe or the form.
+    """
+
+    @pytest.mark.parametrize("form", FORMS)
+    @pytest.mark.parametrize("columns", ["[date, 1]", "[date, provider, 1]"])
+    def test_a_list_holding_a_non_string_reads_no_key_and_says_so(self, columns, form):
+        declarations = a_project(
+            declaration_sources={"f": a_composite_listing(columns, form)}
+        ).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == (NOT_A_NAME,)
+
+    @pytest.mark.parametrize("form", FORMS)
+    @pytest.mark.parametrize(
+        "columns, key",
+        [("[date, provider]", ("date", "provider")), ("[date]", ("date",))],
+        ids=["two-names", "one-name"],
+    )
+    def test_a_list_of_names_reads_its_key(self, columns, key, form):
+        declarations = a_project(
+            declaration_sources={"f": a_composite_listing(columns, form)}
+        ).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=key, source="combination"),
+        )
+        assert declarations.notes == ()
+
+    def test_a_list_with_no_name_in_it_keeps_its_note(self):
+        """A guard rather than a red-first arm: `[1]` holds a non-string too,
+        and it read as no key before, with the note that it lists no usable
+        column. A fix that checks for a non-string first rewords that note."""
+
+        declarations = a_project(
+            declaration_sources={"f": a_composite_listing("[1]", "arguments")}
+        ).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == (
+            "'fact_orders' declares a composite grain with no usable columns; ignored",
+        )
+
+
+def a_relationship_to(target: str, form: str) -> str:
+    """`fact_orders.date` tested as a `relationships` join to ``target``, on
+    `date`, written in ``form``, one of :data:`FORMS`."""
+
+    if form == "test_name":
+        test = (
+            "          - name: date_is_a_dim_date\n"
+            "            test_name: relationships\n"
+            f"            to: {target}\n"
+            "            field: date\n"
+        )
+    else:
+        arguments = "              arguments:\n" if form == "arguments" else ""
+        pad = "  " if form == "arguments" else ""
+        test = (
+            "          - relationships:\n"
+            f"{arguments}"
+            f"{pad}              to: {target}\n"
+            f"{pad}              field: date\n"
+        )
+    return a_date_column_testing("data_tests", test)
+
+
+#: The note a relationship whose target is not read gets, whole.
+UNRESOLVED = (
+    "fact_orders.date declares a relationship that names no resolvable model "
+    "and column; ignored"
+)
+
+
+class TestARelationshipToABareName:
+    """#131's (c), the bare arm: a `relationships` test whose `to:` is a bare
+    model name, `to: dim_date`, was read as a join to `dim_date`. dbt draws no
+    edge to it: it keeps `to:` as the string and the test depends on its own
+    model alone (#131, measured with dbt-core 1.12.6). exmergo-dex-core's
+    schema-YAML reader takes `to:` only as a `ref()` or a `source()`
+    (`_parse_relation_ref` in `exmergo_dex_core/dbt_project.py`, read in
+    1.15.2), so it reads no join, and the owner ruled this aligned here. The
+    join is now unread, with the note every other unread target gets.
+
+    Each form goes red: the bare name beside the test's name was read the same
+    way in 0.6.4, and the other two are the forms 0.6.5 added. `ref('dim_date')`
+    in each form is the control, so a red arm is the bare name and not the
+    form.
+    """
+
+    @pytest.mark.parametrize("form", FORMS)
+    def test_a_bare_name_reads_no_join_and_says_so(self, form):
+        declarations = a_project(
+            declaration_sources={"f": a_relationship_to("dim_date", form)}
+        ).declarations()
+        assert declarations.declared_joins == ()
+        assert declarations.notes == (UNRESOLVED,)
+
+    @pytest.mark.parametrize("form", FORMS)
+    def test_a_ref_reads_the_join(self, form):
+        declarations = a_project(
+            declaration_sources={"f": a_relationship_to("ref('dim_date')", form)}
+        ).declarations()
+        assert declarations.declared_joins == (DATE_JOIN,)
+        assert declarations.notes == ()
+
+    def test_a_semantic_model_still_reads_a_bare_model_name(self):
+        """A guard rather than a red-first arm. A semantic model's `model:`
+        goes through the helper the relationship's `to:` went through, and a
+        bare name is read there. Aligning `to:` must not reach it, so a fix
+        that drops the bare arm from the shared helper goes red here."""
+
+        text = "semantic_models:\n  - name: revenue\n    model: mart_revenue\n"
+        declarations = a_project(semantic_sources={"s": text}).declarations()
+        assert [m.model for m in declarations.semantic_models] == ["mart_revenue"]
+
+
+#: `fact_orders.date` -> `erp.calendar.date`: a relationship to
+#: `source('erp', 'calendar')`, its target named as exmergo-dex-core's reader
+#: names a source, the source and the table joined by a dot.
+SOURCE_JOIN = DeclaredJoin(
+    from_model="fact_orders",
+    from_columns=("date",),
+    to_model="erp.calendar",
+    to_columns=("date",),
+    source="relationships",
+)
+
+
+class TestARelationshipToASource:
+    """#131's (c), the `source()` arm: a `relationships` test whose `to:` is
+    `source('erp', 'calendar')` was read as no join, with the note that it
+    names no resolvable model and column. exmergo-dex-core's schema-YAML
+    reader reads it as a join to `erp.calendar` (`_parse_relation_ref` in
+    `exmergo_dex_core/dbt_project.py`, read in 1.15.2): beside the test's name
+    at every release #131 measured, and under `arguments:` from 1.13.1
+    (exmergo/dex#566). dbt makes the test depend on that source. The owner
+    ruled it aligned here, reading the join that reader reads, so the join's
+    `to_model` names a source, not a model the project builds.
+
+    Each form goes red, and `ref('dim_date')` in each form is the control in
+    the class above. The spacing arm holds the pattern to that reader's, which
+    takes either quote and spaces around each argument.
+    """
+
+    @pytest.mark.parametrize("form", FORMS)
+    def test_a_source_reads_the_join_that_reader_reads(self, form):
+        declarations = a_project(
+            declaration_sources={"f": a_relationship_to("source('erp', 'calendar')", form)}
+        ).declarations()
+        assert declarations.declared_joins == (SOURCE_JOIN,)
+        assert declarations.notes == ()
+
+    def test_either_quote_and_spaces_are_read(self):
+        declarations = a_project(
+            declaration_sources={
+                "f": a_relationship_to('source( "erp" , "calendar" )', "arguments")
+            }
+        ).declarations()
+        assert declarations.declared_joins == (SOURCE_JOIN,)
+        assert declarations.notes == ()
+
+
+def two_composites(first: str, second: str, form: str = "beside") -> str:
+    """`fact_orders` declaring two composite keys, ``first`` then ``second``,
+    each a YAML flow list, both written in ``form``, one of :data:`FORMS`."""
+
+    second_entry = a_composite_listing(second, form).split("    data_tests:\n", 1)[1]
+    return a_composite_listing(first, form) + second_entry
+
+
+def a_composite(*columns: str) -> DeclaredKey:
+    return DeclaredKey(model="fact_orders", columns=columns, source="combination")
+
+
+class TestTwoCompositeKeysOnOneModel:
+    """#131's (e): a model declaring two composite keys, `[date, provider]`
+    then `[product_id, order_type]`, was read as the first alone. dbt runs
+    both tests, and exmergo-dex-core's schema-YAML reader reads both
+    (`_declared_from_yaml` in `exmergo_dex_core/dbt_project.py`, read in
+    1.15.2). `maintain reconcile` reads the grain through `definitions()`, so
+    with the second unread it would propose a column-level `unique` on a
+    column of that grain, a key the project never declared, which is the
+    defect #117 fixed for the prefixed spelling. The owner ruled this aligned
+    here.
+
+    That reader keeps one composite per model and set of columns, compared
+    without order or case, and keeps the first. The same key written twice
+    therefore reads once, before and after this change, so those arms are
+    guards: a fix that reads every composite without that rule goes red there.
+    So is the arm whose first composite lists no column, which is skipped with
+    its note while the second is read.
+    """
+
+    @pytest.mark.parametrize("form", FORMS)
+    def test_both_composite_keys_are_read_in_order(self, form):
+        text = two_composites("[date, provider]", "[product_id, order_type]", form)
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            a_composite("date", "provider"),
+            a_composite("product_id", "order_type"),
+        )
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize(
+        "second",
+        ["[date, provider]", "[provider, date]", "[DATE, Provider]"],
+        ids=["again", "reordered", "recased"],
+    )
+    def test_the_same_key_written_again_is_read_once(self, second):
+        text = two_composites("[date, provider]", second)
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (a_composite("date", "provider"),)
+        assert declarations.notes == ()
+
+    def test_a_composite_listing_no_column_is_skipped_and_the_next_is_read(self):
+        text = two_composites("[]", "[product_id, order_type]")
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (a_composite("product_id", "order_type"),)
+        assert declarations.notes == (NO_COLUMNS,)
+
+    def test_both_composite_keys_beat_a_single_column_one_and_say_so(self):
+        """The composite still wins over a column-level `unique` (#131's (g),
+        not ruled), and with two composites it is both that win."""
+
+        text = two_composites("[date, provider]", "[product_id, order_type]") + (
+            "    columns:\n"
+            "      - name: order_id\n"
+            "        data_tests:\n"
+            "          - unique\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            a_composite("date", "provider"),
+            a_composite("product_id", "order_type"),
+        )
+        assert declarations.notes == (
+            "'fact_orders' declares a composite grain and also a column-level "
+            "unique on order_id; the composite wins",
+        )
+
+
+#: The key every arm below declares on `fact_orders.date`.
+DATE_KEY = DeclaredKey(model="fact_orders", columns=("date",), source="unique")
+
+
+class TestUniqueWrittenTwiceOnOneColumn:
+    """#131's (f): a column's `unique` written twice was read as two keys on
+    that column. Written bare twice, 0.6.4 read it so too, on a file dbt
+    refuses; written once bare and once by `test_name:`, or twice by
+    `test_name:`, it is reachable since 0.6.5, and dbt runs both tests.
+    exmergo-dex-core's schema-YAML reader reads one key per model and column
+    (`_declared_from_yaml` in `exmergo_dex_core/dbt_project.py`, read in
+    1.15.2), and #115 already reads `unique` under both `tests:` and
+    `data_tests:` once. The owner ruled this aligned here: it is one claim.
+
+    The column listed twice, each with its `unique`, is the same claim and
+    reads once in that reader too. `unique` on two columns is the control, so
+    a fix that keeps one key per model goes red there.
+    """
+
+    @pytest.mark.parametrize(
+        "test",
+        [
+            "          - unique\n"
+            "          - unique\n",
+            "          - unique\n"
+            "          - name: date_is_unique\n"
+            "            test_name: unique\n",
+            "          - name: date_is_unique\n"
+            "            test_name: unique\n"
+            "          - name: date_is_still_unique\n"
+            "            test_name: unique\n",
+        ],
+        ids=["bare-twice", "bare-then-test_name", "test_name-twice"],
+    )
+    def test_unique_written_twice_reads_one_key(self, test):
+        declarations = a_project(
+            declaration_sources={"f": a_date_column_testing("data_tests", test)}
+        ).declarations()
+        assert declarations.declared_keys == (DATE_KEY,)
+        assert declarations.notes == ()
+
+    def test_a_column_listed_twice_with_unique_reads_one_key(self):
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: date\n"
+            "        data_tests: [unique]\n"
+            "      - name: date\n"
+            "        data_tests: [unique]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (DATE_KEY,)
+        assert declarations.notes == ()
+
+    def test_unique_on_two_columns_reads_two_keys(self):
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: date\n"
+            "        data_tests: [unique]\n"
+            "      - name: order_id\n"
+            "        data_tests: [unique]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DATE_KEY,
+            DeclaredKey(model="fact_orders", columns=("order_id",), source="unique"),
+        )
+        assert declarations.notes == ()
+
+
+def a_unique_on(column: str) -> str:
+    """`fact_orders` declaring a column-level `unique` on ``column``."""
+
+    return (
+        "models:\n"
+        "  - name: fact_orders\n"
+        "    columns:\n"
+        f"      - name: {column}\n"
+        "        data_tests: [unique]\n"
+    )
+
+
+def a_composite_on(columns: str) -> str:
+    """`fact_orders` declaring one composite key, ``columns`` a YAML flow list."""
+
+    return (
+        "models:\n"
+        "  - name: fact_orders\n"
+        "    data_tests:\n"
+        "      - dbt_utils.unique_combination_of_columns:\n"
+        f"          combination_of_columns: {columns}\n"
+    )
+
+
+class TestAKeyDeclaredInTwoEntries:
+    """#131's (e) and (f) across entries: a model's declarations may be split
+    over several files, and `scripts/drive_dex_against_the_wheel.py` declares
+    `fact_orders` in two. exmergo-dex-core's schema-YAML reader keeps one key
+    per model and column, and one composite per model and set of columns,
+    across every file it reads: its two maps are built outside its loop over
+    files (`_declared_from_yaml` in `exmergo_dex_core/dbt_project.py`, read in
+    1.15.2). #131 words (f)'s alignment as one key per model and columns. So a
+    key written again in another file, or in a second entry for the model in
+    the same file, reads once here too, where it read once per entry (cold
+    review of #138, finding 1).
+
+    Keys that differ are the control: both are read, across files as in one.
+    """
+
+    @pytest.mark.parametrize(
+        "sources",
+        [
+            {"a": a_unique_on("date"), "b": a_unique_on("date")},
+            {"a": a_unique_on("date") + a_unique_on("date").split("models:\n", 1)[1]},
+        ],
+        ids=["two-files", "two-entries-one-file"],
+    )
+    def test_a_unique_declared_again_reads_one_key(self, sources):
+        declarations = a_project(declaration_sources=sources).declarations()
+        assert declarations.declared_keys == (DATE_KEY,)
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize("second", ["[date, provider]", "[Provider, DATE]"], ids=["again", "reordered-recased"])
+    def test_a_composite_declared_again_in_another_file_reads_once(self, second):
+        sources = {"a": a_composite_on("[date, provider]"), "b": a_composite_on(second)}
+        declarations = a_project(declaration_sources=sources).declarations()
+        assert declarations.declared_keys == (a_composite("date", "provider"),)
+        assert declarations.notes == ()
+
+    def test_different_keys_in_two_files_are_both_read(self):
+        sources = {
+            "a": a_unique_on("date"),
+            "b": a_unique_on("order_id"),
+            "c": a_composite_on("[product_id, order_type]"),
+        }
+        declarations = a_project(declaration_sources=sources).declarations()
+        assert declarations.declared_keys == (
+            DATE_KEY,
+            DeclaredKey(model="fact_orders", columns=("order_id",), source="unique"),
+            a_composite("product_id", "order_type"),
+        )
+        assert declarations.notes == ()
+
+
+class TestATestEntryDbtRefuses:
+    """#131's (a): a test written as a mapping of more than one key with no
+    string `test_name:` naming it was skipped with no note. The common shape
+    is a test's `config:` written beside its name rather than inside it. dbt
+    refuses the project over such an entry: "test definition dictionary must
+    have exactly one key", or, for a `test_name:` that is not a string, "test
+    name must be a str" (#131, read from dbt-core 1.12.6). exmergo-dex-core's
+    schema-YAML reader reads the test among the keys, on purpose
+    (exmergo/dex#566 keeps it lenient about entries dbt itself refuses). The
+    owner ruled the skip kept here, with a note, while exmergo/dex is asked.
+    The note is what the module's first rule asks of input it skips.
+
+    Each arm read nothing before and reads nothing after; the note is what is
+    red. The test in the class above whose `test_name:` is not a string is a
+    fifth arm. The controls are the classes above: an entry of one key, and
+    one named by a string `test_name:`, each asserted to carry no note.
+    """
+
+    @pytest.mark.parametrize(
+        "text, where, keys",
+        [
+            (
+                "models:\n"
+                "  - name: fact_orders\n"
+                "    data_tests:\n"
+                "      - dbt_utils.unique_combination_of_columns:\n"
+                "          combination_of_columns: [date, provider]\n"
+                "        config:\n"
+                "          severity: warn\n",
+                "'fact_orders'",
+                "config, dbt_utils.unique_combination_of_columns",
+            ),
+            (
+                a_date_column_testing(
+                    "data_tests",
+                    "          - unique:\n"
+                    "            config:\n"
+                    "              where: \"date > '2026-01-01'\"\n",
+                ),
+                "fact_orders.date",
+                "config, unique",
+            ),
+            (
+                a_date_column_testing(
+                    "data_tests",
+                    "          - relationships:\n"
+                    "              to: ref('dim_date')\n"
+                    "              field: date\n"
+                    "            config:\n"
+                    "              severity: warn\n",
+                ),
+                "fact_orders.date",
+                "config, relationships",
+            ),
+            (
+                "models:\n"
+                "  - name: fact_orders\n"
+                "    data_tests:\n"
+                "      - name: fact_orders_grain\n"
+                "        test_name: 5\n"
+                "        dbt_utils.unique_combination_of_columns:\n"
+                "          combination_of_columns: [date, provider]\n",
+                "'fact_orders'",
+                "dbt_utils.unique_combination_of_columns, name, test_name",
+            ),
+        ],
+        ids=["composite-and-config", "unique-and-config", "relationship-and-config", "test_name-5"],
+    )
+    def test_the_entry_is_skipped_and_says_so(self, text, where, keys):
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.declared_joins == ()
+        assert declarations.notes == (REFUSED.format(where, keys),)
+
+    def test_the_entry_under_both_keys_is_noted_once(self):
+        """The union reads an identical entry under `tests:` and `data_tests:`
+        once, so its note is said once too (cold review of #138, finding 6)."""
+
+        entry = (
+            "          - unique:\n"
+            "            config:\n"
+            "              severity: warn\n"
+        )
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: date\n"
+            f"        tests:\n{entry}"
+            f"        data_tests:\n{entry}"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == (
+            BOTH_KEYS.format("fact_orders.date"),
+            REFUSED.format("fact_orders.date", "config, unique"),
+        )
+
+    def test_an_empty_mapping_is_skipped_quietly(self):
+        """A guard rather than a red-first arm: the ruling covers entries of two
+        or more keys, and `{}` read as nothing, with no note, before and after
+        (cold review of #138, finding 7). A fix that notes every mapping it
+        cannot name goes red here."""
+
+        declarations = a_project(
+            declaration_sources={"f": a_date_column_testing("data_tests", "          - {}\n")}
+        ).declarations()
+        assert declarations.declared_keys == ()
         assert declarations.notes == ()
 
 

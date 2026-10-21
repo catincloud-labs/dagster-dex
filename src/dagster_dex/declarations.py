@@ -36,6 +36,8 @@ from .model import (
 __all__ = ["parse_declarations", "parse_semantics", "parse_source_declarations"]
 
 _REF = re.compile(r"ref\(\s*['\"]([^'\"]+)['\"]\s*\)")
+#: ``source('erp', 'calendar')``: the source's name, then its table's.
+_SOURCE = re.compile(r"source\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)")
 #: A bare column reference, and nothing looser. Anything with an operator, a call,
 #: a dotted path or a quote is an expression, and an expression handed to a
 #: consumer expecting a column name is a fabricated reference. See
@@ -55,6 +57,9 @@ def _referenced_model(text: object) -> str | None:
 
     Returns ``None`` for anything else, so a caller can note it rather than
     fabricating a target that would later look like a declared join.
+
+    Read for a semantic model's ``model:``. A relationship's ``to:`` is read
+    by :func:`_relationship_target`, which does not take a bare name.
     """
 
     if not isinstance(text, str) or not text.strip():
@@ -68,7 +73,41 @@ def _referenced_model(text: object) -> str | None:
     return bare if bare.replace("_", "").isalnum() else None
 
 
-def _test_names(tests: Any) -> list[tuple[str, Any]]:
+def _relationship_target(text: object) -> str | None:
+    """A ``relationships`` test's ``to:``: ``ref('dim_date')`` -> ``dim_date``,
+    and ``source('erp', 'calendar')`` -> ``erp.calendar``.
+
+    These two forms are read as exmergo-dex-core's schema-YAML reader reads
+    them (``_parse_relation_ref`` in ``exmergo_dex_core/dbt_project.py``,
+    read in 1.15.2), which the owner ruled on #131:
+
+    - **A source is a target, named ``<source>.<table>``**, the name that
+      reader gives it. So the join's ``to_model`` names a source, not a model
+      the project builds. This read no join from one, and noted it as
+      unresolvable.
+    - **A bare name is not.** dbt keeps a bare ``to:`` as the string and draws
+      no edge to it, and that reader reads no join from one. This read
+      ``to: dim_date`` as a join to ``dim_date`` through
+      :func:`_referenced_model`, which a semantic model's ``model:`` still
+      uses.
+
+    Anything else is ``None``, and the caller notes it. That includes a
+    ``ref()`` with a second argument, ``ref('m', v=1)`` or
+    ``ref('pkg', 'm')``: ``_REF`` wants a ``)`` after the first argument, and
+    that reader does not, so it reads a join to the first argument. That
+    difference is older than #131 and not among its rows.
+    """
+
+    if not isinstance(text, str):
+        return None
+    ref = _REF.search(text)
+    if ref:
+        return ref.group(1)
+    source = _SOURCE.search(text)
+    return f"{source.group(1)}.{source.group(2)}" if source else None
+
+
+def _test_names(tests: Any, where: str, notes: list[str]) -> list[tuple[str, Any]]:
     """Normalize a dbt-style ``tests:`` list to ``(name, payload)`` pairs.
 
     Entries are a bare string (``unique``), a single-key mapping
@@ -78,6 +117,13 @@ def _test_names(tests: Any) -> list[tuple[str, Any]]:
     mapping spellings, and exmergo-dex-core's schema-YAML reader names a test
     by ``test_name:`` from 1.13.1 (``_named_tests``), when it is a string.
     Anything else is skipped rather than guessed.
+
+    **A mapping of more than one key with no string ``test_name:`` is skipped
+    and noted** (#131), such as a test with its ``config:`` beside its name
+    rather than inside it. dbt refuses the project over one. That reader reads
+    the test among the keys, on purpose (exmergo/dex#566), and the owner kept
+    the skip here while exmergo/dex is asked; the note is this module's rule
+    for input it skips, and it was skipped with none.
     """
 
     pairs: list[tuple[str, Any]] = []
@@ -91,6 +137,14 @@ def _test_names(tests: Any) -> list[tuple[str, Any]]:
         elif isinstance(entry, dict) and len(entry) == 1:
             (name, payload), = entry.items()
             pairs.append((str(name), payload))
+        elif isinstance(entry, dict) and entry:
+            keys = ", ".join(sorted(str(key) for key in entry))
+            note = (
+                f"{where} lists a test as a mapping of several keys ({keys}) with "
+                "no string `test_name`, which dbt refuses; skipped"
+            )
+            if note not in notes:
+                notes.append(note)
     return pairs
 
 
@@ -143,8 +197,9 @@ def _entry_tests(entry: dict[str, Any], where: str, notes: list[str]) -> list[tu
             f"{where} declares both `tests` and `data_tests`; what each lists is read "
             "here, but dbt and dex-core can refuse an entry declaring both, so keep one key"
         )
-    first = _test_names(entry.get("tests"))
-    return first + [pair for pair in _test_names(entry.get("data_tests")) if pair not in first]
+    first = _test_names(entry.get("tests"), where, notes)
+    second = _test_names(entry.get("data_tests"), where, notes)
+    return first + [pair for pair in second if pair not in first]
 
 
 def parse_declarations(
@@ -177,7 +232,7 @@ def parse_declarations(
                 notes.append(f"declaration {origin!r} has a model with no name; skipped")
                 continue
 
-            composite = _composite_key(model, entry, notes)
+            composites = _composite_keys(model, entry, notes)
             singles = _single_column_keys(model, entry, joins, notes)
 
             # A model-level combination and a column-level uniqueness claim are
@@ -185,10 +240,11 @@ def parse_declarations(
             # they can disagree. Prefer the combination - it is the only one of
             # the two that can express a multi-column key - but say so, because
             # silently dropping the other would hide a real authoring conflict.
-            if composite is not None:
-                keys.append(composite)
+            # A model declaring two combinations keeps both.
+            if composites:
+                keys.extend(composites)
                 if singles:
-                    dropped = ", ".join(sorted(k.columns[0] for k in singles))
+                    dropped = ", ".join(sorted({k.columns[0] for k in singles}))
                     notes.append(
                         f"{model!r} declares a composite grain and also a "
                         f"column-level unique on {dropped}; the composite wins"
@@ -196,15 +252,45 @@ def parse_declarations(
             else:
                 keys.extend(singles)
 
-    return keys, joins, notes
+    return _once(keys), joins, notes
+
+
+def _once(keys: list[DeclaredKey]) -> list[DeclaredKey]:
+    """``keys`` with each key once per model, the first kept, in order.
+
+    **One claim, however often it is written** (#131). A column's ``unique``
+    written twice, by either spelling, on a column listed twice, or in a second
+    entry or file declaring the model, read as two keys on one column; so did a
+    composite key written twice. exmergo-dex-core's schema-YAML reader keeps
+    one key per model and column, compared as written, and one composite per
+    model and set of columns, compared without order or case, across every
+    file it reads, keeping the first. This compares the same way. A key on one
+    column cannot match a composite, which has two or more.
+    """
+
+    found: dict[tuple[str, tuple[str, ...]], DeclaredKey] = {}
+    for key in keys:
+        columns: tuple[str, ...] = key.columns
+        if len(columns) > 1:
+            columns = tuple(sorted(c.lower() for c in columns))
+        found.setdefault((key.model, columns), key)
+    return list(found.values())
 
 
 #: The test that declares a model-level composite grain.
 _COMPOSITE_TEST = "unique_combination_of_columns"
 
 
-def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> DeclaredKey | None:
-    """A model-level ``unique_combination_of_columns``, when present and sane.
+def _composite_keys(model: str, entry: dict[str, Any], notes: list[str]) -> list[DeclaredKey]:
+    """Each model-level ``unique_combination_of_columns`` that is sane.
+
+    **Every one is read, in order** (#131). This read the first alone, so a
+    second composite on the model was unread, and ``maintain reconcile``,
+    which reads the grain through ``definitions()``, would propose a
+    column-level ``unique`` on one of its columns: a key the project never
+    declared. dbt runs every one, and exmergo-dex-core's schema-YAML reader
+    reads every one. One written twice is read once by :func:`_once`, across
+    every entry for the model.
 
     The test is read bare or under any package prefix: the bare name, or any
     name ending in ``.unique_combination_of_columns``. That is
@@ -221,8 +307,20 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
     under the test alone, and this one matched it, so a key written the way
     dbt asks was read as none. An entry with no columns in either place is
     noted as declaring none.
+
+    **A list holding something other than a column name reads as no key, and
+    is noted** (#131). Reading its names alone read ``[a, b, 1]`` as a key on
+    ``(a, b)``, fewer columns than the test checks, which claims more than the
+    test does. exmergo-dex-core's reader takes a composite only from a list
+    whose columns are all strings, and reads none from this one. A single
+    name, ``[a]``, is still read as a key on that column, where that reader
+    reads none: the owner kept it here while exmergo/dex is asked. An empty
+    string is a string, so this check passes it, and ``named`` drops it:
+    ``[a, b, '']`` reads as ``(a, b)``, where that reader reads
+    ``(a, b, '')``. That is not ruled.
     """
 
+    found: list[DeclaredKey] = []
     for name, payload in _entry_tests(entry, repr(model), notes):
         if name != _COMPOSITE_TEST and not name.endswith(f".{_COMPOSITE_TEST}"):
             continue
@@ -234,8 +332,14 @@ def _composite_key(model: str, entry: dict[str, Any], notes: list[str]) -> Decla
         if not named:
             notes.append(f"{model!r} declares a composite grain with no usable columns; ignored")
             continue
-        return DeclaredKey(model=model, columns=named, source="combination")
-    return None
+        if not all(isinstance(c, str) for c in columns):
+            notes.append(
+                f"{model!r} declares a composite grain listing something other "
+                "than a column name; ignored"
+            )
+            continue
+        found.append(DeclaredKey(model=model, columns=named, source="combination"))
+    return found
 
 
 def _single_column_keys(
@@ -248,6 +352,9 @@ def _single_column_keys(
     value would make both callers unpack something they do not use. A
     relationship's ``to`` and ``field`` are read beside the test's name or
     under ``arguments:`` (:func:`_test_arguments`).
+
+    A ``unique`` written twice is read once by :func:`_once`, across every
+    entry for the model.
     """
 
     found: list[DeclaredKey] = []
@@ -262,7 +369,7 @@ def _single_column_keys(
                 found.append(DeclaredKey(model=model, columns=(column,), source="unique"))
             elif name == "relationships" and isinstance(payload, dict):
                 inputs = _test_arguments(payload)
-                target = _referenced_model(inputs.get("to"))
+                target = _relationship_target(inputs.get("to"))
                 field = inputs.get("field")
                 if target is None or not isinstance(field, str) or not field:
                     notes.append(

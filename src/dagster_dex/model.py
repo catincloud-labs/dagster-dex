@@ -180,10 +180,14 @@ class DeclaredKey:
 
 @dataclass(frozen=True)
 class DeclaredJoin:
-    """A declared relationship between two models.
+    """A declared relationship from a model to a model or a source.
 
     Both sides are column tuples for the same reason keys are: a join on a
     composite key is not a different kind of join.
+
+    ``to_model`` names a source as ``<source>.<table>`` when the declaration
+    points at one, which is how exmergo-dex-core names it, so it can name a
+    table the project does not build.
     """
 
     from_model: str
