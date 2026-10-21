@@ -71,16 +71,43 @@ def _text_files() -> list[str]:
 
 
 def _offenders_in(name: str, path: pathlib.Path) -> list[str]:
+    """Every line of one tracked file that is not ASCII, read as bytes.
+
+    The file is split on LF and each line decoded on its own. A valid
+    multi-byte UTF-8 sequence never contains 0x0A, so the split never cuts a
+    character, and one undecodable line cannot hide another line.
+
+    A line that decodes is reported by the characters it holds, `U+2014`. A
+    line that does not is reported by each byte above 0x7F and that byte's
+    offset in the file, counted from 0. Until #128 a file that did not decode
+    was skipped whole, so the em dash as cp1252 writes it, a lone 0x97, passed
+    the check written to refuse em dashes, and hid every valid one in the same
+    file. A file that cannot be read is reported too: an unreadable file is not
+    a clean one.
+    """
+
     try:
-        text = path.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
-        return []
+        data = path.read_bytes()
+    except OSError as exc:
+        return [f"{name}: unreadable ({type(exc).__name__})"]
     offenders: list[str] = []
-    for lineno, line in enumerate(text.split("\n"), 1):
-        bad = {c for c in line if ord(c) > 127}
-        if bad:
-            shown = ", ".join(f"U+{ord(c):04X}" for c in sorted(bad))
-            offenders.append(f"{name}:{lineno}: {shown}")
+    start = 0
+    for lineno, raw in enumerate(data.split(b"\n"), 1):
+        try:
+            line = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            shown = ", ".join(
+                f"0x{byte:02X} at byte {start + i}"
+                for i, byte in enumerate(raw)
+                if byte > 127
+            )
+            offenders.append(f"{name}:{lineno}: {shown} (not UTF-8)")
+        else:
+            bad = {c for c in line if ord(c) > 127}
+            if bad:
+                shown = ", ".join(f"U+{ord(c):04X}" for c in sorted(bad))
+                offenders.append(f"{name}:{lineno}: {shown}")
+        start += len(raw) + 1
     return offenders
 
 
@@ -98,6 +125,9 @@ def test_every_tracked_file_is_ascii():
     hold for a file nobody has written yet. A list would have to be updated by
     the same person who is about to paste an em-dash into a new document, which
     is the class of control this estate has repeatedly found to be decorative.
+
+    Each file is read as bytes, so one that is not UTF-8 is reported by line
+    and byte offset rather than skipped; `_offenders_in` says why that matters.
     """
 
     offenders: list[str] = []
