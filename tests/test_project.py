@@ -996,6 +996,79 @@ class TestTwoCompositeKeysOnOneModel:
         )
 
 
+#: The key every arm below declares on `fact_orders.date`.
+DATE_KEY = DeclaredKey(model="fact_orders", columns=("date",), source="unique")
+
+
+class TestUniqueWrittenTwiceOnOneColumn:
+    """#131's (f): a column's `unique` written twice was read as two keys on
+    that column. Written bare twice, 0.6.4 read it so too, on a file dbt
+    refuses; written once bare and once by `test_name:`, or twice by
+    `test_name:`, it is reachable since 0.6.5, and dbt runs both tests.
+    exmergo-dex-core's schema-YAML reader reads one key per model and column
+    (`_declared_from_yaml` in `exmergo_dex_core/dbt_project.py`, read in
+    1.15.2), and #115 already reads `unique` under both `tests:` and
+    `data_tests:` once. The owner ruled this aligned here: it is one claim.
+
+    The column listed twice, each with its `unique`, is the same claim and
+    reads once in that reader too. `unique` on two columns is the control, so
+    a fix that keeps one key per model goes red there.
+    """
+
+    @pytest.mark.parametrize(
+        "test",
+        [
+            "          - unique\n"
+            "          - unique\n",
+            "          - unique\n"
+            "          - name: date_is_unique\n"
+            "            test_name: unique\n",
+            "          - name: date_is_unique\n"
+            "            test_name: unique\n"
+            "          - name: date_is_still_unique\n"
+            "            test_name: unique\n",
+        ],
+        ids=["bare-twice", "bare-then-test_name", "test_name-twice"],
+    )
+    def test_unique_written_twice_reads_one_key(self, test):
+        declarations = a_project(
+            declaration_sources={"f": a_date_column_testing("data_tests", test)}
+        ).declarations()
+        assert declarations.declared_keys == (DATE_KEY,)
+        assert declarations.notes == ()
+
+    def test_a_column_listed_twice_with_unique_reads_one_key(self):
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: date\n"
+            "        data_tests: [unique]\n"
+            "      - name: date\n"
+            "        data_tests: [unique]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (DATE_KEY,)
+        assert declarations.notes == ()
+
+    def test_unique_on_two_columns_reads_two_keys(self):
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: date\n"
+            "        data_tests: [unique]\n"
+            "      - name: order_id\n"
+            "        data_tests: [unique]\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            DATE_KEY,
+            DeclaredKey(model="fact_orders", columns=("order_id",), source="unique"),
+        )
+        assert declarations.notes == ()
+
+
 class TestDeclarationsIsMemoized:
     """The memo is a performance property, so it is asserted by counting parses.
 
