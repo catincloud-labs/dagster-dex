@@ -22,8 +22,9 @@ if you depend on the contract.
   not tell a splice from a reprint that happened to keep the comments. The new
   class covers the three schema codes upstream splices since exmergo-dex-core
   1.10.0 (`column_added`, `column_dropped`, `nullability_changed`) and names
-  the one comment each case is expected to lose, which is the falsifier #88
-  asked for. Below 1.10.0 each case is asserted advisory with the file
+  the comment, if any, each case is expected to lose, which is the falsifier
+  #88 asked for. Each case also asserts that its edit landed: the column is
+  added or dropped, or its `not_null` is removed or added. Below 1.10.0 each case is asserted advisory with the file
   unchanged. Both arms are chosen by installed engine minor with no skip, the
   same shape as #94. This change touches that test file and this changelog and
   nothing else, so the package, its seam, its engine floor and the tested pin

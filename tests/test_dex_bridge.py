@@ -1638,7 +1638,7 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
 #: on lines none of them touches. The edit that replaces a line takes that
 #: line's comment with it, and that one comment is the only loss a splice may
 #: have. So each case below names its loss, and a reprint, which loses all
-#: seven, reads differently from a splice, which loses one or none (#88, *How
+#: eight, reads differently from a splice, which loses one or none (#88, *How
 #: we would know it worked*).
 #:
 #: No full-line comment sits directly above a column a case drops. Whether one
@@ -1675,17 +1675,54 @@ def _schema_finding(code, column, **data):
     )
 
 
-#: (code, column, the finding's data, the comments the splice replaces).
-#: Measured at 1.15.1 before this was written down, and at 1.8.0 and 1.9.2
-#: for the other arm, where every case is advisory.
+def _column_entry(text, column):
+    """The lines of `column`'s entry in a declaration: its `- name:` line and
+    every line indented deeper beneath it. `None` when no entry names it.
+
+    Line-based on purpose, like the order check that reads it: what is under
+    test is the text the splice wrote, not what a YAML loader makes of it."""
+
+    lines = text.splitlines()
+    pattern = re.compile(rf"^(\s*)- name: {re.escape(column)}(\s|#|$)")
+    for start, line in enumerate(lines):
+        match = pattern.match(line)
+        if match is None:
+            continue
+        indent = len(match.group(1))
+        entry = [line]
+        for below in lines[start + 1 :]:
+            if below.strip() and len(below) - len(below.lstrip()) <= indent:
+                break
+            entry.append(below)
+        return entry
+    return None
+
+
+#: What each `landed` value asserts of the column's entry after the edit. The
+#: comments lost cannot say this on their own: the original with only the
+#: replaced lines' comments stripped loses the same comments and changes
+#: nothing, and so does an insertion of the wrong column.
+LANDED = {
+    "present": lambda entry: entry is not None,
+    "absent": lambda entry: entry is None,
+    "nullable": lambda entry: entry is not None and not any("not_null" in line for line in entry),
+    "not-null": lambda entry: entry is not None and any("not_null" in line for line in entry),
+}
+
+
+#: (code, column, the finding's data, the comments the splice replaces, what
+#: the column's entry must show afterwards). Measured at 1.15.1 and 1.15.2
+#: before this was written down, and at 1.8.0 and 1.9.2 for the other arm,
+#: where every case is advisory.
 SCHEMA_SPLICES = [
-    pytest.param("column_added", "fiscal_week", {"data_type": "INTEGER"}, [], id="added"),
-    pytest.param("column_dropped", "fiscal_year", {}, ["# last column"], id="dropped"),
+    pytest.param("column_added", "fiscal_week", {"data_type": "INTEGER"}, [], "present", id="added"),
+    pytest.param("column_dropped", "fiscal_year", {}, ["# last column"], "absent", id="dropped"),
     pytest.param(
         "nullability_changed",
         "is_weekend",
         {"nullable_after": True},
         ["# flow list"],
+        "nullable",
         id="nullable-flow-list",
     ),
     pytest.param(
@@ -1693,6 +1730,7 @@ SCHEMA_SPLICES = [
         "date",
         {"nullable_after": True},
         ["# never empty"],
+        "nullable",
         id="nullable-block-list",
     ),
     pytest.param(
@@ -1700,6 +1738,7 @@ SCHEMA_SPLICES = [
         "fiscal_year",
         {"nullable_after": False},
         [],
+        "not-null",
         id="not-null",
     ),
 ]
@@ -1719,9 +1758,9 @@ class TestASchemaEditLosesOnlyTheCommentsOnTheLinesItReplaces:
     come back unchanged, which is also what the drill could and could not show.
     """
 
-    @pytest.mark.parametrize(("code", "column", "data", "expected"), SCHEMA_SPLICES)
+    @pytest.mark.parametrize(("code", "column", "data", "expected", "landed"), SCHEMA_SPLICES)
     def test_the_only_comments_lost_are_the_ones_on_the_replaced_lines(
-        self, tmp_path, code, column, data, expected
+        self, tmp_path, code, column, data, expected, landed
     ):
         import importlib.metadata as md
 
@@ -1741,9 +1780,18 @@ class TestASchemaEditLosesOnlyTheCommentsOnTheLinesItReplaces:
                 f"dex-core {engine}: {code} on {column} should lose exactly {expected}, "
                 f"the comments on the lines it replaces, and lost {lost}:\n{after}"
             )
-            # Every line the edit did not replace is still there, in order. The
-            # replaced lines are the ones carrying an expected loss, plus the
-            # dropped column's own entry; `in` on an iterator is the order check.
+            entry = _column_entry(after, column)
+            assert LANDED[landed](entry), (
+                f"dex-core {engine}: {code} on {column} lost the right comments, but "
+                f"the edit did not land: {column}'s entry should be {landed!r} and "
+                f"reads {entry!r}:\n{after}"
+            )
+            # Every line the edit did not replace is still there, in order; `in`
+            # on an iterator is the order check. The replaced lines are the ones
+            # carrying an expected loss and nothing else. The dropped column is
+            # among them only because its entry is one line and that line
+            # carries `# last column`: a column whose entry spans several lines
+            # would need its whole entry derived, which no case here needs yet.
             replaced = {
                 line
                 for line in COMMENTED_FOR_SCHEMA_DRIFT.splitlines()
