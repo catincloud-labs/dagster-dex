@@ -865,6 +865,52 @@ class TestARelationshipToABareName:
         assert [m.model for m in declarations.semantic_models] == ["mart_revenue"]
 
 
+#: `fact_orders.date` -> `erp.calendar.date`: a relationship to
+#: `source('erp', 'calendar')`, its target named as exmergo-dex-core's reader
+#: names a source, the source and the table joined by a dot.
+SOURCE_JOIN = DeclaredJoin(
+    from_model="fact_orders",
+    from_columns=("date",),
+    to_model="erp.calendar",
+    to_columns=("date",),
+    source="relationships",
+)
+
+
+class TestARelationshipToASource:
+    """#131's (c), the `source()` arm: a `relationships` test whose `to:` is
+    `source('erp', 'calendar')` was read as no join, with the note that it
+    names no resolvable model and column. exmergo-dex-core's schema-YAML
+    reader reads it as a join to `erp.calendar` (`_parse_relation_ref` in
+    `exmergo_dex_core/dbt_project.py`, read in 1.15.2): beside the test's name
+    at every release #131 measured, and under `arguments:` from 1.13.1
+    (exmergo/dex#566). dbt makes the test depend on that source. The owner
+    ruled it aligned here, reading the join that reader reads, so the join's
+    `to_model` names a source, not a model the project builds.
+
+    Each form goes red, and `ref('dim_date')` in each form is the control in
+    the class above. The spacing arm holds the pattern to that reader's, which
+    takes either quote and spaces around each argument.
+    """
+
+    @pytest.mark.parametrize("form", FORMS)
+    def test_a_source_reads_the_join_that_reader_reads(self, form):
+        declarations = a_project(
+            declaration_sources={"f": a_relationship_to("source('erp', 'calendar')", form)}
+        ).declarations()
+        assert declarations.declared_joins == (SOURCE_JOIN,)
+        assert declarations.notes == ()
+
+    def test_either_quote_and_spaces_are_read(self):
+        declarations = a_project(
+            declaration_sources={
+                "f": a_relationship_to('source( "erp" , "calendar" )', "arguments")
+            }
+        ).declarations()
+        assert declarations.declared_joins == (SOURCE_JOIN,)
+        assert declarations.notes == ()
+
+
 class TestDeclarationsIsMemoized:
     """The memo is a performance property, so it is asserted by counting parses.
 
