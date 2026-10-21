@@ -55,6 +55,9 @@ def _referenced_model(text: object) -> str | None:
 
     Returns ``None`` for anything else, so a caller can note it rather than
     fabricating a target that would later look like a declared join.
+
+    Read for a semantic model's ``model:``. A relationship's ``to:`` is read
+    by :func:`_relationship_target`, which does not take a bare name.
     """
 
     if not isinstance(text, str) or not text.strip():
@@ -66,6 +69,24 @@ def _referenced_model(text: object) -> str | None:
     # a half-parsed expression is worse here than an honest refusal.
     bare = text.strip()
     return bare if bare.replace("_", "").isalnum() else None
+
+
+def _relationship_target(text: object) -> str | None:
+    """A ``relationships`` test's ``to:``: ``ref('dim_date')`` -> ``dim_date``.
+
+    **A bare name is not a target** (#131). dbt keeps a bare ``to:`` as the
+    string and draws no edge to it, and exmergo-dex-core's schema-YAML reader
+    takes ``to:`` only as a ``ref()`` or a ``source()`` (``_parse_relation_ref``
+    in ``exmergo_dex_core/dbt_project.py``, read in 1.15.2), so it reads no
+    join from one. This read ``to: dim_date`` as a join to ``dim_date``
+    through :func:`_referenced_model`, which a semantic model's ``model:``
+    still uses. Anything else is ``None``, and the caller notes it.
+    """
+
+    if not isinstance(text, str):
+        return None
+    match = _REF.search(text)
+    return match.group(1) if match else None
 
 
 def _test_names(tests: Any) -> list[tuple[str, Any]]:
@@ -276,7 +297,7 @@ def _single_column_keys(
                 found.append(DeclaredKey(model=model, columns=(column,), source="unique"))
             elif name == "relationships" and isinstance(payload, dict):
                 inputs = _test_arguments(payload)
-                target = _referenced_model(inputs.get("to"))
+                target = _relationship_target(inputs.get("to"))
                 field = inputs.get("field")
                 if target is None or not isinstance(field, str) or not field:
                     notes.append(

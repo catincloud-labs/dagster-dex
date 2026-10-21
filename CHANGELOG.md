@@ -43,6 +43,17 @@ if you depend on the contract.
   `definitions()`. A list of one name, `[a]`, still reads as a key on `a`,
   where that reader reads none: the owner kept it here while exmergo/dex is
   asked.
+- **A `relationships` test whose `to:` is a bare model name was read as a
+  join to that model** (#131). `to: customers` read as a join to `customers`,
+  beside the test's name, and since 0.6.5 under `arguments:` and beside a
+  `test_name:` too. dbt keeps a bare `to:` as the string and draws no edge to
+  it, and exmergo-dex-core's schema-YAML reader takes `to:` only as a `ref()`
+  or a `source()`, so it reads no join. Such a test now reads as no join here,
+  with the note every other unread target gets: that the relationship names
+  no resolvable model and column. **A project whose `to:` names a model bare
+  will now report one join fewer, and that note**, through `declarations()`
+  and on to dex's `definitions()`. A semantic model's `model:` is read as it
+  was, a bare name included.
 
 ## 0.6.5 - 2026-10-20
 
