@@ -270,10 +270,9 @@ def _once(keys: list[DeclaredKey]) -> list[DeclaredKey]:
 
     found: dict[tuple[str, tuple[str, ...]], DeclaredKey] = {}
     for key in keys:
-        if len(key.columns) == 1:
-            columns = key.columns
-        else:
-            columns = tuple(sorted(c.lower() for c in key.columns))
+        columns: tuple[str, ...] = key.columns
+        if len(columns) > 1:
+            columns = tuple(sorted(c.lower() for c in columns))
         found.setdefault((key.model, columns), key)
     return list(found.values())
 
