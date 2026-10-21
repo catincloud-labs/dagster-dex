@@ -54,6 +54,17 @@ if you depend on the contract.
   will now report one join fewer, and that note**, through `declarations()`
   and on to dex's `definitions()`. A semantic model's `model:` is read as it
   was, a bare name included.
+- **A `relationships` test whose `to:` is a `source()` was read as no join**
+  (#131), and noted as naming no resolvable model and column. exmergo-dex-core's
+  schema-YAML reader reads `to: source('s', 't')` as a join to `s.t`, the
+  source and its table joined by a dot: beside the test's name at every
+  release #131 measured, and under `arguments:` from 1.13.1 (exmergo/dex#566).
+  dbt makes the test depend on that source. The same join is now read here, in
+  each form this parser reads, so a join's `to_model` can name a source rather
+  than a model the project builds, and `DeclaredJoin`'s docstring says so.
+  **A project whose `to:` names a source will now report a join it did not
+  report before, and one note fewer**, through `declarations()` and on to
+  dex's `definitions()`.
 
 ## 0.6.5 - 2026-10-20
 

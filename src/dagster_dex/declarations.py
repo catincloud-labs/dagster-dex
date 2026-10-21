@@ -36,6 +36,8 @@ from .model import (
 __all__ = ["parse_declarations", "parse_semantics", "parse_source_declarations"]
 
 _REF = re.compile(r"ref\(\s*['\"]([^'\"]+)['\"]\s*\)")
+#: ``source('erp', 'calendar')``: the source's name, then its table's.
+_SOURCE = re.compile(r"source\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)")
 #: A bare column reference, and nothing looser. Anything with an operator, a call,
 #: a dotted path or a quote is an expression, and an expression handed to a
 #: consumer expecting a column name is a fabricated reference. See
@@ -72,21 +74,33 @@ def _referenced_model(text: object) -> str | None:
 
 
 def _relationship_target(text: object) -> str | None:
-    """A ``relationships`` test's ``to:``: ``ref('dim_date')`` -> ``dim_date``.
+    """A ``relationships`` test's ``to:``: ``ref('dim_date')`` -> ``dim_date``,
+    and ``source('erp', 'calendar')`` -> ``erp.calendar``.
 
-    **A bare name is not a target** (#131). dbt keeps a bare ``to:`` as the
-    string and draws no edge to it, and exmergo-dex-core's schema-YAML reader
-    takes ``to:`` only as a ``ref()`` or a ``source()`` (``_parse_relation_ref``
-    in ``exmergo_dex_core/dbt_project.py``, read in 1.15.2), so it reads no
-    join from one. This read ``to: dim_date`` as a join to ``dim_date``
-    through :func:`_referenced_model`, which a semantic model's ``model:``
-    still uses. Anything else is ``None``, and the caller notes it.
+    Read as exmergo-dex-core's schema-YAML reader reads it
+    (``_parse_relation_ref`` in ``exmergo_dex_core/dbt_project.py``, read in
+    1.15.2), which the owner ruled on #131:
+
+    - **A source is a target, named ``<source>.<table>``**, the name that
+      reader gives it. So the join's ``to_model`` names a source, not a model
+      the project builds. This read no join from one, and noted it as
+      unresolvable.
+    - **A bare name is not.** dbt keeps a bare ``to:`` as the string and draws
+      no edge to it, and that reader reads no join from one. This read
+      ``to: dim_date`` as a join to ``dim_date`` through
+      :func:`_referenced_model`, which a semantic model's ``model:`` still
+      uses.
+
+    Anything else is ``None``, and the caller notes it.
     """
 
     if not isinstance(text, str):
         return None
-    match = _REF.search(text)
-    return match.group(1) if match else None
+    ref = _REF.search(text)
+    if ref:
+        return ref.group(1)
+    source = _SOURCE.search(text)
+    return f"{source.group(1)}.{source.group(2)}" if source else None
 
 
 def _test_names(tests: Any) -> list[tuple[str, Any]]:
