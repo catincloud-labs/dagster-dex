@@ -30,6 +30,17 @@ if you depend on the contract.
   both kinds of byte. This change touches that test and this changelog and
   nothing else, so the package, its seam, its engine floor and the tested pin
   do not change.
+- **The changelog test passed a version heading the release job cannot find**
+  (`tests/test_packaging.py`, #136). It asserted the substring
+  `## <version>`, where the `release` job in `publish.yml` greps
+  `^## <version> `, a line start and one space after the version, and runs
+  after the upload. So a heading with no date, `## 0.6.5`, passed the test
+  before the upload and gave that grep nothing after it. The test now reads
+  the heading as the release job does, matching the version literally, and a
+  failure names the heading it wanted. The issue's three arms, a dated
+  heading, one with no date and `## Unreleased`, are self-tests that go
+  through the function the test calls. This change touches that test and
+  this changelog and nothing else, so nothing the package ships changes.
 
 ## 0.6.5 - 2026-10-20
 
