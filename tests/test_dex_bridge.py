@@ -1642,9 +1642,10 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
 #: we would know it worked*).
 #:
 #: No full-line comment sits directly above a column a case drops. Whether one
-#: goes with the column is upstream's decision and is pinned in upstream's own
-#: suite, so a fixture here that leaned on it would be a second copy of that
-#: pin, and one that went red on the release changing it.
+#: goes with the column is upstream's decision (exmergo/dex#764, released in
+#: 1.15.2) and is pinned in upstream's own suite, so a fixture here that leaned
+#: on it would be a second copy of that pin, and one that went red on the
+#: release changing it.
 COMMENTED_FOR_SCHEMA_DRIFT = """# dim_date: the calendar spine. Hand-written, version-controlled.
 version: 2
 models:
