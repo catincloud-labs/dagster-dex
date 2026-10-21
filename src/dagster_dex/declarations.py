@@ -238,7 +238,7 @@ def parse_declarations(
             if composites:
                 keys.extend(composites)
                 if singles:
-                    dropped = ", ".join(sorted(k.columns[0] for k in singles))
+                    dropped = ", ".join(sorted({k.columns[0] for k in singles}))
                     notes.append(
                         f"{model!r} declares a composite grain and also a "
                         f"column-level unique on {dropped}; the composite wins"
@@ -246,7 +246,30 @@ def parse_declarations(
             else:
                 keys.extend(singles)
 
-    return keys, joins, notes
+    return _once(keys), joins, notes
+
+
+def _once(keys: list[DeclaredKey]) -> list[DeclaredKey]:
+    """``keys`` with each key once per model, the first kept, in order.
+
+    **One claim, however often it is written** (#131). A column's ``unique``
+    written twice, by either spelling, on a column listed twice, or in a second
+    entry or file declaring the model, read as two keys on one column; so did a
+    composite key written twice. exmergo-dex-core's schema-YAML reader keeps
+    one key per model and column, compared as written, and one composite per
+    model and set of columns, compared without order or case, across every
+    file it reads, keeping the first. This compares the same way. A key on one
+    column cannot match a composite, which has two or more.
+    """
+
+    found: dict[tuple[str, tuple[str, ...]], DeclaredKey] = {}
+    for key in keys:
+        if len(key.columns) == 1:
+            columns = key.columns
+        else:
+            columns = tuple(sorted(c.lower() for c in key.columns))
+        found.setdefault((key.model, columns), key)
+    return list(found.values())
 
 
 #: The test that declares a model-level composite grain.
@@ -254,15 +277,15 @@ _COMPOSITE_TEST = "unique_combination_of_columns"
 
 
 def _composite_keys(model: str, entry: dict[str, Any], notes: list[str]) -> list[DeclaredKey]:
-    """Each model-level ``unique_combination_of_columns`` that is sane, once.
+    """Each model-level ``unique_combination_of_columns`` that is sane.
 
-    **Every one is read, in order, and one set of columns once** (#131). This
-    read the first alone, so a second composite on the model was unread, and
-    ``maintain reconcile``, which reads the grain through ``definitions()``,
-    would propose a column-level ``unique`` on one of its columns: a key the
-    project never declared. dbt runs every one, and exmergo-dex-core's
-    schema-YAML reader reads every one, keeping the first for each model and
-    set of columns compared without order or case. This keeps the same one.
+    **Every one is read, in order** (#131). This read the first alone, so a
+    second composite on the model was unread, and ``maintain reconcile``,
+    which reads the grain through ``definitions()``, would propose a
+    column-level ``unique`` on one of its columns: a key the project never
+    declared. dbt runs every one, and exmergo-dex-core's schema-YAML reader
+    reads every one. One written twice is read once by :func:`_once`, across
+    every entry for the model.
 
     The test is read bare or under any package prefix: the bare name, or any
     name ending in ``.unique_combination_of_columns``. That is
@@ -289,7 +312,7 @@ def _composite_keys(model: str, entry: dict[str, Any], notes: list[str]) -> list
     reads none: the owner kept it here while exmergo/dex is asked.
     """
 
-    found: dict[tuple[str, ...], DeclaredKey] = {}
+    found: list[DeclaredKey] = []
     for name, payload in _entry_tests(entry, repr(model), notes):
         if name != _COMPOSITE_TEST and not name.endswith(f".{_COMPOSITE_TEST}"):
             continue
@@ -307,11 +330,8 @@ def _composite_keys(model: str, entry: dict[str, Any], notes: list[str]) -> list
                 "than a column name; ignored"
             )
             continue
-        found.setdefault(
-            tuple(sorted(c.lower() for c in named)),
-            DeclaredKey(model=model, columns=named, source="combination"),
-        )
-    return list(found.values())
+        found.append(DeclaredKey(model=model, columns=named, source="combination"))
+    return found
 
 
 def _single_column_keys(
@@ -325,14 +345,11 @@ def _single_column_keys(
     relationship's ``to`` and ``field`` are read beside the test's name or
     under ``arguments:`` (:func:`_test_arguments`).
 
-    **A column's ``unique`` is one key, however often it is written** (#131).
-    Written twice, bare or by ``test_name:``, or on a column listed twice, it
-    read as two keys on one column. exmergo-dex-core's schema-YAML reader
-    keeps one key per model and column, and :func:`_entry_tests` already reads
-    one written under both test keys once, so this keeps the first.
+    A ``unique`` written twice is read once by :func:`_once`, across every
+    entry for the model.
     """
 
-    found: dict[str, DeclaredKey] = {}
+    found: list[DeclaredKey] = []
     for column_entry in entry.get("columns") or []:
         if not isinstance(column_entry, dict):
             continue
@@ -341,7 +358,7 @@ def _single_column_keys(
             continue
         for name, payload in _entry_tests(column_entry, f"{model}.{column}", notes):
             if name == "unique":
-                found.setdefault(column, DeclaredKey(model=model, columns=(column,), source="unique"))
+                found.append(DeclaredKey(model=model, columns=(column,), source="unique"))
             elif name == "relationships" and isinstance(payload, dict):
                 inputs = _test_arguments(payload)
                 target = _relationship_target(inputs.get("to"))
@@ -361,7 +378,7 @@ def _single_column_keys(
                         source="relationships",
                     )
                 )
-    return list(found.values())
+    return found
 
 
 def _absorb_source_tables(

@@ -72,9 +72,11 @@ if you depend on the contract.
   `unique` on one of its columns, a key the project never declared, where it
   declines that edit when the grain is read; #117's entry under 0.6.4 is the
   same defect for the prefixed spelling. Every composite key on a model is
-  now read, in order, with one set of columns read once, compared without
-  order or case as that reader compares them. A column-level `unique` beside
-  them is still dropped with the note that the composite wins. **A project
+  now read, in order. One set of columns is read once, compared without
+  order or case as that reader compares them, whether it is written again in
+  the same entry or in another entry or file that declares the model, as
+  that reader reads across files. A column-level `unique` in the same entry
+  is still dropped with the note that the composite wins. **A project
   with a model declaring two composite keys will now report a key it did not
   report before**, through `declarations()` and on to dex's `definitions()`.
 - **A column's `unique` written twice was read as two keys on that column**
@@ -84,7 +86,8 @@ if you depend on the contract.
   tests. exmergo-dex-core's schema-YAML reader reads one key per model and
   column, and 0.6.4 already read a `unique` written under both `tests:` and
   `data_tests:` once. A column's `unique` is now one key however often it is
-  written, a column listed twice included. **A project that writes a
+  written: on a column listed twice, or in another entry or file that
+  declares the model, included. **A project that writes a
   column's `unique` twice will now report one key where it reported two**,
   through `declarations()` and on to dex's `definitions()`.
 - **A test entry dbt refuses for its shape was skipped with no note** (#131).
