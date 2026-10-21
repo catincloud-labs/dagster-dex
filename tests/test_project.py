@@ -924,19 +924,12 @@ class TestARelationshipToASource:
         assert declarations.notes == ()
 
 
-def two_composites(first: str, second: str) -> str:
+def two_composites(first: str, second: str, form: str = "beside") -> str:
     """`fact_orders` declaring two composite keys, ``first`` then ``second``,
-    each a YAML flow list."""
+    each a YAML flow list, both written in ``form``, one of :data:`FORMS`."""
 
-    return (
-        "models:\n"
-        "  - name: fact_orders\n"
-        "    data_tests:\n"
-        "      - dbt_utils.unique_combination_of_columns:\n"
-        f"          combination_of_columns: {first}\n"
-        "      - dbt_utils.unique_combination_of_columns:\n"
-        f"          combination_of_columns: {second}\n"
-    )
+    second_entry = a_composite_listing(second, form).split("    data_tests:\n", 1)[1]
+    return a_composite_listing(first, form) + second_entry
 
 
 def a_composite(*columns: str) -> DeclaredKey:
@@ -962,8 +955,9 @@ class TestTwoCompositeKeysOnOneModel:
     its note while the second is read.
     """
 
-    def test_both_composite_keys_are_read_in_order(self):
-        text = two_composites("[date, provider]", "[product_id, order_type]")
+    @pytest.mark.parametrize("form", FORMS)
+    def test_both_composite_keys_are_read_in_order(self, form):
+        text = two_composites("[date, provider]", "[product_id, order_type]", form)
         declarations = a_project(declaration_sources={"f": text}).declarations()
         assert declarations.declared_keys == (
             a_composite("date", "provider"),
@@ -1229,6 +1223,42 @@ class TestATestEntryDbtRefuses:
         assert declarations.declared_keys == ()
         assert declarations.declared_joins == ()
         assert declarations.notes == (REFUSED.format(where, keys),)
+
+    def test_the_entry_under_both_keys_is_noted_once(self):
+        """The union reads an identical entry under `tests:` and `data_tests:`
+        once, so its note is said once too (cold review of #138, finding 6)."""
+
+        entry = (
+            "          - unique:\n"
+            "            config:\n"
+            "              severity: warn\n"
+        )
+        text = (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    columns:\n"
+            "      - name: date\n"
+            f"        tests:\n{entry}"
+            f"        data_tests:\n{entry}"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == (
+            BOTH_KEYS.format("fact_orders.date"),
+            REFUSED.format("fact_orders.date", "config, unique"),
+        )
+
+    def test_an_empty_mapping_is_skipped_quietly(self):
+        """A guard rather than a red-first arm: the ruling covers entries of two
+        or more keys, and `{}` read as nothing, with no note, before and after
+        (cold review of #138, finding 7). A fix that notes every mapping it
+        cannot name goes red here."""
+
+        declarations = a_project(
+            declaration_sources={"f": a_date_column_testing("data_tests", "          - {}\n")}
+        ).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == ()
 
 
 class TestDeclarationsIsMemoized:
