@@ -37,10 +37,13 @@ if you depend on the contract.
   runs after the upload. So a heading with no date, `## 0.6.5`, passed the test
   before the upload and gave that grep nothing after it. The test now reads
   the heading as the release job does, matching the version literally, and a
-  failure names the heading it wanted. The issue's three arms, a dated
+  failure names the heading it wanted. The file is read with its line
+  endings as written, as grep reads it. The issue's three arms, a dated
   heading, one with no date and `## Unreleased`, are self-tests that go
-  through the function the test calls. This change touches that test and
-  this changelog and nothing else, so nothing the package ships changes.
+  through the function the test calls, with two more that pin the line start
+  and the literal version, and two that pin the line endings. This change
+  touches that test and this changelog and nothing else, so nothing the
+  package ships changes.
 
 ## 0.6.5 - 2026-10-20
 
