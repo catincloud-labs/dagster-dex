@@ -792,6 +792,79 @@ class TestACompositeKeyListingSomethingOtherThanAName:
         )
 
 
+def a_relationship_to(target: str, form: str) -> str:
+    """`fact_orders.date` tested as a `relationships` join to ``target``, on
+    `date`, written in ``form``, one of :data:`FORMS`."""
+
+    if form == "test_name":
+        test = (
+            "          - name: date_is_a_dim_date\n"
+            "            test_name: relationships\n"
+            f"            to: {target}\n"
+            "            field: date\n"
+        )
+    else:
+        arguments = "              arguments:\n" if form == "arguments" else ""
+        pad = "  " if form == "arguments" else ""
+        test = (
+            "          - relationships:\n"
+            f"{arguments}"
+            f"{pad}              to: {target}\n"
+            f"{pad}              field: date\n"
+        )
+    return a_date_column_testing("data_tests", test)
+
+
+#: The note a relationship whose target is not read gets, whole.
+UNRESOLVED = (
+    "fact_orders.date declares a relationship that names no resolvable model "
+    "and column; ignored"
+)
+
+
+class TestARelationshipToABareName:
+    """#131's (c), the bare arm: a `relationships` test whose `to:` is a bare
+    model name, `to: dim_date`, was read as a join to `dim_date`. dbt draws no
+    edge to it: it keeps `to:` as the string and the test depends on its own
+    model alone (#131, measured with dbt-core 1.12.6). exmergo-dex-core's
+    schema-YAML reader takes `to:` only as a `ref()` or a `source()`
+    (`_parse_relation_ref` in `exmergo_dex_core/dbt_project.py`, read in
+    1.15.2), so it reads no join, and the owner ruled this aligned here. The
+    join is now unread, with the note every other unread target gets.
+
+    Each form goes red: the bare name beside the test's name was read the same
+    way in 0.6.4, and the other two are the forms 0.6.5 added. `ref('dim_date')`
+    in each form is the control, so a red arm is the bare name and not the
+    form.
+    """
+
+    @pytest.mark.parametrize("form", FORMS)
+    def test_a_bare_name_reads_no_join_and_says_so(self, form):
+        declarations = a_project(
+            declaration_sources={"f": a_relationship_to("dim_date", form)}
+        ).declarations()
+        assert declarations.declared_joins == ()
+        assert declarations.notes == (UNRESOLVED,)
+
+    @pytest.mark.parametrize("form", FORMS)
+    def test_a_ref_reads_the_join(self, form):
+        declarations = a_project(
+            declaration_sources={"f": a_relationship_to("ref('dim_date')", form)}
+        ).declarations()
+        assert declarations.declared_joins == (DATE_JOIN,)
+        assert declarations.notes == ()
+
+    def test_a_semantic_model_still_reads_a_bare_model_name(self):
+        """A guard rather than a red-first arm. A semantic model's `model:`
+        goes through the helper the relationship's `to:` went through, and a
+        bare name is read there. Aligning `to:` must not reach it, so a fix
+        that drops the bare arm from the shared helper goes red here."""
+
+        text = "semantic_models:\n  - name: revenue\n    model: mart_revenue\n"
+        declarations = a_project(semantic_sources={"s": text}).declarations()
+        assert [m.model for m in declarations.semantic_models] == ["mart_revenue"]
+
+
 class TestDeclarationsIsMemoized:
     """The memo is a performance property, so it is asserted by counting parses.
 
