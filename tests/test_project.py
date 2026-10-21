@@ -1082,6 +1082,80 @@ class TestUniqueWrittenTwiceOnOneColumn:
         assert declarations.notes == ()
 
 
+def a_unique_on(column: str) -> str:
+    """`fact_orders` declaring a column-level `unique` on ``column``."""
+
+    return (
+        "models:\n"
+        "  - name: fact_orders\n"
+        "    columns:\n"
+        f"      - name: {column}\n"
+        "        data_tests: [unique]\n"
+    )
+
+
+def a_composite_on(columns: str) -> str:
+    """`fact_orders` declaring one composite key, ``columns`` a YAML flow list."""
+
+    return (
+        "models:\n"
+        "  - name: fact_orders\n"
+        "    data_tests:\n"
+        "      - dbt_utils.unique_combination_of_columns:\n"
+        f"          combination_of_columns: {columns}\n"
+    )
+
+
+class TestAKeyDeclaredInTwoEntries:
+    """#131's (e) and (f) across entries: a model's declarations may be split
+    over several files, and `scripts/drive_dex_against_the_wheel.py` declares
+    `fact_orders` in two. exmergo-dex-core's schema-YAML reader keeps one key
+    per model and column, and one composite per model and set of columns,
+    across every file it reads: its two maps are built outside its loop over
+    files (`_declared_from_yaml` in `exmergo_dex_core/dbt_project.py`, read in
+    1.15.2). #131 words (f)'s alignment as one key per model and columns. So a
+    key written again in another file, or in a second entry for the model in
+    the same file, reads once here too, where it read once per entry (cold
+    review of #138, finding 1).
+
+    Keys that differ are the control: both are read, across files as in one.
+    """
+
+    @pytest.mark.parametrize(
+        "sources",
+        [
+            {"a": a_unique_on("date"), "b": a_unique_on("date")},
+            {"a": a_unique_on("date") + a_unique_on("date").split("models:\n", 1)[1]},
+        ],
+        ids=["two-files", "two-entries-one-file"],
+    )
+    def test_a_unique_declared_again_reads_one_key(self, sources):
+        declarations = a_project(declaration_sources=sources).declarations()
+        assert declarations.declared_keys == (DATE_KEY,)
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize("second", ["[date, provider]", "[Provider, DATE]"], ids=["again", "reordered-recased"])
+    def test_a_composite_declared_again_in_another_file_reads_once(self, second):
+        sources = {"a": a_composite_on("[date, provider]"), "b": a_composite_on(second)}
+        declarations = a_project(declaration_sources=sources).declarations()
+        assert declarations.declared_keys == (a_composite("date", "provider"),)
+        assert declarations.notes == ()
+
+    def test_different_keys_in_two_files_are_both_read(self):
+        sources = {
+            "a": a_unique_on("date"),
+            "b": a_unique_on("order_id"),
+            "c": a_composite_on("[product_id, order_type]"),
+        }
+        declarations = a_project(declaration_sources=sources).declarations()
+        assert declarations.declared_keys == (
+            DATE_KEY,
+            DeclaredKey(model="fact_orders", columns=("order_id",), source="unique"),
+            a_composite("product_id", "order_type"),
+        )
+        assert declarations.notes == ()
+
+
 class TestATestEntryDbtRefuses:
     """#131's (a): a test written as a mapping of more than one key with no
     string `test_name:` naming it was skipped with no note. The common shape
