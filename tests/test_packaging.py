@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import importlib.metadata as md
 import importlib.resources as res
+import re
 from pathlib import Path
+
+import pytest
 
 import dagster_dex
 
@@ -87,17 +90,67 @@ def test_the_changelog_has_an_entry_for_the_version_being_shipped():
     under it would pass, and no test can tell a real entry from a placeholder -
     that part is review's, and this stops the case review never sees because
     there is nothing on screen to notice.
+
+    The heading is read as the `release` job reads it, by
+    :func:`changelog_heading_problem`, whose arms are the test below.
     """
 
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    version = md.version("dagster-dex")
+    problem = changelog_heading_problem(changelog, md.version("dagster-dex"))
+    assert problem is None, problem
 
-    assert f"## {version}" in changelog, (
-        f"CHANGELOG.md has no `## {version}` heading. Every release needs an "
-        "entry, and the bump is the moment to write it - afterwards it gets "
-        "reconstructed from git history, which is how the 0.1.0 and 0.2.0 "
-        "entries in that file came to be shorter than they deserve."
+
+def changelog_heading_problem(changelog: str, version: str) -> str | None:
+    """Why ``changelog`` has no heading the `release` job can link for
+    ``version``, or ``None`` when it has one.
+
+    **The heading is read as `release` reads it** (#136):
+    `.github/workflows/publish.yml`'s `release` job takes
+    `grep -m1 "^## ${VERSION} "`, a line that starts with the version and one
+    space after it, and builds the Release's link to this file from what follows.
+    It runs after the upload. This test asserted the substring `## <version>`,
+    so a heading with no date, `## 0.6.5`, passed it and gave that grep
+    nothing: the check before the upload was looser than the one after it.
+
+    The version is matched literally, where grep reads each `.` in it as any
+    character. A line this finds is one that grep finds, so this is never the
+    looser of the two.
+    """
+
+    if re.search(rf"^## {re.escape(version)} ", changelog, flags=re.MULTILINE):
+        return None
+    return (
+        f"CHANGELOG.md has no line starting `## {version} `, the version and "
+        "one space, which is the heading the release job links to (as in "
+        f"`## {version} - <date>`). Every release needs an entry, and the bump "
+        "is the moment to write it - afterwards it gets reconstructed from git "
+        "history, which is how the 0.1.0 and 0.2.0 entries in that file came to "
+        "be shorter than they deserve."
     )
+
+
+@pytest.mark.parametrize(
+    "heading, wanted",
+    [
+        ("## 0.6.5 - 2026-10-20", False),
+        ("## 0.6.5", True),
+        ("## Unreleased", True),
+    ],
+    ids=["dated", "no-date", "unreleased"],
+)
+def test_the_changelog_heading_is_read_as_the_release_job_reads_it(heading, wanted):
+    """#136's three arms, each a changelog with one heading, through the
+    function the test above calls. The dated heading is found. The heading with
+    no date is not, and the failure names the heading the release job wants;
+    the substring check this replaced passed it. `## Unreleased` is not found,
+    as it was not before."""
+
+    changelog = f"# Changelog\n\n{heading}\n\n### Fixed\n\n- An entry.\n"
+    problem = changelog_heading_problem(changelog, "0.6.5")
+    if wanted:
+        assert problem is not None and "`## 0.6.5 `" in problem
+    else:
+        assert problem is None
 
 
 def test_the_py_typed_marker_exists():
