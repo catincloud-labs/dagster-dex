@@ -911,6 +911,91 @@ class TestARelationshipToASource:
         assert declarations.notes == ()
 
 
+def two_composites(first: str, second: str) -> str:
+    """`fact_orders` declaring two composite keys, ``first`` then ``second``,
+    each a YAML flow list."""
+
+    return (
+        "models:\n"
+        "  - name: fact_orders\n"
+        "    data_tests:\n"
+        "      - dbt_utils.unique_combination_of_columns:\n"
+        f"          combination_of_columns: {first}\n"
+        "      - dbt_utils.unique_combination_of_columns:\n"
+        f"          combination_of_columns: {second}\n"
+    )
+
+
+def a_composite(*columns: str) -> DeclaredKey:
+    return DeclaredKey(model="fact_orders", columns=columns, source="combination")
+
+
+class TestTwoCompositeKeysOnOneModel:
+    """#131's (e): a model declaring two composite keys, `[date, provider]`
+    then `[product_id, order_type]`, was read as the first alone. dbt runs
+    both tests, and exmergo-dex-core's schema-YAML reader reads both
+    (`_declared_from_yaml` in `exmergo_dex_core/dbt_project.py`, read in
+    1.15.2). `maintain reconcile` reads the grain through `definitions()`, so
+    with the second unread it would propose a column-level `unique` on a
+    column of that grain, a key the project never declared, which is the
+    defect #117 fixed for the prefixed spelling. The owner ruled this aligned
+    here.
+
+    That reader keeps one composite per model and set of columns, compared
+    without order or case, and keeps the first. The same key written twice
+    therefore reads once, before and after this change, so those arms are
+    guards: a fix that reads every composite without that rule goes red there.
+    So is the arm whose first composite lists no column, which is skipped with
+    its note while the second is read.
+    """
+
+    def test_both_composite_keys_are_read_in_order(self):
+        text = two_composites("[date, provider]", "[product_id, order_type]")
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            a_composite("date", "provider"),
+            a_composite("product_id", "order_type"),
+        )
+        assert declarations.notes == ()
+
+    @pytest.mark.parametrize(
+        "second",
+        ["[date, provider]", "[provider, date]", "[DATE, Provider]"],
+        ids=["again", "reordered", "recased"],
+    )
+    def test_the_same_key_written_again_is_read_once(self, second):
+        text = two_composites("[date, provider]", second)
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (a_composite("date", "provider"),)
+        assert declarations.notes == ()
+
+    def test_a_composite_listing_no_column_is_skipped_and_the_next_is_read(self):
+        text = two_composites("[]", "[product_id, order_type]")
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (a_composite("product_id", "order_type"),)
+        assert declarations.notes == (NO_COLUMNS,)
+
+    def test_both_composite_keys_beat_a_single_column_one_and_say_so(self):
+        """The composite still wins over a column-level `unique` (#131's (g),
+        not ruled), and with two composites it is both that win."""
+
+        text = two_composites("[date, provider]", "[product_id, order_type]") + (
+            "    columns:\n"
+            "      - name: order_id\n"
+            "        data_tests:\n"
+            "          - unique\n"
+        )
+        declarations = a_project(declaration_sources={"f": text}).declarations()
+        assert declarations.declared_keys == (
+            a_composite("date", "provider"),
+            a_composite("product_id", "order_type"),
+        )
+        assert declarations.notes == (
+            "'fact_orders' declares a composite grain and also a column-level "
+            "unique on order_id; the composite wins",
+        )
+
+
 class TestDeclarationsIsMemoized:
     """The memo is a performance property, so it is asserted by counting parses.
 
