@@ -696,6 +696,102 @@ class TestATestReadTheWayDbtReadsIt:
         assert declarations.notes == ()
 
 
+#: The three places dbt reads a test's inputs from, each a form the parser
+#: reads since 0.6.5: beside the test's name, under `arguments:`, and beside a
+#: `test_name:` that names the test.
+FORMS = ["beside", "arguments", "test_name"]
+
+
+def a_composite_listing(columns: str, form: str) -> str:
+    """A model-level composite key on `fact_orders` whose
+    `combination_of_columns` is ``columns``, a YAML flow list, written in
+    ``form``, one of :data:`FORMS`."""
+
+    if form == "test_name":
+        return (
+            "models:\n"
+            "  - name: fact_orders\n"
+            "    data_tests:\n"
+            "      - name: fact_orders_grain\n"
+            "        test_name: dbt_utils.unique_combination_of_columns\n"
+            f"        combination_of_columns: {columns}\n"
+        )
+    arguments = "          arguments:\n" if form == "arguments" else ""
+    pad = "  " if form == "arguments" else ""
+    return (
+        "models:\n"
+        "  - name: fact_orders\n"
+        "    data_tests:\n"
+        "      - dbt_utils.unique_combination_of_columns:\n"
+        f"{arguments}"
+        f"{pad}          combination_of_columns: {columns}\n"
+    )
+
+
+#: The note a composite key listing something other than a column name gets,
+#: whole.
+NOT_A_NAME = (
+    "'fact_orders' declares a composite grain listing something other than a "
+    "column name; ignored"
+)
+
+
+class TestACompositeKeyListingSomethingOtherThanAName:
+    """#131's (b), the mixed lists: a `combination_of_columns` holding a
+    non-string, such as `[date, 1]` or `[date, provider, 1]`, was read as a key
+    on its strings alone, on `date` or on `(date, provider)`. That is a key on
+    fewer columns than the test checks, so it claims more than the test does.
+    exmergo-dex-core's schema-YAML reader reads a composite only from a list of
+    two or more columns that are all strings (`_declared_from_yaml` in
+    `exmergo_dex_core/dbt_project.py`, read in 1.15.2), so it reads no key from
+    either list, in any form. The owner ruled this aligned here, with a note.
+
+    Each list is read in all three forms. The form beside the test's name read
+    the same way in 0.6.4, and the other two are the forms 0.6.5 added, so all
+    three go red. The lists of names are the controls, on the same builder:
+    `[date, provider]` reads the composite, and `[date]` keeps its key on
+    `date`, which the owner ruled kept here while exmergo/dex is asked. So a
+    red arm is the non-string, not the probe or the form.
+    """
+
+    @pytest.mark.parametrize("form", FORMS)
+    @pytest.mark.parametrize("columns", ["[date, 1]", "[date, provider, 1]"])
+    def test_a_list_holding_a_non_string_reads_no_key_and_says_so(self, columns, form):
+        declarations = a_project(
+            declaration_sources={"f": a_composite_listing(columns, form)}
+        ).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == (NOT_A_NAME,)
+
+    @pytest.mark.parametrize("form", FORMS)
+    @pytest.mark.parametrize(
+        "columns, key",
+        [("[date, provider]", ("date", "provider")), ("[date]", ("date",))],
+        ids=["two-names", "one-name"],
+    )
+    def test_a_list_of_names_reads_its_key(self, columns, key, form):
+        declarations = a_project(
+            declaration_sources={"f": a_composite_listing(columns, form)}
+        ).declarations()
+        assert declarations.declared_keys == (
+            DeclaredKey(model="fact_orders", columns=key, source="combination"),
+        )
+        assert declarations.notes == ()
+
+    def test_a_list_with_no_name_in_it_keeps_its_note(self):
+        """A guard rather than a red-first arm: `[1]` holds a non-string too,
+        and it read as no key before, with the note that it lists no usable
+        column. A fix that checks for a non-string first rewords that note."""
+
+        declarations = a_project(
+            declaration_sources={"f": a_composite_listing("[1]", "arguments")}
+        ).declarations()
+        assert declarations.declared_keys == ()
+        assert declarations.notes == (
+            "'fact_orders' declares a composite grain with no usable columns; ignored",
+        )
+
+
 class TestDeclarationsIsMemoized:
     """The memo is a performance property, so it is asserted by counting parses.
 
