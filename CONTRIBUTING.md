@@ -153,19 +153,50 @@ re-vendor is a defect at the source, and that test is the first to see it.
   deliberate. Only *adjacency* fires - "part of #N" and "refs #N" are safe.
   CI checks the same thing over the PR body, so forgetting the hook is caught,
   just later.
-- **From a fork, one check reads red until the maintainer has looked at your
-  pull request, and that red is expected.** In `pr-hygiene`, the step
-  `Exactly one deploy label` refuses a pull request carrying no `deploy:` label,
-  and applying a label takes triage access, which a contributor outside the
-  repository does not have. Nothing on your side clears it: the maintainer
-  applies a label at triage, and the label change re-runs the step with no push
-  needed. Until a commit or pull request of yours has been merged here, every
-  workflow run, that one included, waits for the maintainer's approval before
-  it starts, because this repository requires approval for first-time
-  contributors and GitHub counts you as one until that merge. While a run
-  waits, its checks read as awaiting approval rather than red. The red run from
-  before the label stays listed beside the green one, and the latest run is the
-  one that counts.
+- **From a fork, what happens next depends on whether you hold write access
+  here.** Either way, `pr-hygiene`'s step `Exactly one deploy label` refuses a
+  pull request carrying no `deploy:` label, and a label change re-runs the step
+  with no push needed. The red run from before the label stays listed beside
+  the green one, and the latest run is the one that counts.
+  - **Without write access, that red is expected until the maintainer has
+    looked at your pull request.** Applying a label takes triage access, so
+    nothing on your side clears it: the maintainer applies a label at triage.
+    Until a commit or pull request of yours has been merged here, every
+    workflow run, that one included, also waits for approval from someone
+    with write access here before it starts, because this repository requires
+    approval for first-time contributors and GitHub counts you as one until
+    that merge.
+    While a run waits, its checks read as awaiting approval rather than red.
+  - **As a collaborator, holding write access, you apply your own `deploy:`
+    label and a `review:` clock** when you open the pull request. The
+    template's checklist says which `deploy:` value applies here, and the
+    clock is `review:this-week`, the default for a fix or small docs, unless
+    the maintainer sets another. The label descriptions are written for
+    several repositories, so take the values from here rather than from
+    them. Your runs should start without
+    approval: on #135, the first pull request here from a collaborator's fork,
+    they started at once, before its author had anything merged here. GitHub's
+    documentation of the approval setting names only a prior merge as the
+    exemption, so that is one observation, not a documented rule.
+
+  In both cases CI runs on the `pull_request` event: every workflow file in
+  `.github/workflows` that runs on a pull request is triggered by it. From a
+  fork, GitHub gives such a run a read-only token and no repository secret,
+  whoever the author is, so write access changes who labels the pull request
+  and whether a run waits, not what such a run can do. GitHub's CodeQL
+  default setup also runs on pull requests here, as its own event with no
+  file in that directory; it did not run on #135.
+- **From a fork in your personal account, please tick the box that lets
+  maintainers edit your branch** when you open the pull request. It lets
+  anyone with write access here push to your branch, so a small fix a review
+  asks for can land as a commit rather than a round trip through you. A fork
+  of this repository carries its workflows, so GitHub labels the box *Allow
+  edits and access to secrets by maintainers*, and warns that ticking it also
+  lets them edit your fork's workflows, which can reveal that fork's secrets
+  and give access to its other branches. GitHub offers the box only on a fork
+  in a personal account: #135 came from a fork owned by an organization, so it
+  had no such box, and a change its review asked for could be pushed only by
+  someone with access to that fork.
 - **Approval and merge are separate, and every merge into `main` is the
   maintainer's.** A pull request from anyone but the maintainer needs an
   approving review from a code owner of each file it changes.
@@ -187,6 +218,35 @@ re-vendor is a defect at the source, and that test is the first to see it.
   second because a public repository cannot call the private shared action.
   Both are diffed against their sources from the private side, which fails on
   drift, so please do not edit either here.
+
+## What review looks like
+
+Review here re-runs your claims rather than reading them. From a clean
+checkout of your pull request's head, the maintainer runs what its
+*Verification* says you ran, and tries mutations of their own: small
+deliberate breaks in the code or the test, to see whether the test goes red
+on them.
+
+A reading that cannot run from a clean checkout is welcome when it is listed
+under the template's *Readings not reproducible from a clean checkout*, with
+where it ran: a warehouse, a scratch harness, a credential. Listed there, it
+tells the reviewer which claims rest on your word rather than on a re-run.
+The dogfood runs in #135 were labelled this way.
+
+Each requested change carries a priority:
+
+- **P1:** the test can pass on a wrong result.
+- **P2:** a statement that would be false, or permanent, once merged. A commit
+  subject is one: the maintainer merges with a merge commit, never a squash,
+  so a subject lands on `main` as written.
+- **P3:** clarity.
+
+The changes come in two groups: what must change before approval, and what is
+fine as follow-up issues, filed and linked from the pull request. Approval
+follows the first group, and the merge stays the maintainer's, as the
+*Approval and merge* bullet above says.
+[The review of #135](https://github.com/catincloud-labs/dagster-dex/pull/135#issuecomment-6320793495)
+is the model.
 
 ## What is likely to be accepted
 

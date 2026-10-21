@@ -24,11 +24,52 @@ if you depend on the contract.
   1.10.0 (`column_added`, `column_dropped`, `nullability_changed`) and names
   the comment, if any, each case is expected to lose, which is the falsifier
   #88 asked for. Each case also asserts that its edit landed: the column is
-  added or dropped, or its `not_null` is removed or added. Below 1.10.0 each case is asserted advisory with the file
-  unchanged. Both arms are chosen by installed engine minor with no skip, the
-  same shape as #94. This change touches that test file and this changelog and
+  added or dropped, or its `not_null` is removed or added. Below 1.10.0 each
+  case is asserted advisory with the file unchanged. Both arms are chosen by
+  installed engine minor with no skip, the same shape as #94. This change touches that test file and this changelog and
   nothing else, so the package, its seam, its engine floor and the tested pin
   do not change.
+
+## 0.6.6 - 2026-10-21
+
+Six fixes to the declaration parser (#131), and two to tests (#128, #136),
+which reach the sdist's `tests/` but neither the wheel nor an installed copy.
+Every entry is a fix. Under `src/`, only `declarations.py`, the docstring of
+`DeclaredJoin` in `model.py` and the version string changed, every name added
+or removed in `declarations.py` is private, and `pyproject.toml` moved only its
+version, so the seam and the engine floor are where 0.6.5 left them. That was
+measured at the bump, and anyone can re-run it as `git diff v0.6.5..v0.6.6 --
+src/ pyproject.toml`. The tested pin is written outside both, and is where
+0.6.5 left it too: `git diff v0.6.5..v0.6.6 -G 'core==[0-9]' --name-only`
+prints nothing. A patch exists because an installed copy sees a fix only as a
+new version. No public name, signature or dataclass field changed, but five of
+the parser fixes change the keys or joins a project reports and the sixth adds
+a note, and each entry says so in bold.
+
+**One change argues for a minor, and does not decide it.** A join's
+`to_model` can now name a source, as `<source>.<table>`, where 0.6.5 read a
+`relationships` test whose `to:` is a `source()` as no join (that test's entry
+below). A consumer that took `to_model` to name a model now meets one naming a
+table the project does not build, which `DeclaredJoin`'s docstring now says.
+It is not a minor here. The field is a string as it was. The new value is
+reached only from a declaration 0.6.5 already noted as naming no resolvable
+model and column. It is the name exmergo-dex-core's own schema-YAML reader
+gives the same declaration, read at 1.8.0 and at 1.15.2 for this bump. And
+this release does neither thing that made an earlier release a minor: 0.5.0
+and 0.6.0 raised the engine floor, and 0.2.0 to 0.4.0, on an unchanged floor,
+added to the public surface. It is a patch as 0.6.4 and 0.6.5 were, whose
+fixes also changed which keys and joins a project reports.
+
+Of the three disagreements with exmergo-dex-core's reader that 0.6.5's lead
+names, two now read as that reader reads them: a bare model name in `to:`, and
+a column's `unique` written twice. Of the third, a `combination_of_columns` of
+`[a, 1]` or `[a, b, 1]` now reads as that reader reads it, and `[a]` still
+reads as a key on `a`, kept while exmergo/dex is asked (exmergo/dex#768). A
+test entry dbt refuses for its keys, which that reader reads, is still
+skipped, now with a note, kept the same way (exmergo/dex#767). Those are not
+the only differences 0.6.6 ships: `[a, b, '']`, which the first composite
+entry below names, still reads as a key on `(a, b)` where that reader reads
+`(a, b, '')`, and is not ruled.
 
 ### Fixed
 
@@ -44,8 +85,98 @@ if you depend on the contract.
   is read rather than skipped. The issue's four arms are now self-tests that
   go through the function the test calls, with a fifth for a line holding
   both kinds of byte. This change touches that test and this changelog and
-  nothing else, so the package, its seam, its engine floor and the tested pin
-  do not change.
+  nothing else, so the installed package, its seam, its engine floor and the
+  tested pin do not change.
+- **A composite key listing something other than a column name was read as a
+  key on its names alone** (#131). A `combination_of_columns` of `[a, 1]`
+  read as a key on `a`, and one of `[a, b, 1]` as a key on `(a, b)`: a key on
+  fewer columns than the test checks, which claims more than the test does.
+  That held beside the test's name, and since 0.6.5 under `arguments:` and
+  beside a `test_name:` too. exmergo-dex-core's schema-YAML reader takes a
+  composite only from a list of two or more columns that are all strings, so
+  it reads no key from either. Such a list now reads as no key here, and is
+  noted. **A project with such a list will now report one key fewer, and a
+  note it did not carry**, through `declarations()` and on to dex's
+  `definitions()`. A list of one name, `[a]`, still reads as a key on `a`,
+  where that reader reads none: the owner kept it here while exmergo/dex is
+  asked. A list holding an empty string is not covered, because an empty
+  string is a string: `[a, b, '']` still reads as a key on `(a, b)`, where
+  that reader reads `(a, b, '')`. That is not ruled.
+- **A `relationships` test whose `to:` is a bare model name was read as a
+  join to that model** (#131). `to: customers` read as a join to `customers`,
+  beside the test's name, and since 0.6.5 under `arguments:` and beside a
+  `test_name:` too. dbt keeps a bare `to:` as the string and draws no edge to
+  it, and exmergo-dex-core's schema-YAML reader takes `to:` only as a `ref()`
+  or a `source()`, so it reads no join. Such a test now reads as no join here,
+  with the note every other unread target gets: that the relationship names
+  no resolvable model and column. **A project whose `to:` names a model bare
+  will now report one join fewer, and that note**, through `declarations()`
+  and on to dex's `definitions()`. A semantic model's `model:` is read as it
+  was, a bare name included.
+- **A `relationships` test whose `to:` is a `source()` was read as no join**
+  (#131), and noted as naming no resolvable model and column. exmergo-dex-core's
+  schema-YAML reader reads `to: source('s', 't')` as a join to `s.t`, the
+  source and its table joined by a dot: beside the test's name at every
+  release #131 measured, and under `arguments:` from 1.13.1 (exmergo/dex#566).
+  dbt makes the test depend on that source. The same join is now read here, in
+  each form this parser reads, so a join's `to_model` can name a source rather
+  than a model the project builds, and `DeclaredJoin`'s docstring says so.
+  **A project whose `to:` names a source will now report a join it did not
+  report before, and one note fewer**, through `declarations()` and on to
+  dex's `definitions()`.
+- **A model declaring two composite keys was read as declaring the first
+  alone** (#131). dbt runs both tests, and exmergo-dex-core's schema-YAML
+  reader reads both. `maintain reconcile` reads the grain through
+  `definitions()`, so with the second unread it would propose a column-level
+  `unique` on one of its columns, a key the project never declared, where it
+  declines that edit when the grain is read; #117's entry under 0.6.4 is the
+  same defect for the prefixed spelling. Every composite key on a model is
+  now read, in order. One set of columns is read once, compared without
+  order or case as that reader compares them, whether it is written again in
+  the same entry or in another entry or file that declares the model, as
+  that reader reads across files. A column-level `unique` in the same entry
+  is still dropped with the note that the composite wins. **A project
+  with a model declaring two composite keys will now report a key it did not
+  report before**, through `declarations()` and on to dex's `definitions()`.
+- **A column's `unique` written twice was read as two keys on that column**
+  (#131). Written bare twice, it was read so in 0.6.4 too, on a file dbt
+  refuses. Written once bare and once by `test_name:`, or twice by
+  `test_name:`, it was read so since 0.6.5, on a file dbt parses into two
+  tests. exmergo-dex-core's schema-YAML reader reads one key per model and
+  column, and 0.6.4 already read a `unique` written under both `tests:` and
+  `data_tests:` once. A column's `unique` is now one key however often it is
+  written: on a column listed twice, or in another entry or file that
+  declares the model, included. **A project that writes a
+  column's `unique` twice will now report one key where it reported two**,
+  through `declarations()` and on to dex's `definitions()`.
+- **A test entry dbt refuses for its shape was skipped with no note** (#131).
+  A test written as a mapping of two or more keys with no string
+  `test_name:` naming it, such as a test with its `config:` beside its name
+  rather than inside it, or a `test_name:` that is not a string beside the
+  test's own key, makes dbt refuse the project. The parser skipped it silently, against this
+  module's rule that input it skips is noted. exmergo-dex-core's schema-YAML
+  reader reads the test among the keys, on purpose (exmergo/dex#566), so the
+  two still disagree here: the owner kept the skip while exmergo/dex is
+  asked. The entry is still skipped, and now noted once with its keys. A
+  mapping of one key, or an empty one, reads as it did. **Nothing
+  a project declares changes; it gains a note for each such entry, one for
+  entries alike in their keys and where they sit**, through
+  `declarations()` and on to dex's `definitions()`, where `maintain
+  reconcile` carries notes into its warnings.
+- **The changelog test passed a version heading the release job cannot find**
+  (`tests/test_packaging.py`, #136). It asserted the substring
+  `## <version>`, where the `release` job in `publish.yml` greps for a line
+  that starts with `## <version>` and has one space after the version, and
+  runs after the upload. So a heading with no date, `## 0.6.5`, passed the test
+  before the upload and gave that grep nothing after it. The test now reads
+  the heading as the release job does, matching the version literally, and a
+  failure names the heading it wanted. The file is read with its line
+  endings as written, as grep reads it. The issue's three arms, a dated
+  heading, one with no date and `## Unreleased`, are self-tests that go
+  through the function the test calls, with two more that pin the line start
+  and the literal version, and two that pin the line endings. This change
+  touches that test and this changelog and nothing else, so nothing the
+  wheel ships changes.
 
 ## 0.6.5 - 2026-10-20
 
