@@ -6,7 +6,8 @@ Operating rules for AI coding agents, and for humans skimming for the sharp edge
 
 One Python distribution: `dagster-dex`. A Dagster asset graph reduced to a neutral
 project model, and bridged onto the `dex` engine's project seam through an entry
-point. Alpha - the seam is a proposal, and the argument may still change it.
+point. Stable from 1.0.0 - the seam follows semantic versioning, and a breaking
+change to it waits for 2.0 (README, *Status*).
 
 ## The rule that matters most here
 

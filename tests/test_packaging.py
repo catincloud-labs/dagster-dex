@@ -66,7 +66,7 @@ def test_the_top_level_exports_the_write_tier_vocabulary():
     **Held to what a caller CONSTRUCTS.** `EditConflict`, `ProjectFile` and
     `ProjectFileView` are values a caller receives and reads, never names, so
     they stay module-scoped. Exporting a type with no consumer is a promise made
-    for nothing, and this contract is alpha.
+    for nothing, and from 1.0.0 withdrawing one is a breaking change.
     """
 
     assert {

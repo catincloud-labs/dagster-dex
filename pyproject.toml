@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dagster-dex"
-version = "0.6.6"
+version = "1.0.0"
 # Leads with the use case rather than the design argument, because this is the
 # COLDEST surface the package has: it renders under the name in PyPI search
 # results, above the README. The README opens with this same sentence (#109);
@@ -47,16 +47,15 @@ keywords = ["dagster", "dex", "dbt", "data-quality", "drift", "project-format"]
 # and setuptools>=77 REFUSES the build when both are present. The license is
 # already declared, twice: as the SPDX expression and as `license-files`.
 #
-# `Development Status :: 3 - Alpha` rather than 4/Beta: the format is verified
-# end to end against a real Dagster graph and passes dex-core's own conformance
-# suite, but nothing outside this repository is known to depend on it, and the
-# seam is still a proposal. Alpha is what "the contract may still move" looks
-# like on a project page. (This comment said "tier 3 is declined by design"
-# until 2026-08-27, which had been false since 0.4.0 shipped the write path --
-# the truth pass that retired that claim's four other sites did not reach this
-# file. The Alpha claim never rested on it.)
+# `Development Status :: 5 - Production/Stable` from 1.0.0, which was cut on
+# evidence rather than on a date: the three criteria recorded on #57 held. This
+# package's seam held through a full minor cycle, upstream's project seam held
+# across two consecutive engine minors, and the defect-injection floor held at
+# 5/5. From that release the seam follows semantic versioning and a breaking
+# change waits for 2.0, which is what this classifier says on a project page
+# and the README's *Status* says in words.
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",

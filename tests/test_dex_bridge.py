@@ -1140,7 +1140,7 @@ class TestAnArtifactWithADeclarationsDirectory:
         assert project.load().files == {}
 
     def test_the_directory_parent_is_the_project_root(self, tmp_path):
-        """The derivation is a guarantee, stable at least until 1.0.
+        """The derivation is a guarantee, and changing it waits for 2.0.
 
         Keys are `<directory-name>/<file>` relative to the parent, and
         downstream tooling stores plans relative to that root - a plan made
