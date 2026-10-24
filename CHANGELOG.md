@@ -15,9 +15,9 @@ major if you depend on the contract.
 
 ## 1.0.0 - 2026-10-24
 
-The first stable release. From it the seam follows semantic versioning: a minor
-may add to the seam, a change that would break a consumer waits for 2.0, and a
-consumer who depends on the contract pins the major (README, *Status*).
+The first stable release. From it the seam follows semantic versioning: a
+breaking change to it waits for 2.0, and a consumer who depends on the contract
+pins the major (README, *Status*).
 
 **Cut on evidence, not on a date.** #57 records three criteria for 1.0, and the
 owner ruled the cut once all three held at exmergo-dex-core 1.16.0
@@ -38,7 +38,8 @@ owner ruled the cut once all three held at exmergo-dex-core 1.16.0
    ([#57, comment 6389016186](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389016186)).
 
 Nothing in the package's behaviour changed for it. Under `src/`, only the
-version string and one comment changed, and `pyproject.toml` moved only its
+version string, one comment and one docstring changed, and `pyproject.toml`
+moved only its
 version, its `Development Status` classifier and the comment above it, so the
 seam, the engine range and its floor are where 0.6.6 left them:
 `git diff v0.6.6..v1.0.0 -- src/ pyproject.toml` shows it. The tested pin is
@@ -53,19 +54,25 @@ the sdist's `tests/` but neither the wheel nor an installed copy.
   was `3 - Alpha`, and README's *Status* says what that means for a consumer:
   semantic versioning from this release, a breaking change waiting for 2.0,
   and a pin on the major where the old text asked for a pin on the minor.
-  **A pin written as the old text asked, such as `dagster-dex~=0.6`, does not
-  admit 1.0.0**: move it to `dagster-dex~=1.0` to take this release, which
-  breaks nothing 0.6.6 offered.
+  **No pin below 1.0 admits 1.0.0, whether on the minor as the old text
+  asked (`dagster-dex~=0.6.0`) or on the 0 major (`dagster-dex~=0.6`)**:
+  move it to `dagster-dex~=1.0` to take this release, which breaks nothing
+  0.6.6 offered. Under SECURITY.md's rule that only the latest minor receives
+  fixes, 0.6 receives none from this release on.
 - **Every other document that called the package alpha or a sketch, or
-  bounded a guarantee at 1.0, now says the same as *Status***: README's *What
-  this is*, which called it "a working sketch of a contract, not a finished
-  integration", and its derivation guarantee under *Reaching the write tier over the artifact
-  transport*, which said "stable at least until 1.0" and now says changing it
-  waits for 2.0; SECURITY.md's *Supported versions*; CONTRIBUTING.md's
-  opening; AGENTS.md's *What this is*; this file's opening; and the comment
-  above the classifier. The text each replaced is quoted under *How this
-  section read before*, below. A comment in `__init__.py` and two test
-  docstrings that said the same are rewritten in place.
+  bounded a guarantee at 1.0, now says the same as *Status***: README's
+  *What this is*, which called it "a working sketch of a contract, not a
+  finished integration"; its derivation guarantee under *Reaching the write
+  tier over the artifact transport*, which said "stable at least until 1.0"
+  and now says changing it waits for 2.0; SECURITY.md's *Supported
+  versions*; CONTRIBUTING.md's opening; AGENTS.md's *What this is*; this
+  file's opening; and the comment above the classifier. README's *Using the
+  contract on another format* said a breaking change to the conformance
+  contract was taken "while the suite has no outside implementers", and now
+  says it was taken before the first release. The text each replaced is
+  quoted under *How this section read before*, below. A comment in
+  `__init__.py`, the same sentence in `conformance.py`'s docstring, and two
+  test docstrings that said the same are rewritten in place.
 
 ### Added
 
@@ -855,6 +862,23 @@ good source of project truth, and reading one does not require it to pretend to
 be a dbt project first.
 ```
 
+### `README.md`, *Using the contract on another format*, its last paragraph
+
+Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)):
+in the present tense, in a 1.0.0 README, it reads as leave to break the
+contract while it has no outside implementers, which semantic versioning
+withdraws. The change it describes predates 0.1.0:
+`git log -S'outside implementers' -- README.md` names the first commit, two
+days before `v0.1.0`. Part of #57. It read:
+
+```markdown
+`make_project` took two arguments before external sources landed. The third
+is a **breaking change to this contract**, taken deliberately while the suite has
+no outside implementers rather than carried forever as an optional hook that
+could be skipped - and a skipped assertion is not a passing one.
+```
+
 ### `README.md`, *Status*, its opening paragraph
 
 Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
@@ -930,7 +954,7 @@ Part of #57. Its last sentence read:
 Alpha - the seam is a proposal, and the argument may still change it.
 ```
 
-### `pyproject.toml`, the comment above `classifiers`
+### `pyproject.toml`, the comment above `classifiers`, its second paragraph
 
 Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
 ([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)),

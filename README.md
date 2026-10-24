@@ -254,15 +254,15 @@ implementation is most likely to get wrong, and a suite checking only shapes
 will pass it.
 
 `make_project` took two arguments before external sources landed. The third
-is a **breaking change to this contract**, taken deliberately while the suite has
-no outside implementers rather than carried forever as an optional hook that
-could be skipped - and a skipped assertion is not a passing one.
+was a **breaking change to this contract**, taken deliberately before the first
+release, while the suite had no outside implementers, rather than carried
+forever as an optional hook that could be skipped - and a skipped assertion is
+not a passing one.
 
 ## Status
 
-**Stable from 1.0.0, under semantic versioning.** A minor release may add to the
-seam, and a change that would break a consumer waits for 2.0. Pin the major if
-you depend on it, as `dagster-dex~=1.0` does.
+**Stable from 1.0.0, under semantic versioning.** A breaking change to the seam
+waits for 2.0. Pin the major if you depend on it, as `dagster-dex~=1.0` does.
 
 1.0.0 was cut on evidence rather than on a date: the three criteria recorded on
 [#57](https://github.com/catincloud-labs/dagster-dex/issues/57) held. This package's seam held through a full minor cycle,

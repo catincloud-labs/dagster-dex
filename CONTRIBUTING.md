@@ -2,8 +2,8 @@
 
 Contributions are welcome. This is a small, one-maintainer project, so the most
 useful thing to do first is **open an issue** - a design disagreement is worth
-more here than a patch, and the seam follows semantic versioning, so a change to
-it that would break a consumer waits for 2.0 (README, *Status*).
+more here than a patch, and the seam follows semantic versioning, so a breaking
+change to it waits for 2.0 (README, *Status*).
 
 ## Licensing
 

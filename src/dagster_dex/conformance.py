@@ -20,11 +20,11 @@ Use it by subclassing and supplying a constructor::
 Everything else runs for free.
 
 **``make_project`` gained a third argument when external sources landed.** It
-is a breaking change to this contract, taken deliberately while the suite has no
-outside implementers rather than carried forever as an optional side-door: a
-format's external reads are part of what it declares, and a hook that could be
-skipped would let the assertions covering them go quietly unrun. A skip is not a
-signal.
+was a breaking change to this contract, taken deliberately before the first
+release, while the suite had no outside implementers, rather than carried
+forever as an optional side-door: a format's external reads are part of what it
+declares, and a hook that could be skipped would let the assertions covering
+them go quietly unrun. A skip is not a signal.
 
 **The assertions here are behavioural, not structural.** A format can satisfy
 every type signature and still be wrong in the way that matters: raising on an

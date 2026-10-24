@@ -53,7 +53,7 @@ __version__ = "1.0.0"
 # They are values a caller receives and reads, never ones it constructs: the
 # conflicts arrive inside an `EditOutcome` and the files inside a view. Exporting
 # a type nobody needs to name is a promise with no consumer, and from 1.0.0
-# semantic versioning holds every export here until 2.0.
+# withdrawing one is a breaking change.
 __all__ = [
     "DagsterProject",
     "DeclaredJoin",
