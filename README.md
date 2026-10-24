@@ -80,10 +80,10 @@ project:
 
 ## What this is
 
-A working sketch of a contract, not a finished integration. It exists to make a
-design argument concrete enough to disagree with: an asset graph is a perfectly
-good source of project truth, and reading one does not require it to pretend to
-be a dbt project first.
+A contract for reading an asset graph as a project, and a bridge that puts dex
+on it. It exists to make a design argument concrete enough to disagree with: an
+asset graph is a perfectly good source of project truth, and reading one does
+not require it to pretend to be a dbt project first.
 
 One boundary, stated up front: this format describes **one orchestrated asset
 graph**. It does not describe, and will not absorb, a sibling project in
@@ -260,9 +260,15 @@ could be skipped - and a skipped assertion is not a passing one.
 
 ## Status
 
-**Alpha, and the contract may move before 1.0.** The tiered seam is a proposal,
-not a settled interface: it exists to be argued with, and the argument may change
-it. Pin the minor if you depend on it.
+**Stable from 1.0.0, under semantic versioning.** A minor release may add to the
+seam, and a change that would break a consumer waits for 2.0. Pin the major if
+you depend on it, as `dagster-dex~=1.0` does.
+
+1.0.0 was cut on evidence rather than on a date: the three criteria recorded on
+[#57](https://github.com/catincloud-labs/dagster-dex/issues/57) held. This package's seam held through a full minor cycle,
+dex-core's project seam held across two consecutive engine minors, and the
+defect-injection floor held at 5/5. The changelog's 1.0.0 entry links the
+reading behind each one.
 
 [CHANGELOG.md](https://github.com/catincloud-labs/dagster-dex/blob/main/CHANGELOG.md) names what changed between releases and which
 changes were breaking, which is the question this section cannot answer for a
@@ -374,7 +380,7 @@ empty one means a true state. Tightening the empty arm into a refusal would be
 a breaking change to that provisioning order, not a tidier default.
 
 **The directory's parent becomes the project root, and that derivation is a
-guarantee (stable at least until 1.0).** Keys are `<directory-name>/<file>`,
+guarantee: changing it waits for 2.0.** Keys are `<directory-name>/<file>`,
 relative to the parent, and downstream tooling stores plans relative to that
 root - so a plan made against one checkout applies against another only
 because both derive the same root from the same configured path. A change here

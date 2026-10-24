@@ -41,7 +41,7 @@ from .protocol import (
     tier_of,
 )
 
-__version__ = "0.6.6"
+__version__ = "1.0.0"
 
 # What the write tier needs is here beside what the read tiers need. `tier_of`
 # and `EditableProject` were already exported, so a consumer could ask whether a
@@ -52,8 +52,8 @@ __version__ = "0.6.6"
 # `EditConflict`, `ProjectFile` and `ProjectFileView` are deliberately NOT here.
 # They are values a caller receives and reads, never ones it constructs: the
 # conflicts arrive inside an `EditOutcome` and the files inside a view. Exporting
-# a type nobody needs to name is a promise with no consumer, and the seam is
-# explicitly alpha.
+# a type nobody needs to name is a promise with no consumer, and from 1.0.0
+# semantic versioning holds every export here until 2.0.
 __all__ = [
     "DagsterProject",
     "DeclaredJoin",

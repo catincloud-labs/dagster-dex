@@ -8,11 +8,64 @@ shipped without one, which is why their entries are shorter than they deserve:
 what is here was recovered, and a recovered entry cannot say what the author was
 thinking.
 
-**The seam is alpha and may still move.** Entries name breaking changes
-explicitly, because that is the reason a consumer opens this file. Pin the minor
-if you depend on the contract.
+**The seam follows semantic versioning from 1.0.0.** Entries name breaking
+changes explicitly, because that is the reason a consumer opens this file.
+Before 1.0.0 a minor could carry one; from 1.0.0 one waits for 2.0. Pin the
+major if you depend on the contract.
 
-## Unreleased
+## 1.0.0 - 2026-10-24
+
+The first stable release. From it the seam follows semantic versioning: a minor
+may add to the seam, a change that would break a consumer waits for 2.0, and a
+consumer who depends on the contract pins the major (README, *Status*).
+
+**Cut on evidence, not on a date.** #57 records three criteria for 1.0, and the
+owner ruled the cut once all three held at exmergo-dex-core 1.16.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)):
+
+1. **This package's seam held through a full minor cycle.**
+   `src/dagster_dex/protocol.py` is the same blob from v0.3.0 to v0.6.6
+   ([#57, comment 6351610288](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6351610288)),
+   and this release does not touch it.
+2. **dex-core's project seam held across two consecutive engine minors**,
+   1.15.0 and 1.16.0, after it moved at 1.14.0. Both of the record's methods
+   read 1.16.0 as held: the three seam files compared by blob, and a census of
+   every protocol class in the engine
+   ([#57, comment 6389011649](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389011649)),
+   under the rulings on what counts as a move
+   ([#57, comment 6353370775](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6353370775)).
+3. **The defect-injection floor held at 5/5** at 1.16.0, re-measured on #147
+   ([#57, comment 6389016186](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389016186)).
+
+Nothing in the package's behaviour changed for it. Under `src/`, only the
+version string and one comment changed, and `pyproject.toml` moved only its
+version, its `Development Status` classifier and the comment above it, so the
+seam, the engine range and its floor are where 0.6.6 left them:
+`git diff v0.6.6..v1.0.0 -- src/ pyproject.toml` shows it. The tested pin is
+written outside both, and is where 0.6.6 left it too:
+`git diff v0.6.6..v1.0.0 -G 'core==[0-9]' --name-only` prints nothing. The
+one entry below that is not about the release itself is a test, which reaches
+the sdist's `tests/` but neither the wheel nor an installed copy.
+
+### Changed
+
+- **The `Development Status` classifier is `5 - Production/Stable`**, where it
+  was `3 - Alpha`, and README's *Status* says what that means for a consumer:
+  semantic versioning from this release, a breaking change waiting for 2.0,
+  and a pin on the major where the old text asked for a pin on the minor.
+  **A pin written as the old text asked, such as `dagster-dex~=0.6`, does not
+  admit 1.0.0**: move it to `dagster-dex~=1.0` to take this release, which
+  breaks nothing 0.6.6 offered.
+- **Every other document that called the package alpha or a sketch, or
+  bounded a guarantee at 1.0, now says the same as *Status***: README's *What
+  this is*, which called it "a working sketch of a contract, not a finished
+  integration", and its derivation guarantee under *Reaching the write tier over the artifact
+  transport*, which said "stable at least until 1.0" and now says changing it
+  waits for 2.0; SECURITY.md's *Supported versions*; CONTRIBUTING.md's
+  opening; AGENTS.md's *What this is*; this file's opening; and the comment
+  above the classifier. The text each replaced is quoted under *How this
+  section read before*, below. A comment in `__init__.py` and two test
+  docstrings that said the same are rewritten in place.
 
 ### Added
 
@@ -787,6 +840,113 @@ lands on `main` as written" still held for it. Part of #144. It read:
 - **P2:** a statement that would be false, or permanent, once merged. A commit
   subject is one: the maintainer merges with a merge commit, never a squash,
   so a subject lands on `main` as written.
+```
+
+### `README.md`, *What this is*, its opening paragraph
+
+Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)).
+Part of #57. It read:
+
+```markdown
+A working sketch of a contract, not a finished integration. It exists to make a
+design argument concrete enough to disagree with: an asset graph is a perfectly
+good source of project truth, and reading one does not require it to pretend to
+be a dbt project first.
+```
+
+### `README.md`, *Status*, its opening paragraph
+
+Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)).
+Part of #57. It read:
+
+```markdown
+**Alpha, and the contract may move before 1.0.** The tiered seam is a proposal,
+not a settled interface: it exists to be argued with, and the argument may change
+it. Pin the minor if you depend on it.
+```
+
+### `README.md`, *Reaching the write tier over the artifact transport*, the derivation guarantee
+
+Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)):
+at 1.0.0 the bound it names is reached, and semantic versioning holds the
+derivation until 2.0. Part of #57. It read:
+
+```markdown
+**The directory's parent becomes the project root, and that derivation is a
+guarantee (stable at least until 1.0).** Keys are `<directory-name>/<file>`,
+relative to the parent, and downstream tooling stores plans relative to that
+root - so a plan made against one checkout applies against another only
+because both derive the same root from the same configured path. A change here
+relocates every stored plan's `project_dir`; it is pinned by a test in this
+repository so the rule goes red where it lives.
+```
+
+### `SECURITY.md`, *Supported versions*, its last paragraph
+
+Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)).
+Part of #57. It read:
+
+```markdown
+The package is alpha and the contract may move before 1.0. There is no long-term
+support branch, and there will not be one until the seam settles.
+```
+
+### `CONTRIBUTING.md`, its opening paragraph
+
+Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)).
+Part of #57. It read:
+
+```markdown
+Contributions are welcome. This is a small, alpha, one-maintainer project, so the
+most useful thing to do first is **open an issue** - the seam is still a proposal,
+and a design disagreement is worth more here than a patch to something that may
+move.
+```
+
+### `CHANGELOG.md`, its opening, the paragraph on the seam
+
+Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)).
+Part of #57. It read:
+
+```markdown
+**The seam is alpha and may still move.** Entries name breaking changes
+explicitly, because that is the reason a consumer opens this file. Pin the minor
+if you depend on the contract.
+```
+
+### `AGENTS.md`, *What this is*
+
+Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)).
+Part of #57. Its last sentence read:
+
+```markdown
+Alpha - the seam is a proposal, and the argument may still change it.
+```
+
+### `pyproject.toml`, the comment above `classifiers`
+
+Read dead on 2026-10-24, against the owner's ruling to cut 1.0.0
+([#57, comment 6389198587](https://github.com/catincloud-labs/dagster-dex/issues/57#issuecomment-6389198587)),
+which also reads the reason it gave for Alpha, that nothing outside this
+repository was known to depend on the package, as no longer holding. Part
+of #57. It read:
+
+```toml
+# `Development Status :: 3 - Alpha` rather than 4/Beta: the format is verified
+# end to end against a real Dagster graph and passes dex-core's own conformance
+# suite, but nothing outside this repository is known to depend on it, and the
+# seam is still a proposal. Alpha is what "the contract may still move" looks
+# like on a project page. (This comment said "tier 3 is declined by design"
+# until 2026-08-27, which had been false since 0.4.0 shipped the write path --
+# the truth pass that retired that claim's four other sites did not reach this
+# file. The Alpha claim never rested on it.)
 ```
 
 ## Why this file names no engine version

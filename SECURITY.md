@@ -31,8 +31,9 @@ version. It was written for the first release and never moved, so it sat five
 minors behind the index while still reading as current (#83). A version written
 into a document is a claim the next tag can falsify; the rule above cannot be.
 
-The package is alpha and the contract may move before 1.0. There is no long-term
-support branch, and there will not be one until the seam settles.
+The seam follows semantic versioning (README, *Status*), so taking a fix by
+moving to the latest minor is a compatible upgrade within a major. There is no
+long-term support branch.
 
 ## The surface, stated honestly
 
