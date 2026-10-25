@@ -205,6 +205,16 @@ jobs:
   # private shared repository, compared from the private side like the other
   # vendored files -- do not edit it here. The self-test runs first, so a
   # checker that silently stopped detecting anything cannot pass a title.
+  #
+  # The guard also judges each non-merge commit in the pull request: its
+  # subject by the title's form rules, without the 100-character cap, and a
+  # body beyond its trailers. It does so only where those commits land on
+  # `main`. The owner's pull requests, and a bot's, merge with a merge commit,
+  # so every commit on the branch lands as written. An outside contributor's
+  # pull request is merged as a squash (AGENTS.md), so only its title and body
+  # land, and its branch's subjects are not judged; the step prints that it
+  # skipped them. The author is what tells the two apart: the owner is the
+  # account `.github/CODEOWNERS` names on `*`, and a bot's login ends `[bot]`.
   pr-title:
     name: pr title
     if: github.event_name == 'pull_request'
@@ -215,14 +225,41 @@ jobs:
       - name: Guard fires and goes quiet
         run: python scripts/check_pr_title.py --self-test
 
-      # The title reaches the script through the environment, never
-      # interpolated into shell -- a title is attacker-adjacent text on a
-      # public repository.
-      - name: Judge the title
+      # The title and the author reach the script through the environment,
+      # never interpolated into shell -- a title is attacker-adjacent text on
+      # a public repository.
+      #
+      # The commits are read over REST rather than `gh pr view --json
+      # commits`: the listing carries each commit's parents, which is how a
+      # merge commit is told apart and skipped, and the whole message. It lists
+      # at most 250 commits; the event's count and head are passed beside it,
+      # so a longer pull request, a listing that stopped early, or a branch
+      # that moved after the event is refused as unread rather than judged on
+      # what was seen.
+      - name: Judge the title, and the commits where they land on main
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR"
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$PR_AUTHOR" in
+            catincloudlabs|*'[bot]')
+              gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits?per_page=100" \
+                --jq '.[] | {sha, parents: (.parents | length), message: .commit.message}' \
+                > "$RUNNER_TEMP/pr-title-commits.jsonl"
+              python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR" \
+                --commits "$RUNNER_TEMP/pr-title-commits.jsonl" \
+                --commits-expected "$PR_COMMITS" --head-sha "$PR_HEAD"
+              ;;
+            *)
+              echo "commits not judged: $PR_AUTHOR is an outside contributor, whose pull request is merged as a squash, so its branch's subjects do not reach main"
+              python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR"
+              ;;
+          esac
 
   # ---------------------------------------------------------------------------
   # THE JOB NAMED `tests` IS THE AGGREGATE AT THE BOTTOM OF THIS FILE, NOT A
