@@ -124,9 +124,9 @@ jobs:
       # the one failure mode this job cannot otherwise observe.
       #
       # Vendored, like the guard beside it, and for the same reason: this
-      # repository cannot call the shared action. Both files are compared against
-      # their canonical copies from the private side -- see the note at the head of this
-      # file -- so neither is edited here.
+      # repository cannot call the shared action. Both files are compared
+      # against their canonical copies from the private side -- see the note at
+      # the head of this file -- so neither is edited here.
       - name: Guard fires and goes quiet
         run: python scripts/test_check_closing_keywords.py
 
@@ -466,14 +466,15 @@ jobs:
       # shipped on unchecked code is the decorative-control shape. Run at the
       # floor (3.10), which is the version the annotations must be valid against.
       #
-      # The type checker's version comes from `scripts/power_of_ten_requirements.txt`,
-      # the manifest Dependabot's `pip` entry moves, never from a version typed
-      # into this step: the coding standard's record pins each tool once, where a
-      # mover reaches it - a pin in a `run:`
-      # step is in no ecosystem and has no mover, and `mypy==1.14.1` written
-      # here was the frozen example the record measured. The `power of ten`
-      # job below reads `src` at class A - strict - with the same pins; this
-      # step keeps the py.typed claim inside the required fan-in, at the floor.
+      # The type checker's version comes from
+      # `scripts/power_of_ten_requirements.txt`, the manifest Dependabot's `pip`
+      # entry moves, never from a version typed into this step: the coding
+      # standard's record pins each tool once, where a mover reaches it - a pin
+      # in a `run:` step is in no ecosystem and has no mover, and `mypy==1.14.1`
+      # written here was the frozen example the record measured. The `power of
+      # ten` job below reads `src` at class A - strict - with the same pins;
+      # this step keeps the py.typed claim inside the required fan-in, at the
+      # floor.
       - name: Type check (the py.typed claim, actually checked)
         run: |
           uv run --no-project --with-editable . \
@@ -625,17 +626,16 @@ jobs:
           echo "every job this gate depends on succeeded."
 
   # The organisation's third-party pin record: every third-party action ref in
-  # this tree is a
-  # forty-character commit with its version as a trailing comment, from a
-  # publisher the record enumerates. VENDORED, like the guards above and for
-  # the same reason: this repository is public and cannot resolve the private
-  # action, so the scanner runs from `scripts/`, and the private repository's
-  # `vendored copies` job holds both files to their canonical copies. Do not
-  # edit them here. Dependabot (`.github/dependabot.yml`) is the mover; this
-  # is what makes a hand edit at a tag visible - which this repository has
-  # already lived once: `pr-hygiene.yml` arrived at `checkout@v4` by hand on
-  # 2026-08-27 beside eleven sites at `v7`, and nothing said so until the
-  # next Dependabot cycle.
+  # this tree is a forty-character commit with its version as a trailing
+  # comment, from a publisher the record enumerates. VENDORED, like the guards
+  # above and for the same reason: this repository is public and cannot resolve
+  # the private action, so the scanner runs from `scripts/`, and the private
+  # repository's `vendored copies` job holds both files to their canonical
+  # copies. Do not edit them here. Dependabot (`.github/dependabot.yml`) is the
+  # mover; this is what makes a hand edit at a tag visible - which this
+  # repository has already lived once: `pr-hygiene.yml` arrived at `checkout@v4`
+  # by hand on 2026-08-27 beside eleven sites at `v7`, and nothing said so until
+  # the next Dependabot cycle.
   #
   # Deliberately NOT in the `tests` gate's `needs:` above, and not a required
   # check today: either would make it required by the back door, and that is
@@ -664,21 +664,20 @@ jobs:
   # the version the py.typed claim must hold against.
   #
   # Vendored, like the two guards above: this repository is public and cannot
-  # resolve the private shared `power-of-ten` action, so `scripts/check_power_of_ten.py`,
-  # its self-test and `scripts/power_of_ten_requirements.txt` are byte-for-byte
-  # copies that a job on the private side compares against their canonical
-  # copies. Do not
-  # edit them here. The manifest is the one place the tool versions are
-  # written, and `.github/dependabot.yml`'s `pip` entry is what moves it.
+  # resolve the private shared `power-of-ten` action, so
+  # `scripts/check_power_of_ten.py`, its self-test and
+  # `scripts/power_of_ten_requirements.txt` are byte-for-byte copies that a job
+  # on the private side compares against their canonical copies. Do not edit
+  # them here. The manifest is the one place the tool versions are written, and
+  # `.github/dependabot.yml`'s `pip` entry is what moves it.
   #
   # No baseline marker, the `MARKER` string `scripts/check_power_of_ten.py`
-  # defines, stands here: the two `src` functions above
-  # 10 were split, the strict-typing findings were annotated, and the two
-  # class C `main`s carry a reasoned `C901` deviation. Once `main` calls this
-  # script the ratchet is live: a marker may be removed by anyone and added by
-  # nobody. Not in the `tests` fan-in: making it blocking is the owner's
-  # decision to take with the blocking cost in view, the same as the two
-  # guards above.
+  # defines, stands here: the two `src` functions above 10 were split, the
+  # strict-typing findings were annotated, and the two class C `main`s carry a
+  # reasoned `C901` deviation. Once `main` calls this script the ratchet is
+  # live: a marker may be removed by anyone and added by nobody. Not in the
+  # `tests` fan-in: making it blocking is the owner's decision to take with the
+  # blocking cost in view, the same as the two guards above.
   power-of-ten:
     name: power of ten
     runs-on: ubuntu-latest
