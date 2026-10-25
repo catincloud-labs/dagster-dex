@@ -261,6 +261,37 @@ jobs:
               ;;
           esac
 
+  # Refuses the `pull_request_target` trigger in this repository's workflows,
+  # naming file and line: that trigger runs with the base repository's token
+  # and secrets and can be made to run a fork's code. A use is allowed only by
+  # `# allow pull_request_target: <reason>` on the trigger's own line, and
+  # each allowed use is printed. It reads the checked-out tree, so it runs on
+  # a push as well as on a pull request. Not required by any ruleset.
+  #
+  # Vendored for the same reason as the jobs above: the three steps are the
+  # private shared action's three, written out. `scripts/check_pull_request_target.py`
+  # and its manifest, `scripts/pull_request_target_requirements.txt`, are
+  # byte-identical copies, compared from the private side like the other
+  # vendored files -- do not edit them here. The checker parses YAML, so the
+  # first step installs the PyYAML the manifest pins, and Dependabot's `pip`
+  # entry for `/scripts` moves that pin.
+  pull-request-target:
+    name: pull request target
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: PyYAML at the version the manifest pins
+        run: |
+          python3 -m pip install --requirement scripts/pull_request_target_requirements.txt
+          python3 -c 'import yaml; print(f"PyYAML {yaml.__version__} imported from {yaml.__file__}")'
+
+      - name: Guard fires and goes quiet
+        run: python3 scripts/check_pull_request_target.py --self-test
+
+      - name: No workflow triggers on pull_request_target unallowed
+        run: python3 scripts/check_pull_request_target.py --root .
+
   # ---------------------------------------------------------------------------
   # THE JOB NAMED `tests` IS THE AGGREGATE AT THE BOTTOM OF THIS FILE, NOT A
   # SUITE. Read the note on it before renaming anything here.
