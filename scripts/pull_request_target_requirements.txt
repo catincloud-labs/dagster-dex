@@ -1,0 +1,6 @@
+# The one place this guard's PyYAML version is written. The guard parses
+# workflow files with PyYAML, so the job that runs it installs from this file
+# rather than relying on whatever the runner image ships, and a pip
+# Dependabot entry for this file's directory is what moves the pin. A
+# repository that vendors the guard vendors this file beside it.
+pyyaml==6.0.3

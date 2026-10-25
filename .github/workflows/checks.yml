@@ -124,9 +124,9 @@ jobs:
       # the one failure mode this job cannot otherwise observe.
       #
       # Vendored, like the guard beside it, and for the same reason: this
-      # repository cannot call the shared action. Both files are compared against
-      # `workbench` from the private side -- see the note at the head of this
-      # file -- so neither is edited here.
+      # repository cannot call the shared action. Both files are compared
+      # against their canonical copies from the private side -- see the note at
+      # the head of this file -- so neither is edited here.
       - name: Guard fires and goes quiet
         run: python scripts/test_check_closing_keywords.py
 
@@ -205,6 +205,16 @@ jobs:
   # private shared repository, compared from the private side like the other
   # vendored files -- do not edit it here. The self-test runs first, so a
   # checker that silently stopped detecting anything cannot pass a title.
+  #
+  # The guard also judges each non-merge commit in the pull request: its
+  # subject by the title's form rules, without the 100-character cap, and a
+  # body beyond its trailers. It does so only where those commits land on
+  # `main`. The owner's pull requests, and a bot's, merge with a merge commit,
+  # so every commit on the branch lands as written. An outside contributor's
+  # pull request is merged as a squash (AGENTS.md), so only its title and body
+  # land, and its branch's subjects are not judged; the step prints that it
+  # skipped them. The author is what tells the two apart: the owner is the
+  # account `.github/CODEOWNERS` names on `*`, and a bot's login ends `[bot]`.
   pr-title:
     name: pr title
     if: github.event_name == 'pull_request'
@@ -215,14 +225,78 @@ jobs:
       - name: Guard fires and goes quiet
         run: python scripts/check_pr_title.py --self-test
 
-      # The title reaches the script through the environment, never
-      # interpolated into shell -- a title is attacker-adjacent text on a
-      # public repository.
-      - name: Judge the title
+      # The title and the author reach the script through the environment,
+      # never interpolated into shell -- a title is attacker-adjacent text on
+      # a public repository.
+      #
+      # The commits are read over REST rather than `gh pr view --json
+      # commits`: the listing carries each commit's parents, which is how a
+      # merge commit is told apart and skipped, and the whole message. It lists
+      # at most 250 commits; the event's count and head are passed beside it,
+      # so a longer pull request, a listing that stopped early, or a branch
+      # that moved after the event is refused as unread rather than judged on
+      # what was seen.
+      #
+      # The listing is read once, with no retry: the shared action wraps the
+      # read in a retry helper this repository does not vendor. So a transient
+      # API error turns this advisory job red, and a re-run reads it again. It
+      # fails closed either way: an error exits non-zero, and a short read is
+      # refused.
+      - name: Judge the title, and the commits where they land on main
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR"
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$PR_AUTHOR" in
+            catincloudlabs|*'[bot]')
+              gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits?per_page=100" \
+                --jq '.[] | {sha, parents: (.parents | length), message: .commit.message}' \
+                > "$RUNNER_TEMP/pr-title-commits.jsonl"
+              python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR" \
+                --commits "$RUNNER_TEMP/pr-title-commits.jsonl" \
+                --commits-expected "$PR_COMMITS" --head-sha "$PR_HEAD"
+              ;;
+            *)
+              echo "commits not judged: $PR_AUTHOR is an outside contributor, whose pull request is merged as a squash, so its branch's subjects do not reach main"
+              python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR"
+              ;;
+          esac
+
+  # Refuses the `pull_request_target` trigger in this repository's workflows,
+  # naming file and line: that trigger runs with the base repository's token
+  # and secrets and can be made to run a fork's code. A use is allowed only by
+  # `# allow pull_request_target: <reason>` on the trigger's own line, and
+  # each allowed use is printed. It reads the checked-out tree, so it runs on
+  # a push as well as on a pull request. Not required by any ruleset.
+  #
+  # Vendored for the same reason as the jobs above: the three steps are the
+  # private shared action's three, written out. `scripts/check_pull_request_target.py`
+  # and its manifest, `scripts/pull_request_target_requirements.txt`, are
+  # byte-identical copies, compared from the private side like the other
+  # vendored files -- do not edit them here. The checker parses YAML, so the
+  # first step installs the PyYAML the manifest pins, and Dependabot's `pip`
+  # entry for `/scripts` moves that pin.
+  pull-request-target:
+    name: pull request target
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: PyYAML at the version the manifest pins
+        run: |
+          python3 -m pip install --requirement scripts/pull_request_target_requirements.txt
+          python3 -c 'import yaml; print(f"PyYAML {yaml.__version__} imported from {yaml.__file__}")'
+
+      - name: Guard fires and goes quiet
+        run: python3 scripts/check_pull_request_target.py --self-test
+
+      - name: No workflow triggers on pull_request_target unallowed
+        run: python3 scripts/check_pull_request_target.py --root .
 
   # ---------------------------------------------------------------------------
   # THE JOB NAMED `tests` IS THE AGGREGATE AT THE BOTTOM OF THIS FILE, NOT A
@@ -398,13 +472,15 @@ jobs:
       # shipped on unchecked code is the decorative-control shape. Run at the
       # floor (3.10), which is the version the annotations must be valid against.
       #
-      # The type checker's version comes from `scripts/power_of_ten_requirements.txt`,
-      # the manifest Dependabot's `pip` entry moves, never from a version typed
-      # into this step: ADR-0042 (constellation), rule 10 - a pin in a `run:`
-      # step is in no ecosystem and has no mover, and `mypy==1.14.1` written
-      # here was the frozen example the record measured. The `power of ten`
-      # job below reads `src` at class A - strict - with the same pins; this
-      # step keeps the py.typed claim inside the required fan-in, at the floor.
+      # The type checker's version comes from
+      # `scripts/power_of_ten_requirements.txt`, the manifest Dependabot's `pip`
+      # entry moves, never from a version typed into this step: the coding
+      # standard's record pins each tool once, where a mover reaches it - a pin
+      # in a `run:` step is in no ecosystem and has no mover, and `mypy==1.14.1`
+      # written here was the frozen example the record measured. The `power of
+      # ten` job below reads `src` at class A - strict - with the same pins;
+      # this step keeps the py.typed claim inside the required fan-in, at the
+      # floor.
       - name: Type check (the py.typed claim, actually checked)
         run: |
           uv run --no-project --with-editable . \
@@ -519,7 +595,7 @@ jobs:
   # resolve) must not be read as "nothing to complain about". Reading the results
   # explicitly is what makes a skip a decision rather than an accident.
   #
-  # The shape is lifted from `catincloud-labs/groundstation`'s `ci.yml`, where it
+  # The shape is lifted from a sibling repository's `ci.yml`, where it
   # was written after observing exactly that: a red job skipping two downstream
   # ones and the aggregate reporting success.
   # ---------------------------------------------------------------------------
@@ -555,17 +631,17 @@ jobs:
           fi
           echo "every job this gate depends on succeeded."
 
-  # ADR-0040 (constellation): every third-party action ref in this tree is a
-  # forty-character commit with its version as a trailing comment, from a
-  # publisher the record enumerates. VENDORED, like the guards above and for
-  # the same reason: this repository is public and cannot resolve the private
-  # action, so the scanner runs from `scripts/`, and the private repository's
-  # `vendored copies` job holds both files to their canonical copies. Do not
-  # edit them here. Dependabot (`.github/dependabot.yml`) is the mover; this
-  # is what makes a hand edit at a tag visible - which this repository has
-  # already lived once: `pr-hygiene.yml` arrived at `checkout@v4` by hand on
-  # 2026-08-27 beside eleven sites at `v7`, and nothing said so until the
-  # next Dependabot cycle.
+  # The organisation's third-party pin record: every third-party action ref in
+  # this tree is a forty-character commit with its version as a trailing
+  # comment, from a publisher the record enumerates. VENDORED, like the guards
+  # above and for the same reason: this repository is public and cannot resolve
+  # the private action, so the scanner runs from `scripts/`, and the private
+  # repository's `vendored copies` job holds both files to their canonical
+  # copies. Do not edit them here. Dependabot (`.github/dependabot.yml`) is the
+  # mover; this is what makes a hand edit at a tag visible - which this
+  # repository has already lived once: `pr-hygiene.yml` arrived at `checkout@v4`
+  # by hand on 2026-08-27 beside eleven sites at `v7`, and nothing said so until
+  # the next Dependabot cycle.
   #
   # Deliberately NOT in the `tests` gate's `needs:` above, and not a required
   # check today: either would make it required by the back door, and that is
@@ -584,7 +660,7 @@ jobs:
       - name: Every third-party ref in this tree is a commit with its version
         run: python3 scripts/check_third_party_pins.py --org catincloud-labs --tree .
 
-  # ADR-0042 (constellation): the estate's coding standard, the Power of 10,
+  # The estate's coding standard, the Power of 10,
   # read per class against the tree this pull request proposes and refused.
   # `src` is class A - a failure there reaches a stranger, the consumer of a
   # published wheel - so it is read at ceiling 10 with strict typing: no
@@ -594,19 +670,20 @@ jobs:
   # the version the py.typed claim must hold against.
   #
   # Vendored, like the two guards above: this repository is public and cannot
-  # resolve workbench's `power-of-ten` action, so `scripts/check_power_of_ten.py`,
-  # its self-test and `scripts/power_of_ten_requirements.txt` are byte-for-byte
-  # copies workbench's `vendored copies` job compares against its own. Do not
-  # edit them here. The manifest is the one place the tool versions are
-  # written, and `.github/dependabot.yml`'s `pip` entry is what moves it.
+  # resolve the private shared `power-of-ten` action, so
+  # `scripts/check_power_of_ten.py`, its self-test and
+  # `scripts/power_of_ten_requirements.txt` are byte-for-byte copies that a job
+  # on the private side compares against their canonical copies. Do not edit
+  # them here. The manifest is the one place the tool versions are written, and
+  # `.github/dependabot.yml`'s `pip` entry is what moves it.
   #
-  # No `predates ADR-0042` marker stands here: the two `src` functions above
-  # 10 were split, the strict-typing findings were annotated, and the two
-  # class C `main`s carry a reasoned `C901` deviation. Once `main` calls this
-  # script the ratchet is live: a marker may be removed by anyone and added by
-  # nobody. Not in the `tests` fan-in: making it blocking is the owner's
-  # decision to take with the blocking cost in view, the same as the two
-  # guards above.
+  # No baseline marker, the `MARKER` string `scripts/check_power_of_ten.py`
+  # defines, stands here: the two `src` functions above 10 were split, the
+  # strict-typing findings were annotated, and the two class C `main`s carry a
+  # reasoned `C901` deviation. Once `main` calls this script the ratchet is
+  # live: a marker may be removed by anyone and added by nobody. Not in the
+  # `tests` fan-in: making it blocking is the owner's decision to take with the
+  # blocking cost in view, the same as the two guards above.
   power-of-ten:
     name: power of ten
     runs-on: ubuntu-latest
