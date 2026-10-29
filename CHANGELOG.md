@@ -13,25 +13,6 @@ changes explicitly, because that is the reason a consumer opens this file.
 Before 1.0.0 a minor could carry one; from 1.0.0 one waits for 2.0. Pin the
 major if you depend on the contract.
 
-## Unreleased
-
-### Added
-
-- **The schema splice test drops a column whose entry spans several lines,
-  and reads each splice back** (`tests/test_dex_bridge.py`, #142, #143). Its
-  order check took the replaced lines to be the ones carrying a comment the
-  case expects to lose, so dropping a column whose entry runs over several
-  lines read as a line gone or reordered however right the splice was. It now
-  derives a dropped column's whole entry, and a case drops `date`. Each case
-  also reads the spliced file back: `parse_declarations` must read it with no
-  note and with the keys the original declared, less any on a dropped column,
-  and the parsed document must declare the column, or not, with or without
-  `not_null`, as the finding asks. `parse_declarations` reads keys and joins
-  and no column list, which is why the columns are read off the parsed
-  document rather than off its result. This change touches that test file and
-  this changelog and nothing else, so the package, its seam, its engine floor
-  and the tested pin do not change.
-
 ## 1.0.0 - 2026-10-24
 
 The first stable release. From it the seam follows semantic versioning: a
