@@ -111,9 +111,10 @@ was built for. Two consequences worth knowing before changing anything here:
   no table-to-relation mapping here (`ProjectModel.relation` is `None`), so the
   table name is used as the file stem rather than guessed through one. The stem
   is matched against the declarations **without regard to case** (#141), since
-  Snowflake reports `DIM_DATE` for a `dim_date.yml`, and two files differing
-  only by case make `SCHEMA_YML` `None` for that table: the case is no evidence
-  for either.
+  Snowflake reports `DIM_DATE` for a `dim_date.yml`, under `.yml` and `.yaml`
+  alike. Two files the table could name, differing by case or by suffix, make
+  `SCHEMA_YML` `None` for that table: neither is evidence for one over the
+  other.
 - Reconcile reads the model name out of the placed key's **stem**, so placement
   presumes **one model per declaration file**. A file declaring several gets a
   warning and no edit, which is upstream refusing to guess.

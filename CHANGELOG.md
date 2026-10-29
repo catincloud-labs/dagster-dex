@@ -23,12 +23,27 @@ major if you depend on the contract.
   an unquoted identifier in upper case, a finding on `DIM_DATE` was placed at
   `declarations/DIM_DATE.yml`, a file the project did not have, and every
   finding on the table came back advisory with no plan stored. The stem is now
-  matched against the declarations the view returns without regard to case.
-  Two files there whose names differ only by case are declined for that table
-  rather than guessed between, and reconcile reports it as having nowhere to
-  land. A table no file matches keeps its own spelling, as before. What an
-  edit does with an upper-case column inside the file is the engine's
-  comparison and unchanged here.
+  matched against the declarations the view returns without regard to case,
+  under `.yml` and `.yaml` alike, as the directory is read. A table no file
+  matches keeps its own spelling, as before.
+
+  **One layout that was placed is now declined.** Two files the table could
+  name, differing by case (`dim_date.yml` beside `DIM_DATE.yml`) or by suffix
+  (`dim_date.yml` beside `dim_date.yaml`), are declined for that table rather
+  than guessed between, where the file spelled exactly as the table used to
+  receive the edit. Reconcile reports the table as having nowhere to land,
+  without naming the two files.
+
+  **What reaches a plan still depends on the engine.** Below
+  exmergo-dex-core 1.10.0 a schema finding with no profiled baseline is
+  advisory whatever the placement, so there only a lost key gets a plan from
+  this. And what an edit does with an upper-case column inside the file is
+  the engine's comparison, unchanged here: from 1.10.0 an added column is
+  written as the warehouse spells it, from 1.15.2 a dropped one is matched
+  without regard to case, and a test edit, for a nullability change or a lost
+  key, matches the column exactly at every engine in the published range. So
+  at 1.8.0 a Snowflake run with every identifier in upper case still stores
+  no plan.
 
 ## 1.0.0 - 2026-10-24
 

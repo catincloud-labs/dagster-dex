@@ -1306,26 +1306,41 @@ class TestPlacement:
 
         assert placed == {EditKind.SCHEMA_YML: "declarations/orders.yml"}
 
-    def test_an_upper_case_table_is_placed_in_its_lower_case_declaration(self, tmp_path):
+    @pytest.mark.parametrize(
+        "file",
+        ["dim_date.yml", "DIM_DATE.yml", "dim_date.yaml"],
+        ids=["lower-case", "upper-case", "yaml-suffix"],
+    )
+    def test_a_tables_one_declaration_is_placed_whatever_the_case(self, tmp_path, file):
         """#141. Snowflake reports an unquoted identifier in upper case, and the
-        table's own spelling named `declarations/DIM_DATE.yml`, a file this
-        project does not have. The declaration it does have is placed."""
+        table's own spelling named `declarations/DIM_DATE.yml`, a file a project
+        writing `dim_date.yml` does not have. The declaration the project has is
+        placed, whichever case either side spells it in and under either suffix
+        the directory is read for. An upper-case file is the workaround #141
+        records, so it stays placed for a lower-case table too."""
 
         from exmergo_dex_core.transform.plans import EditKind
 
-        project = _editable(tmp_path, {"dim_date.yml": a_single_key_declaration(model="dim_date")})
+        project = _editable(tmp_path, {file: a_single_key_declaration(model=file.split(".")[0])})
 
         for table in ("DIM_DATE", "dim_date", "Dim_Date"):
-            assert project.edit_path(EditKind.SCHEMA_YML, table) == "declarations/dim_date.yml", table
+            assert project.edit_path(EditKind.SCHEMA_YML, table) == f"declarations/{file}", table
 
-    def test_two_declarations_differing_only_by_case_place_nothing(self, tmp_path):
-        """The warehouse's case is no evidence for either file, so placement
-        declines rather than guess, as it does for a file declaring several
-        models. Reconcile reports the table as having nowhere to land.
+    @pytest.mark.parametrize(
+        "files",
+        [("dim_date.yml", "DIM_DATE.yml"), ("dim_date.yml", "dim_date.yaml")],
+        ids=["differing-by-case", "differing-by-suffix"],
+    )
+    def test_two_declarations_a_table_could_name_place_nothing(self, tmp_path, files):
+        """Neither the warehouse's case nor a suffix is evidence for one file
+        over the other, so placement declines rather than guess, as it does for
+        a file declaring several models. Reconcile reports the table as having
+        nowhere to land. The table's own spelling, which one of these files
+        matches exactly, was placed before #141.
 
         Built from text rather than through `_editable`: a case-insensitive
-        filesystem, the default on Windows and macOS, cannot hold both files,
-        and the view placement reads is built from the text either way.
+        filesystem, the default on Windows and macOS, cannot hold the first
+        pair, and the view placement reads is built from the text either way.
         """
 
         from exmergo_dex_core.transform.plans import EditKind
@@ -1339,16 +1354,38 @@ class TestPlacement:
                 [],
                 root=tmp_path,
                 surface=("declarations",),
-                declaration_sources={
-                    "declarations/dim_date.yml": text,
-                    "declarations/DIM_DATE.yml": text,
-                },
+                declaration_sources={f"declarations/{file}": text for file in files},
             ),
             declarations_prefix="declarations",
         )
 
         for table in ("DIM_DATE", "dim_date", "Dim_Date"):
             assert project.edit_path(EditKind.SCHEMA_YML, table) is None, table
+
+    def test_a_sibling_directory_holds_no_candidate(self, tmp_path):
+        """Only the declarations directory is searched. The factory puts a
+        `semantics` directory beside it into the surface and the view, so its
+        `dim_date.yml` is among what placement reads, and counting it would
+        turn the one declaration into two."""
+
+        from exmergo_dex_core.transform.plans import EditKind
+
+        for name, text in (
+            ("declarations", a_single_key_declaration(model="dim_date")),
+            ("semantics", a_semantic_definition()),
+        ):
+            (tmp_path / name).mkdir()
+            (tmp_path / name / "dim_date.yml").write_text(text, encoding="utf-8", newline="\n")
+        project = project_from_context(
+            _context(
+                assets=f"{__name__}:FACTORY_ASSETS",
+                declarations=str(tmp_path / "declarations"),
+                semantics=str(tmp_path / "semantics"),
+            )
+        )
+
+        assert "semantics/dim_date.yml" in project.load().files
+        assert project.edit_path(EditKind.SCHEMA_YML, "DIM_DATE") == "declarations/dim_date.yml"
 
     def test_every_placement_lands_inside_the_declared_surface(self, tmp_path):
         """The two answers have to describe the same project.
@@ -1903,7 +1940,7 @@ class TestAnUpperCaseTableStoresAPlanForItsLowerCaseDeclaration:
         keys, _joins, _notes = parse_declarations({"declarations/dim_date.yml": after})
         assert ("dim_date", ("is_weekend",)) in {(k.model, k.columns) for k in keys}, after
 
-    def test_the_schema_drift_it_was_found_with_stores_a_plan(self, tmp_path):
+    def test_its_drift_stores_a_plan_from_the_splicing_engine_and_is_advisory_before_it(self, tmp_path):
         """The three codes #141 was filed with, on this fixture's columns and in
         Snowflake's case.
 

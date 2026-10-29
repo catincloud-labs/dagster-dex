@@ -720,19 +720,20 @@ class EditableDexProject(DexProject):
     def edit_path(self, kind: Any, model: str) -> str | None:
         """Where an edit of ``kind`` for the warehouse table ``model`` lives.
 
-        **The declaration file whose name matches the table without regard to
-        case** (#141). A warehouse folds an unquoted identifier and a person
-        naming a file need not: Snowflake reports ``DIM_DATE`` for the table a
-        ``dim_date.yml`` declares, and the table's own spelling named a file
-        this project does not have, so every schema finding was advisory.
+        **The declaration file whose stem matches the table without regard to
+        case** (#141), under either suffix :func:`_read_yaml_dir` reads. A
+        warehouse folds an unquoted identifier and a person naming a file need
+        not: Snowflake reports ``DIM_DATE`` for the table a ``dim_date.yml``
+        declares, and the table's own spelling named a file this project does
+        not have, so every finding on the table was advisory.
 
         Matched against the view :meth:`load` returns and inside the
         declarations directory only, so the key placed is one the plan can pin.
-        **Two files there whose names differ only by case are ``None``**: the
-        warehouse's case says nothing about which of them declares the table,
-        and declining is the same refusal to guess as a file declaring several
-        models gets. No match is the table's own spelling, as before, which
-        upstream reports as a file this view did not return.
+        **Two files there that the table could name are ``None``**, whether
+        they differ by case or by suffix: neither is evidence for one over the
+        other, and declining is the same refusal to guess as a file declaring
+        several models gets. No match is the table's own spelling, as before,
+        which upstream reports as a file this view did not return.
         """
 
         from exmergo_dex_core.transform.plans import (  # noqa: PLC0415 - optional dependency
@@ -742,11 +743,11 @@ class EditableDexProject(DexProject):
         if kind is not EditKind.SCHEMA_YML:
             return None
         prefix = f"{self._declarations_prefix}/"
-        wanted = f"{model}.yml".lower()
+        wanted = {f"{model}{suffix}".lower() for suffix in _YAML_SUFFIXES}
         matches = [
             key
             for key in self.load().files
-            if key.startswith(prefix) and key[len(prefix) :].lower() == wanted
+            if key.startswith(prefix) and key[len(prefix) :].lower() in wanted
         ]
         if len(matches) > 1:
             return None
@@ -883,13 +884,19 @@ def _resolve_dir(repo_root: str | None, option: str, value: object) -> Any:
     return directory
 
 
+#: The suffixes a directory option is read for. `EditableDexProject.edit_path`
+#: places a declaration under the same two, so a file read as a declaration is
+#: one an edit can be placed in.
+_YAML_SUFFIXES = (".yml", ".yaml")
+
+
 def _read_yaml_dir(directory: Any) -> dict[str, str]:
     """``{<directory name>/<file name>: text}`` for the YAML in one directory."""
 
     return {
         f"{directory.name}/{path.name}": path.read_text(encoding="utf-8")
         for path in sorted(directory.iterdir())
-        if path.suffix in (".yml", ".yaml")
+        if path.suffix in _YAML_SUFFIXES
     }
 
 
