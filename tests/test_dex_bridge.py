@@ -1710,42 +1710,51 @@ LANDED = {
 }
 
 
-def _declared_columns(text, model="dim_date"):
-    """`{column: the tests it lists}` for `model`, read from the parsed
-    document rather than from its lines.
+def _as_landed(column, landed):
+    """`COMMENTED_FOR_SCHEMA_DRIFT` parsed, with the one change `landed` names
+    made to `column`: the document a right splice parses to (#143).
 
-    `parse_declarations` reads a declaration's keys and joins and no column
-    list, so it cannot say whether a column is declared or carries
-    `not_null`. This reads both off the same `yaml.safe_load` it parses with,
-    under `tests:` and `data_tests:` alike, as it does. A `not_null` that lands
-    at an indent putting it under no column is in no list here, whatever the
-    lines say.
+    Built from the original rather than from the engine's output, and compared
+    whole, so a column declared twice or a test that belongs to no column
+    differs from it, and so does a document declaring nothing. An added column
+    goes last, where the engine puts it.
     """
 
     import yaml
 
-    document = yaml.safe_load(text)
-    for entry in document.get("models") or []:
-        if entry.get("name") == model:
-            return {
-                column["name"]: [
-                    test
-                    for key in ("tests", "data_tests")
-                    for test in column.get(key) or []
-                    if isinstance(test, str)
-                ]
-                for column in entry.get("columns") or []
-            }
-    return {}
+    document = yaml.safe_load(COMMENTED_FOR_SCHEMA_DRIFT)
+    columns = document["models"][0]["columns"]
+    if landed == "present":
+        columns.append({"name": column})
+    elif landed == "absent":
+        columns[:] = [entry for entry in columns if entry["name"] != column]
+    else:
+        (entry,) = [entry for entry in columns if entry["name"] == column]
+        kept = [test for test in entry.get("tests") or [] if test != "not_null"]
+        entry["tests"] = kept + (["not_null"] if landed == "not-null" else [])
+    return document
 
 
-#: The same four claims as `LANDED`, asked of the parsed document (#143).
-READ_BACK = {
-    "present": lambda columns, column: column in columns,
-    "absent": lambda columns, column: column not in columns,
-    "nullable": lambda columns, column: column in columns and "not_null" not in columns[column],
-    "not-null": lambda columns, column: column in columns and "not_null" in columns[column],
-}
+def _normalised(document):
+    """`document` with each entry's `tests` and `data_tests` read as one list,
+    and an empty list dropped.
+
+    dbt and `parse_declarations` read the two keys alike, and an emptied list
+    says what a removed one does; the engine removes the key. So the comparison
+    is of what a document declares rather than of how it spells it.
+    """
+
+    for model in document.get("models") or []:
+        if not isinstance(model, dict):
+            continue
+        for entry in [model, *(model.get("columns") or [])]:
+            if not isinstance(entry, dict):
+                continue
+            tests = [*(entry.pop("tests", None) or []), *(entry.pop("data_tests", None) or [])]
+            if tests:
+                entry["tests"] = tests
+    return document
+
 
 #: The one key `COMMENTED_FOR_SCHEMA_DRIFT` declares: `date`'s `unique`.
 SCHEMA_DRIFT_KEYS = {("dim_date", ("date",))}
@@ -1815,6 +1824,8 @@ class TestASchemaEditLosesOnlyTheCommentsOnTheLinesItReplaces:
     ):
         import importlib.metadata as md
 
+        import yaml
+
         from dagster_dex.declarations import parse_declarations
 
         proposals, after = _reconcile_and_apply(
@@ -1861,19 +1872,30 @@ class TestASchemaEditLosesOnlyTheCommentsOnTheLinesItReplaces:
                 assert line in remaining, f"the original line {line!r} is gone or reordered:\n{after}"
             # Read back as this package reads it (#143), as the class above
             # does: the spliced file parses with no note and declares the keys
-            # the original did, less any on a dropped column. Its columns and
-            # their `not_null` are read off the same parsed document.
+            # the original did, less any on a dropped column.
             keys, _joins, notes = parse_declarations({"declarations/dim_date.yml": after})
-            kept = {key for key in SCHEMA_DRIFT_KEYS if not (code == "column_dropped" and column in key[1])}
-            assert notes == [], f"dex-core {engine}: {code} on {column} reads back with notes {notes}:\n{after}"
-            assert {(k.model, k.columns) for k in keys} == kept, (
-                f"dex-core {engine}: {code} on {column} reads back keys "
-                f"{sorted((k.model, k.columns) for k in keys)} where {sorted(kept)} were declared:\n{after}"
+            read = {(k.model, k.columns) for k in keys}
+            kept = {
+                key for key in SCHEMA_DRIFT_KEYS if not (code == "column_dropped" and column in key[1])
+            }
+            assert notes == [], (
+                f"dex-core {engine}: {code} on {column} reads back with notes {notes}:\n{after}"
             )
-            columns = _declared_columns(after)
-            assert READ_BACK[landed](columns, column), (
-                f"dex-core {engine}: {code} on {column} reads right as lines, but the parsed "
-                f"document says {column} should be {landed!r} and declares {columns!r}:\n{after}"
+            assert read == kept, (
+                f"dex-core {engine}: {code} on {column} reads back keys {sorted(read)} "
+                f"where {sorted(kept)} were declared:\n{after}"
+            )
+            # `parse_declarations` reads no column list, so the columns and
+            # their `not_null` are read off the parsed document, compared whole
+            # with the original's plus the one change. From 1.10.0 the engine
+            # re-parses its own splice and refuses one whose columns or tests
+            # disagree with the edit, so this is a backstop behind that check;
+            # the notes and keys above are this package's own reader.
+            parsed = _normalised(yaml.safe_load(after))
+            wanted = _normalised(_as_landed(column, landed))
+            assert parsed == wanted, (
+                f"dex-core {engine}: {code} on {column} reads right as lines, but the "
+                f"parsed document is {parsed!r} where {wanted!r} was wanted:\n{after}"
             )
         else:
             assert after == COMMENTED_FOR_SCHEMA_DRIFT, (
