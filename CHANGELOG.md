@@ -516,7 +516,7 @@ with no step outside bump-and-tag before that issue can close.
 - **A boundary test pins what a reconcile plan does to a hand-written
   declaration** (`tests/test_dex_bridge.py`, #88). Below dex-core 1.10.0 the
   plan content is a whole-document reprint and every comment in the file is
-  lost on apply - reproduced on the wheel, which is the reason groundstation's
+  lost on apply - reproduced on the wheel, which is the reason a deployment's
   harvest runbook carries its warning. From 1.10.0 the content is a splice into
   the original bytes and nothing is lost. Both arms are asserted, by engine
   version, with no skip, and the spliced `unique` test is read back as the same

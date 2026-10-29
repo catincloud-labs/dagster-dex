@@ -1572,7 +1572,7 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
     A reconcile plan's content at dex-core 1.9.2 was a whole-document reprint of
     the declaration, so applying it through this format's `write_edits` (which
     writes the bytes the plan carries and re-serialises nothing) dropped every
-    comment a person had written. groundstation's RUNBOOK and its
+    comment a person had written. A deployment's harvest RUNBOOK and its
     `harvest_apply.py` carry a red warning to read the diff for that. dex-core
     1.10.0 changed the content to a byte-span splice into the original.
 
@@ -1628,7 +1628,7 @@ class TestReconcileWritesIntoTheDeclarationRatherThanReprintingIt:
         else:
             assert lost == comments, (
                 f"dex-core {engine} predates the splice and reprints the whole document, "
-                f"which is why groundstation's harvest warning exists. It should have lost "
+                f"which is why a deployment's harvest warning exists. It should have lost "
                 f"every comment here and lost {lost}. If it lost none, SPLICE_FROM is stale "
                 "and that warning is dead one version earlier than recorded."
             )
