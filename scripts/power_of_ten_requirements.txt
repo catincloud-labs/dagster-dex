@@ -11,5 +11,5 @@
 # moves the pins below and leaves those readings as they were, so a count is a
 # reading of the versions pinned in whichever copy of this file its tools were
 # installed from.
-ruff==0.17.1
+ruff==0.17.2
 mypy==2.4.0
