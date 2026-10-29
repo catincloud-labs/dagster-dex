@@ -13,6 +13,23 @@ changes explicitly, because that is the reason a consumer opens this file.
 Before 1.0.0 a minor could carry one; from 1.0.0 one waits for 2.0. Pin the
 major if you depend on the contract.
 
+## Unreleased
+
+### Fixed
+
+- **A schema edit for an upper-case table is placed in its lower-case
+  declaration** (`src/dagster_dex/dex.py`, #141). `edit_path` used the
+  warehouse table's spelling as the file stem, so on Snowflake, which reports
+  an unquoted identifier in upper case, a finding on `DIM_DATE` was placed at
+  `declarations/DIM_DATE.yml`, a file the project did not have, and every
+  finding on the table came back advisory with no plan stored. The stem is now
+  matched against the declarations the view returns without regard to case.
+  Two files there whose names differ only by case are declined for that table
+  rather than guessed between, and reconcile reports it as having nowhere to
+  land. A table no file matches keeps its own spelling, as before. What an
+  edit does with an upper-case column inside the file is the engine's
+  comparison and unchanged here.
+
 ## 1.0.0 - 2026-10-24
 
 The first stable release. From it the seam follows semantic versioning: a

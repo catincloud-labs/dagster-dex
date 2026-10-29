@@ -109,7 +109,11 @@ was built for. Two consequences worth knowing before changing anything here:
 
 - `edit_path`'s `model` is the **warehouse table**, not our model name. There is
   no table-to-relation mapping here (`ProjectModel.relation` is `None`), so the
-  table name is used as the file stem rather than guessed through one.
+  table name is used as the file stem rather than guessed through one. The stem
+  is matched against the declarations **without regard to case** (#141), since
+  Snowflake reports `DIM_DATE` for a `dim_date.yml`, and two files differing
+  only by case make `SCHEMA_YML` `None` for that table: the case is no evidence
+  for either.
 - Reconcile reads the model name out of the placed key's **stem**, so placement
   presumes **one model per declaration file**. A file declaring several gets a
   warning and no edit, which is upstream refusing to guess.

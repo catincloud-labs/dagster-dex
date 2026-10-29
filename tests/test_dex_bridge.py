@@ -1306,6 +1306,50 @@ class TestPlacement:
 
         assert placed == {EditKind.SCHEMA_YML: "declarations/orders.yml"}
 
+    def test_an_upper_case_table_is_placed_in_its_lower_case_declaration(self, tmp_path):
+        """#141. Snowflake reports an unquoted identifier in upper case, and the
+        table's own spelling named `declarations/DIM_DATE.yml`, a file this
+        project does not have. The declaration it does have is placed."""
+
+        from exmergo_dex_core.transform.plans import EditKind
+
+        project = _editable(tmp_path, {"dim_date.yml": a_single_key_declaration(model="dim_date")})
+
+        for table in ("DIM_DATE", "dim_date", "Dim_Date"):
+            assert project.edit_path(EditKind.SCHEMA_YML, table) == "declarations/dim_date.yml", table
+
+    def test_two_declarations_differing_only_by_case_place_nothing(self, tmp_path):
+        """The warehouse's case is no evidence for either file, so placement
+        declines rather than guess, as it does for a file declaring several
+        models. Reconcile reports the table as having nowhere to land.
+
+        Built from text rather than through `_editable`: a case-insensitive
+        filesystem, the default on Windows and macOS, cannot hold both files,
+        and the view placement reads is built from the text either way.
+        """
+
+        from exmergo_dex_core.transform.plans import EditKind
+
+        from dagster_dex.dex import EditableDexProject
+        from dagster_dex.project import EditableDagsterProject
+
+        text = a_single_key_declaration(model="dim_date")
+        project = EditableDexProject(
+            EditableDagsterProject(
+                [],
+                root=tmp_path,
+                surface=("declarations",),
+                declaration_sources={
+                    "declarations/dim_date.yml": text,
+                    "declarations/DIM_DATE.yml": text,
+                },
+            ),
+            declarations_prefix="declarations",
+        )
+
+        for table in ("DIM_DATE", "dim_date", "Dim_Date"):
+            assert project.edit_path(EditKind.SCHEMA_YML, table) is None, table
+
     def test_every_placement_lands_inside_the_declared_surface(self, tmp_path):
         """The two answers have to describe the same project.
 
@@ -1509,8 +1553,8 @@ def _engine_minor() -> tuple[int, int]:
     return int(major), int(minor)
 
 
-def _reconcile_and_apply(tmp_path, declaration, finding):
-    """Reconcile one finding over `declaration` with no profiled baseline, then
+def _reconcile_and_apply(tmp_path, declaration, *findings):
+    """Reconcile the findings over `declaration` with no profiled baseline, then
     plan and apply whatever edit came back through this format.
 
     Returns the proposals and the declaration as it reads afterwards, which is
@@ -1526,7 +1570,7 @@ def _reconcile_and_apply(tmp_path, declaration, finding):
 
     project = _editable(tmp_path, {"dim_date.yml": declaration})
     proposals, edits, _warnings = reconcile.build(
-        [finding],
+        list(findings),
         Snapshot(created_at="2026-01-01T00:00:00Z"),
         None,
         project.load(),
@@ -1809,6 +1853,93 @@ class TestASchemaEditLosesOnlyTheCommentsOnTheLinesItReplaces:
             )
             assert [p.kind for p in proposals] == ["advisory"], proposals
             assert "no profiled baseline" in proposals[0].action, proposals[0].action
+
+
+def _snowflake_finding(axis, code, column, **data):
+    """A finding on `dim_date` as Snowflake names an unquoted table: folded to
+    upper case, while the project declares it in a lower-case file (#141)."""
+
+    from exmergo_dex_core.maintain.drift import DriftFinding
+
+    return DriftFinding(
+        axis=axis,
+        code=code,
+        identifier="WAREHOUSE.ANALYTICS.DIM_DATE",
+        column=column,
+        detail=f"{code} on {column}",
+        data=data,
+    )
+
+
+class TestAnUpperCaseTableStoresAPlanForItsLowerCaseDeclaration:
+    """#141's done-when: a reconcile over `declarations/dim_date.yml`, fed
+    findings on `DIM_DATE`, stores a plan that applies to that file.
+
+    Placement used the table's spelling verbatim and named
+    `declarations/DIM_DATE.yml`, which the view does not hold, so every finding
+    on the table came back advisory and no plan was stored. Both tests below go
+    red on that placement at every engine they reach the write path at.
+    """
+
+    def test_a_lost_key_on_the_table_stores_a_plan_at_every_engine(self, tmp_path):
+        """The grain finding reaches the write path below 1.10.0 too, so this is
+        the pin the demonstrated engine runs.
+
+        The column is spelled as the declaration spells it. Whether a finding's
+        `IS_WEEKEND` matches `- name: is_weekend` is the engine's comparison
+        rather than placement's, and for a test edit no engine in the published
+        range makes it.
+        """
+
+        from dagster_dex.declarations import parse_declarations
+
+        proposals, after = _reconcile_and_apply(
+            tmp_path,
+            COMMENTED_DECLARATION,
+            _snowflake_finding("grain", "key_lost_uniqueness", "is_weekend"),
+        )
+
+        assert after != COMMENTED_DECLARATION, f"no plan was stored for DIM_DATE: {proposals!r}"
+        keys, _joins, _notes = parse_declarations({"declarations/dim_date.yml": after})
+        assert ("dim_date", ("is_weekend",)) in {(k.model, k.columns) for k in keys}, after
+
+    def test_the_schema_drift_it_was_found_with_stores_a_plan(self, tmp_path):
+        """The three codes #141 was filed with, on this fixture's columns and in
+        Snowflake's case.
+
+        From 1.10.0 the added column is spliced into `dim_date.yml`, and no
+        proposal names the upper-case file. What the drop and the nullability
+        change do is the engine's column comparison and is not asserted: the
+        drop matches case-blind from 1.15.2 and is advisory before it, and the
+        nullability change is advisory throughout. Below 1.10.0 a schema finding
+        with no profiled baseline is advisory whatever the placement, so the
+        file must come back unchanged.
+        """
+
+        import importlib.metadata as md
+
+        proposals, after = _reconcile_and_apply(
+            tmp_path,
+            COMMENTED_FOR_SCHEMA_DRIFT,
+            _snowflake_finding("schema", "column_added", "FISCAL_WEEK", data_type="INTEGER"),
+            _snowflake_finding("schema", "column_dropped", "IS_WEEKEND"),
+            _snowflake_finding("schema", "nullability_changed", "DATE", nullable_after=True),
+        )
+        engine = md.version("exmergo-dex-core")
+
+        if _engine_minor() >= SPLICE_FROM:
+            assert _column_entry(after, "FISCAL_WEEK") is not None, (
+                f"dex-core {engine} splices a declaration since 1.10.0, yet no plan "
+                f"declaring FISCAL_WEEK was stored for DIM_DATE: {proposals!r}\n{after}"
+            )
+            named = [p.action for p in proposals if "DIM_DATE.yml" in p.action]
+            assert named == [], named
+        else:
+            assert after == COMMENTED_FOR_SCHEMA_DRIFT, (
+                f"dex-core {engine} predates the splice, yet the file changed:\n{after}"
+            )
+            assert {p.kind for p in proposals} == {"advisory"}, proposals
+            assert all("no profiled baseline" in p.action for p in proposals), proposals
 
 
 #: A declaration with no test list anywhere in it. dex-core 1.12.7 gives such

@@ -653,9 +653,10 @@ class EditableDexProject(DexProject):
     names as the thing this method is most often gotten wrong on. This format
     has no table-to-relation mapping - ``ProjectModel.relation`` is ``None`` -
     so the table name is used as the file stem rather than translated through a
-    guess. A project whose declaration file is not named after the table it
-    declares gets no edit and a warning saying so, which is upstream refusing to
-    guess rather than this format writing to the wrong file.
+    guess, compared without regard to case (see :meth:`edit_path`). A project
+    whose declaration file is not named after the table it declares gets no edit
+    and a warning saying so, which is upstream refusing to guess rather than
+    this format writing to the wrong file.
 
     **A project that packs several models into one declaration file gets a
     warning, not an edit.** Reconcile reads the model name out of the placed
@@ -717,7 +718,22 @@ class EditableDexProject(DexProject):
         return self._editable.editable_view()
 
     def edit_path(self, kind: Any, model: str) -> str | None:
-        """Where an edit of ``kind`` for the warehouse table ``model`` lives."""
+        """Where an edit of ``kind`` for the warehouse table ``model`` lives.
+
+        **The declaration file whose name matches the table without regard to
+        case** (#141). A warehouse folds an unquoted identifier and a person
+        naming a file need not: Snowflake reports ``DIM_DATE`` for the table a
+        ``dim_date.yml`` declares, and the table's own spelling named a file
+        this project does not have, so every schema finding was advisory.
+
+        Matched against the view :meth:`load` returns and inside the
+        declarations directory only, so the key placed is one the plan can pin.
+        **Two files there whose names differ only by case are ``None``**: the
+        warehouse's case says nothing about which of them declares the table,
+        and declining is the same refusal to guess as a file declaring several
+        models gets. No match is the table's own spelling, as before, which
+        upstream reports as a file this view did not return.
+        """
 
         from exmergo_dex_core.transform.plans import (  # noqa: PLC0415 - optional dependency
             EditKind,
@@ -725,7 +741,16 @@ class EditableDexProject(DexProject):
 
         if kind is not EditKind.SCHEMA_YML:
             return None
-        return f"{self._declarations_prefix}/{model}.yml"
+        prefix = f"{self._declarations_prefix}/"
+        wanted = f"{model}.yml".lower()
+        matches = [
+            key
+            for key in self.load().files
+            if key.startswith(prefix) and key[len(prefix) :].lower() == wanted
+        ]
+        if len(matches) > 1:
+            return None
+        return matches[0] if matches else f"{prefix}{model}.yml"
 
     def editing_surface(self) -> list[str]:
         """The prefixes this format admits its edits may land in."""
