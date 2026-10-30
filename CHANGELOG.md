@@ -15,6 +15,18 @@ major if you depend on the contract.
 
 ## Unreleased
 
+### Added
+
+- **A design document on the translation from Dagster to dex**
+  (`docs/design/dagster-to-dex.md`). It describes the three steps from an
+  asset graph to dex-core's project types, what each channel loses and which
+  note says so, the write-back path and the artifact transport, and links
+  each decision to where it is made rather than restating it.
+  `docs/design/README.md` gives the header convention, and
+  `tests/test_design_docs.py` holds every document there to it: the header,
+  the paths it describes, the `dagster_dex` names it uses, and its relative
+  links. The `markdown` job now lints `docs/`.
+
 ### Fixed
 
 - **A schema edit for an upper-case table is placed in its lower-case
