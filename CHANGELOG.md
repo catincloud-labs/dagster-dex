@@ -26,6 +26,26 @@ major if you depend on the contract.
   `tests/test_design_docs.py` holds every document there to it: the header,
   the paths it describes, the `dagster_dex` names it uses, and its relative
   links. The `markdown` job now lints `docs/`.
+- **A design document on how the package proves its claims**
+  (`docs/design/verification.md`). It names each CI job and the claim it
+  holds, the engine-absent control, the four engine axes, what dex-core's
+  shipped contracts catch and what the two wheel drivers add, the guards that
+  hold prose to runs, and where each guard has been shown to fail, naming
+  those with no red arm. The explanation it carries moved out of `AGENTS.md`,
+  which keeps the rules and points to it.
+  - **The contracts' catch rate is re-measured.** The record that dex-core's
+    write contracts caught two of five planted `propose_edits` defects was
+    measured against dex-core 1.6.6. Re-run at both ends of the published
+    range, they catch all three it named as passing, and the write-path
+    driver's four recorded mutations too: the three assertions arrived in
+    1.7.0. The paragraph in
+    `AGENTS.md` is quoted under *How this section read before*, below; the
+    same sentence in `publish.yml` and in the write-path driver's docstring is
+    rewritten in place.
+  - **`AGENTS.md` names the control step where it runs.** It said the first
+    step of the `tests` job ran the suite without the engine; `tests` has been
+    an aggregate with no such step since 2026-08-18, and the control is the
+    `python-floor` job and the first test step of `publish.yml`'s `build`.
 
 ### Fixed
 
@@ -1015,6 +1035,36 @@ of #57. It read:
 # until 2026-08-27, which had been false since 0.4.0 shipped the write path --
 # the truth pass that retired that claim's four other sites did not reach this
 # file. The Alpha claim never rested on it.)
+```
+
+### `AGENTS.md`, *The rule that matters most here*, the paragraph on the control step
+
+Read dead on 2026-10-30, against `.github/workflows/checks.yml` at `ec96fe4`,
+where the job named `tests` is an aggregate whose one step reads the other
+jobs' results; the suite without the engine runs in `python-floor`, and in the
+first test step of `publish.yml`'s `build`. It had been so since the engine
+axes split the job on 2026-08-18. Its first sentence read:
+
+```markdown
+The first step of the `tests` job runs the whole suite with the engine absent.
+```
+
+### `AGENTS.md`, *The two drivers, and why passing the contracts is not enough*, the paragraph on the contracts
+
+Read dead on 2026-10-30, against dex-core 1.8.0 at `ec96fe4`: the three
+defects it names as passing the shipped contracts in full each fail them
+there, and the four mutations recorded for the write-path driver do too
+(`docs/design/verification.md`, *The measurement, and what it was measured
+against*). It was measured on 2026-08-18 against dex-core 1.6.6, and was true
+there. It read:
+
+```markdown
+**Neither is redundant with the conformance contracts.** Measured, not
+assumed: five defects were introduced one at a time into `propose_edits`, and
+dex-core's `EditableProjectContract` and `PlacingProjectContract` caught **two**.
+All-or-nothing, a create whose pin is `None`, and segment-wise containment all
+pass the shipped contracts in full. They are honest about being behavioural
+rather than exhaustive; treating them as proof is the caller's mistake.
 ```
 
 ## Why this file names no engine version

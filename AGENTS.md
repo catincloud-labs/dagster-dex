@@ -17,13 +17,16 @@ change to it waits for 2.0 (README, *Status*).
 `exmergo_dex_core`. Everything else - the model, the protocol, the parser, and the
 conformance suite - runs with dex-core **uninstalled**.
 
-The first step of the `tests` job runs the whole suite with the engine absent.
+The engine-free control (the `python-floor` job in `checks.yml`, and the first
+test step of `publish.yml`'s `build`) runs the suite with the engine absent.
 **That step is a control, not a speed split.** Add an `exmergo_dex_core` import to
 any other module and it goes red at collection. Merging it into the step below it
 would delete the only thing checking the package's central claim.
 
 `tests/test_dex_bridge.py` additionally walks `dex.py`'s AST to assert it imports
-**public API only**, rather than trusting it.
+**public API only**, rather than trusting it. How both checks fail, and what the
+AST check does not read:
+[docs/design/verification.md, *The engine-absent control*](docs/design/verification.md#the-engine-absent-control).
 
 ## The names in `protocol.py` are OURS, and must not be "fixed" to match
 
@@ -164,11 +167,9 @@ and separately, because it sits *beside* the tiers rather than inside them:
     not on the function that feeds it.** A test that reads the source of a value
     cannot see it failing to arrive at the destination.
     - Both layers now carry both arms in `tests/test_dex_bridge.py`, asserted on
-      the layer. **Verified by mutation rather than by reading**: removing
-      `notes=` from `to_semantic_layer` turns
-      `test_an_unresolvable_field_arrives_as_none_and_is_disclosed` red on
-      *"the pairing is the layer's job now, not the caller's"*. A new test would
-      be a second copy of a working one.
+      the layer, and the guard has been shown to fire
+      ([docs/design/verification.md, *Notes asserted on the layer*](docs/design/verification.md#notes-asserted-on-the-layer)).
+      A new test would be a second copy of a working one.
 - **`path` is `None`, never `""`.** The empty string was an undocumented
   sentinel, named as one by the release that made the field optional. A
   regression test guards it, because `""` validates fine and would go unnoticed.
@@ -253,20 +254,19 @@ a script. **That is a command that runs, exits 0, and checks nothing** -
 copying it saw the same exit code CI produces and had installed an orchestrator
 to evaluate a constant. => **An elided command is worse than a missing one: it
 returns the answer you were looking for.** Every command in this file is
-runnable verbatim now, which was checked by running all of them.
+runnable verbatim now, which was checked by running all of them. What
+`tests/test_documented_commands.py` holds every documented command to is in
+[docs/design/verification.md, *Documented commands*](docs/design/verification.md#documented-commands).
 
-**The Dagster step exists because everything else uses fakes.** That is
-deliberate - the suite must run without an orchestrator - but it means nothing
-else here would notice `from_asset_graph` breaking against the objects Dagster
-actually hands it. The `[dagster]` extra was declared and installed by nothing
-until that step existed.
+**The Dagster step exists because everything else uses fakes.** The suite must
+run without an orchestrator, so the `examples/` steps in `suite` are the only
+checks against real Dagster objects. The `[dagster]` extra was declared and installed
+by nothing until that step existed.
 
 **The README quotes the whole loop's output, and CI holds the quote to the
-run.** The `suite` step that runs `examples/walk_the_whole_loop.py` keeps its
-stdout, and `scripts/check_readme_excerpt.py` refuses any line in the README's
-marked excerpt that the run did not print, whole. Change a leg's printed line and
-the README excerpt moves in the same change; `tests/test_readme_excerpt.py`
-calibrates the checker in the control step, where no example runs.
+run.** Change a leg's printed line and the README excerpt moves in the same
+change. How the quote is held, and where the checker is shown to go red:
+[docs/design/verification.md, *The README's output excerpt*](docs/design/verification.md#the-readmes-output-excerpt).
 
 `--with-editable` is not optional - without it every test errors at collection
 on `No module named 'dagster_dex'`. Never `uv run --python X` without
@@ -281,12 +281,14 @@ plan, is written through this format, changes what the project declares, and is
 REFUSED when a human edited the file behind a second plan. Both run in
 `publish.yml`'s `build` job, which runs on every pull request.
 
-**Neither is redundant with the conformance contracts.** Measured, not
-assumed: five defects were introduced one at a time into `propose_edits`, and
-dex-core's `EditableProjectContract` and `PlacingProjectContract` caught **two**.
-All-or-nothing, a create whose pin is `None`, and segment-wise containment all
-pass the shipped contracts in full. They are honest about being behavioural
-rather than exhaustive; treating them as proof is the caller's mistake.
+**Keep both, though the conformance contracts now catch every planted defect
+on record.** At both ends of the published range, dex-core's `EditableProjectContract` and
+`PlacingProjectContract` fail on each defect planted so far, the ones that got
+past them at 1.6.6 included. The drivers' claim is the route a host takes, the
+built wheel, the entry-point scan and dex's own reconcile, plan and apply,
+which no contract takes. The measurement, the engine each half of it ran
+against, and what each driver's legs assert:
+[docs/design/verification.md, *What the shipped contracts catch, and what the drivers add*](docs/design/verification.md#what-the-shipped-contracts-catch-and-what-the-drivers-add).
 
 Run either by hand:
 
@@ -297,31 +299,16 @@ uv run --no-project --with-editable . \
 ```
 
 **The write-path driver bails after leg 1 when the tier is not reached**, on
-purpose. Every leg below it calls a method the write tier adds, so pressing on
-against a tier-2 project reports an `AttributeError` traceback instead of naming
-the leg. Found by running it against the tree from before the write tier
-existed, which is also the run that proves the legs can fail at all.
+purpose: do not remove the bail. It runs the round trip twice, legs 1-6 on the
+live-graph path and legs 7-15 on the artifact transport, and the second half is
+not a copy to be deleted.
 
-**It runs the round trip twice: legs 1-6 on the live-graph path, legs 7-15 on the
-artifact transport.** The second half is not a copy. It is a different
-construction route with two keyspaces meeting, and leg 13 is the artefact that
-decided the design - a reconcile proposal read back as a declared key over the
-artifact transport, with no artifact regenerated.
-
-**The bail has a cost, and it bounds what calibration can prove.** Once
-anything fails, every later `announce` returns `False`, so a mutation can only be
-shown to fire the **earliest** leg it breaks. Two consequences, both measured
-rather than reasoned:
-
-- A mutation that breaks both transports fires on the live-graph half and the
-  artifact half is never reached. Scope such a mutation to one route, or it
-  proves nothing about the other.
-- **Leg 11's pin assertion is a backstop no mutation reaches**, and the leg says
-  so. It was written believing it caught an edit view built from the artifact's
-  keyspace; leg 10 catches that first, because reconcile *merges* into the text
-  the view hands it and an empty view yields no edit at all. Two other candidates
-  fired legs 12 and 4. => **An assertion written for a defect is not evidence the
-  defect is caught there.**
+**The bail bounds what calibration can prove.** A mutation can only be shown to
+fire the earliest leg it breaks, so scope a calibration mutation to one route,
+or it proves nothing about the other. Leg 11's pin assertion is a backstop no
+mutation reaches. => **An assertion written for a defect is not evidence the
+defect is caught there.** Why, leg by leg:
+[docs/design/verification.md, *What the drivers add*](docs/design/verification.md#what-the-drivers-add).
 
 ## The Python floor
 
@@ -337,16 +324,16 @@ the core rather than by the heaviest extra.** Do not raise it to match the extra
 
 **`DEX_UPSTREAM_CONTRACT_REQUIRED=1` is what makes step 3 a signal.** Without
 it the file skips itself when the upstream contract is unimportable - right at a
-desk, wrong in CI, where an unrun file and a passing file look identical.
+desk, wrong in CI, where an unrun file and a passing file look identical. The
+guards beside it, for a skipped criterion and for a contract nobody declined:
+[docs/design/verification.md, *When upstream's contract is missing, skipped or grown*](docs/design/verification.md#when-upstreams-contract-is-missing-skipped-or-grown).
 
 **These three used to be described as "matching CI exactly", and since
-2026-08-18 they do not.** CI runs two axes these three commands do not: the
-engine-free control on every interpreter in `requires-python`, and the boundary
-plus the upstream contract at both ENDS of the published `[dex]` range rather
-than at the demonstrated pin alone. The three above are still the right thing to
-run at a desk - they are the fastest path to the same failures - but a green
-local run is now a weaker claim than a green pipeline, which is the opposite of
-what the old sentence implied.
+2026-08-18 they do not.** CI runs engine axes these three commands do not
+([docs/design/verification.md, *The engine axes*](docs/design/verification.md#the-engine-axes)).
+The three above are still the right thing to run at a desk - they are the
+fastest path to the same failures - but a green local run is now a weaker claim
+than a green pipeline, which is the opposite of what the old sentence implied.
 
 To reproduce an axis locally, resolve the ends the way CI does rather than typing
 versions in, and substitute one into steps 2 and 3:
@@ -361,17 +348,18 @@ python scripts/resolve_engine_range.py
 remembered.** `requires-python = ">=3.10"` and the `[dex]` extra's
 compatible-release range were both verified by a hand-run matrix at each
 release. A step that has to be remembered is not a control, so both are now jobs.
+What each job proves, and how it fails:
+[docs/design/verification.md, *The engine axes*](docs/design/verification.md#the-engine-axes).
 
 - **`python-floor`** runs the engine-free control on 3.10, 3.11, 3.12 and 3.13.
   The list is written out on purpose: `>=3.10` is open-ended, so there is nothing
   to resolve, and adding an interpreter is a decision about what is claimed.
 - **`engine-ends`** runs the boundary suite and the upstream contract at the
-  floor and the ceiling of the published range, **resolved rather than listed**.
-  A hand-written list of versions is a registry making a claim about a moving
-  set: upstream publishes a patch, the promise widens, the matrix does not, and
-  nothing goes red. `scripts/resolve_engine_range.py` reads the specifier out of
-  `pyproject.toml` and asks a resolver, so it holds no version literal - the same
-  argument `tests/test_pin_coherence.py` makes for itself.
+  floor and the ceiling of the published range, **resolved rather than listed**
+  by `scripts/resolve_engine_range.py`. Never replace it with a hand-written
+  list: that is a registry making a claim about a moving set, and when upstream
+  publishes a patch the promise widens, the matrix does not, and nothing goes
+  red.
 - **`suite`** keeps the exactly-pinned steps. It is not folded into
   `engine-ends`, because the exact pin and the published range are two different
   claims - see the two-pins section below. Folding them would delete one.
@@ -382,22 +370,12 @@ release. A step that has to be remembered is not a control, so both are now jobs
 
 - **`upstream main`** (its own file, `.github/workflows/upstream-main.yml`) runs
   the boundary file and the upstream contract against `exmergo/dex` **`main`**,
-  daily, **red-only**: green is reported nowhere, red opens one issue here
-  labelled `upstream:dex` through `scripts/file_upstream_red.py`, quoting the
-  failing assertion and the upstream commit range since this workflow's last
-  green run. It is a third engine axis (the demonstrated pin, the published
-  range's ends, and the unreleased head), and it lives outside `checks.yml` so
-  a moving `main` can never redden a pull request. The de-duplication key is the
-  test id PLUS the contract name for the coverage guard, because that one id
-  goes red for every new upstream contract and would otherwise absorb the
-  second while the first is open. `tests/test_pin_coherence.py` does not see the
-  install spec, correctly: a git URL is not a pin. Two forced reds, both real
-  machinery on a real tree: `package_dir` at `packages/dex-core-stub` is
-  refused by uv on a metadata-name mismatch before pytest runs (the
-  install-failure arm, filed under its own key), and `upstream_ref` at `v1.4.0`
-  fails collection because the conformance module did not exist yet (the
-  test-keyed arm). A `workflow_dispatch` is refused until the file exists on
-  the default branch, measured as an HTTP 404. Reproduce the axis at a desk:
+  daily, **red-only**: green is reported nowhere, and red opens one issue here
+  labelled `upstream:dex`. It lives outside `checks.yml` so a moving `main` can
+  never redden a pull request; do not move it in. Its de-duplication key, its
+  fail-closed arm and its two forced reds:
+  [docs/design/verification.md, *The unreleased head*](docs/design/verification.md#the-unreleased-head-red-only-and-it-files).
+  Reproduce the axis at a desk:
 
   ```bash
   DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \

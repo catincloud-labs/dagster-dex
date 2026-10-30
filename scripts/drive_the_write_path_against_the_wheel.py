@@ -4,10 +4,12 @@
 
 The suite beside this one judges the write tier against dex-core's two shipped
 conformance contracts, and both pass. That is not evidence that a proposal ever
-reaches this format. It was measured, and the measurement is the reason this
-file exists: of five defects introduced one at a time into the write path, those
-contracts caught two. They are honest about being behavioural rather than
-exhaustive; a format treating them as proof is the one making the mistake.
+reaches this format. A measurement is the reason this file exists: against
+dex-core 1.6.6, of five defects introduced one at a time into the write path,
+those contracts caught two. Against 1.8.0 they catch every planted defect on
+record, and they still call the format's methods from a test: none of them
+installs the wheel, resolves the entry point or runs reconcile, plan and apply,
+which is the route this file takes (docs/design/verification.md).
 
 This package's own recorded lesson is the same shape one level down. Its entry
 point was declared from 0.1.0 and inert until dex-core 1.6.0 began resolving the

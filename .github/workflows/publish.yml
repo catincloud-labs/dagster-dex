@@ -250,9 +250,11 @@ jobs:
 
       # The step above proves dex can READ a project through the wheel. It says
       # nothing about the write path, and the two conformance contracts dex-core
-      # ships do not close that gap either: of five defects introduced one at a
-      # time into `propose_edits`, those contracts caught two. A format treating
-      # them as proof is the one making the mistake.
+      # ships do not close that gap either. They call the format's methods from
+      # a test; they never install the wheel, resolve the entry point or run
+      # reconcile, plan and apply. Against dex-core 1.6.6 they caught two of
+      # five defects planted in `propose_edits`; against 1.8.0 they catch every
+      # planted defect on record (docs/design/verification.md).
       #
       # So this drives the whole thing from the caller's side. A reconcile
       # proposal becomes a stored plan, the plan is written through this format,
