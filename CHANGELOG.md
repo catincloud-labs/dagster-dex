@@ -26,6 +26,14 @@ major if you depend on the contract.
   `tests/test_design_docs.py` holds every document there to it: the header,
   the paths it describes, the `dagster_dex` names it uses, and its relative
   links. The `markdown` job now lints `docs/`.
+- **A design document for implementing a second project format**
+  (`docs/design/implementing-a-format.md`). It walks the tiered seam, the
+  neutral model a format returns, the duty to disclose through `notes`, and
+  the contracts in `dagster_dex.conformance`, including the three things they
+  ask beyond the protocol, and links where the contracts stop and how dex
+  finds a format. Its example is `tests/test_a_second_format.py`, a toy
+  format passing the tier-2 contract in the engine-free control step, with
+  two planted defects the contract is shown to catch.
 - **A design document on how the package proves its claims**
   (`docs/design/verification.md`). It names each CI job and the claim it
   holds, the engine-absent control, the four axes CI runs, what dex-core's
