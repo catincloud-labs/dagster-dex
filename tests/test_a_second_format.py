@@ -9,7 +9,8 @@ breaks an outside implementer breaks this file first.
 
 **The toy is not `DagsterProject` under another name.** Its models come from a
 catalog, a plain mapping of model name to upstream names held in memory, and it
-has one fingerprint layer where `DagsterProject` has one per medallion layer.
+fingerprints the catalog as one layer where `DagsterProject` has one per
+medallion layer; both add a `sources` layer when sources are declared.
 What it shares is the declaration vocabulary: the contract's builders hand
 `make_project` schema-test YAML, so any format passing the contract reads that
 text, and this one reads it with the package's own parsers rather than
@@ -17,8 +18,12 @@ re-deriving them. A format whose declarations live elsewhere writes its own
 reader and is held to the same assertions.
 
 **It declines the write tier, and says so negatively.** It has no place an edit
-could land, so it has no `propose_edits`, and the last test asserts the decline
-with `not isinstance` rather than trusting the absence.
+could land, so it has no `propose_edits`, and a test asserts the decline with
+`not isinstance` rather than trusting the absence.
+
+**Its own note is tested on both arms.** The contract asserts only that some
+note exists where a loss is likely, so a note a format adds for its own reasons
+is the format's to test: loud when the loss happens, quiet when it does not.
 
 **The two calibrations at the end are the contract going red.** A contract
 observed only to pass has not been shown to be one, so each plants a defect a
@@ -33,7 +38,10 @@ from collections.abc import Mapping, Sequence
 import pytest
 import yaml
 
-from dagster_dex.conformance import FingerprintedProjectContract
+from dagster_dex.conformance import (
+    FingerprintedProjectContract,
+    a_single_key_declaration,
+)
 from dagster_dex.declarations import (
     parse_declarations,
     parse_semantics,
@@ -144,6 +152,37 @@ class TestCatalogProjectConformance(FingerprintedProjectContract):
             semantic_sources=semantics,
             source_declarations=sources,
         )
+
+
+def _unlisted_notes(declarations: ProjectDeclarations) -> list[str]:
+    return [note for note in declarations.notes if "the catalog does not list" in note]
+
+
+def test_a_key_on_an_unlisted_model_is_disclosed_by_name():
+    """The loud arm, asserted on the declarations a caller receives."""
+
+    declarations = CatalogProject(
+        CATALOG,
+        name="toy",
+        declaration_sources={"d": a_single_key_declaration(model="dim_customer")},
+    ).declarations()
+
+    assert [k.model for k in declarations.declared_keys] == ["dim_customer"]
+    assert len(_unlisted_notes(declarations)) == 1
+    assert "dim_customer" in _unlisted_notes(declarations)[0]
+
+
+def test_keys_on_listed_models_claim_no_loss():
+    """The quiet arm: a note claiming a loss that did not happen is the same defect."""
+
+    declarations = CatalogProject(
+        CATALOG,
+        name="toy",
+        declaration_sources={"d": a_single_key_declaration(model="dim_date")},
+    ).declarations()
+
+    assert declarations.declared_keys
+    assert _unlisted_notes(declarations) == []
 
 
 def test_the_catalog_format_declines_the_write_tier():

@@ -61,13 +61,14 @@ superset of the one above:
 - `dagster_dex.protocol.EditableProject` adds `propose_edits()`, the write
   path.
 
-**Neither read method may raise.** An absent, empty or unreadable project
+**Neither read method may raise.** An absent, ambiguous or unreadable project
 returns empty declarations with a note saying why; the reason, and why it is
 the property a shape check cannot see, is the
 `dagster_dex.protocol.ProjectSource.declarations` docstring.
 
 **The tiers are matched, not declared.** All three are `runtime_checkable`
-protocols, so `isinstance` asks whether the methods are present, and
+protocols, so `isinstance` asks whether the members are present (the
+`format` attribute as well as the methods), and
 `dagster_dex.protocol.tier_of` asks from the most specific tier down. Why that
 beats a capability flag is in the module docstring and in
 [README, *The seam, in three tiers*](../../README.md#the-seam-in-three-tiers).
@@ -102,13 +103,18 @@ set on one conflict unless `confirmed`, and writes every target when confirmed
 (the `dagster_dex.protocol.EditableProject.propose_edits` docstring).
 
 **Placement sits beside the tiers, not inside them.** Saying where an edit of a
-given kind lands, and which keys an edit may touch, is dex-core's
-`PlacingProject`, not a protocol in this package. Here it lives at the bridge,
-as `dagster_dex.dex.EditableDexProject.edit_path` and
-`dagster_dex.dex.EditableDexProject.editing_surface`, over
-`dagster_dex.project.EditableDagsterProject.editing_surface`. `tier_of` says
-nothing about it, which is why the bridge tests decline it separately
-([AGENTS.md, *`load()` was required by two callers*](../../AGENTS.md#load-was-required-by-two-callers-and-declared-by-no-protocol---fixed-upstream-lesson-kept)).
+given kind lands, which keys an edit may touch, and what the editable files
+hold now is dex-core's `PlacingProject`, not a protocol in this package. Here
+it lives at the bridge, as `dagster_dex.dex.EditableDexProject.edit_path`,
+`dagster_dex.dex.EditableDexProject.editing_surface` and
+`dagster_dex.dex.EditableDexProject.load`, over
+`dagster_dex.project.EditableDagsterProject.editing_surface` and
+`dagster_dex.project.EditableDagsterProject.editable_view`. `tier_of` says
+nothing about it, which is why the bridge tests decline it separately. `load()`
+was called by two dex commands before any protocol declared it, so a format
+could pass every assertion upstream shipped and fail at its first real
+reconcile; that lesson, and the release that closed the gap, are in
+[AGENTS.md, *`load()` was required by two callers*](../../AGENTS.md#load-was-required-by-two-callers-and-declared-by-no-protocol---fixed-upstream-lesson-kept).
 
 ## The neutral model a format produces
 
@@ -147,11 +153,9 @@ docstring).
 `notes` is how a format says what it could not carry, and it is load-bearing:
 a lossy mapping that cannot disclose itself reads as a clean one. The neutral
 model carries it on `ProjectDeclarations` (its docstring), and at the engine
-boundary each of dex-core's layers carries its own, because neither has a
-field for the other's (the `dagster_dex.dex.DexProject.notes` docstring).
-
-The rule for testing it has two parts, both stated in
-[AGENTS.md, *Sharp edges*](../../AGENTS.md#sharp-edges):
+boundary each of dex-core's two tier-2 layers carries its own. Both are stated
+in [AGENTS.md, *Sharp edges*](../../AGENTS.md#sharp-edges), with the rule for
+testing them, which has two parts:
 
 - **A loud arm and a quiet arm.** Assert the note appears when the loss
   happens, and is absent when it does not. Claiming a loss that did not happen
@@ -161,10 +165,14 @@ The rule for testing it has two parts, both stated in
   destination; dropping the argument that carries notes into a layer once left
   a whole suite green.
 
-The contract enforces the loud arm on the read side: a malformed declaration,
-a malformed source declaration, a source with no system, a semantic field with
-no bare column and a redeclared field name must each leave a note. The quiet arm is the
-implementer's to write, because what a format can lose depends on the format.
+The contract reaches only part of the loud arm. For a malformed declaration,
+a malformed source declaration, a source with no system and a semantic field
+with no bare column it asserts that `notes` is not empty, so a format that
+always emits one constant note passes all four. Only the redeclared field name
+is checked by a note's wording. Whether a note discloses the loss that
+happened, and the quiet arm, are the implementer's to test, because what a
+format can lose depends on the format. The worked example below tests both
+arms of the one note it adds.
 
 ## Proving it with `dagster_dex.conformance`
 
@@ -209,9 +217,9 @@ still raise on an absent project. In groups:
   non-empty.
 - **Never raises.** `declarations()` on an empty project, on malformed
   declarations and on a malformed source declaration; `fingerprint()` on an
-  empty project. These go red by the exception propagating, not by a failed
-  assertion.
-- **Disclosure.** The notes listed in the section above.
+  empty project. A format that raises fails these by the exception
+  propagating; two of them also assert on what comes back.
+- **Disclosure.** A note present in the cases the section above lists.
 - **The declared channel.** A single-column key; a four-column key with its
   order kept; a join with both sides, including one whose two columns are named
   differently, so a format mirroring one side onto the other fails.
@@ -247,10 +255,12 @@ still raise on an absent project. In groups:
 
 The builder names and the assertions are public surface: a format pins
 against them, and renaming one is a breaking change (the module docstring).
-That extends to a builder's defaults; `a_join_declaration` keeps a mirrored
-default so an existing suite does not change meaning underneath it, and the
-differently-named case is a separate assertion (its docstring and the
-assertion's). The seam has followed semantic versioning since 1.0.0
+One builder default is held for the same reason: `a_join_declaration` keeps
+both sides named alike so an outside implementer's suite does not change
+meaning underneath them, and the differently-named case is a separate
+assertion (the
+`dagster_dex.conformance.ProjectSourceContract.test_a_join_keeps_the_two_sides_apart_when_they_are_named_differently`
+docstring). The seam has followed semantic versioning since 1.0.0
 ([README, *Status*](../../README.md#status)), so pin the major.
 
 ### A worked example
@@ -261,8 +271,10 @@ catalog, a mapping of model name to upstream names, and its declarations with
 this package's parsers. It reports `NOT_APPLICABLE` freshness because it
 compiles nothing, fingerprints the catalog as one layer and sources as another,
 and adds one note of its own, for a key declared on a model the catalog does
-not list. It has no `propose_edits`, and a test asserts that decline with
-`not isinstance` rather than trusting the absence.
+not list, with a test for each arm: the note names the model when there is
+one, and is absent when every key is on a listed model. It has no
+`propose_edits`, and a test asserts that decline with `not isinstance` rather
+than trusting the absence.
 
 The wiring is one method:
 
@@ -298,17 +310,20 @@ uv run --no-project --with-editable . --with pytest==8.4.1 \
 
 They are behavioural, not exhaustive. Defects planted one at a time in this
 package's `propose_edits` were mostly passed by the write-tier contracts
-dex-core ships, which is why two drivers run this package's write path end to
-end against the built wheel on every pull request. The measurement and what
+dex-core ships, which is why a driver runs this package's write path end to
+end against the built wheel on every pull request, beside a second driver
+that proves dex can read the project through it. The measurement and what
 each driver proves are in
 [AGENTS.md, *The two drivers, and why passing the contracts is not enough*](../../AGENTS.md#the-two-drivers-and-why-passing-the-contracts-is-not-enough).
 The contracts in `dagster_dex.conformance` are behavioural in the same way,
 and a green run of them is the same weaker claim.
 
 A format that wants dex to read it also answers to the contracts dex-core
-ships, which judge the translation at the engine boundary rather than the
-mechanism; this package runs both
+ships, and this package runs those too
 ([README, *Against dex-core's own contract*](../../README.md#against-dex-cores-own-contract)).
+How the two suites divide the work, dex-core's judging the translation at the
+boundary and this package's the mechanism, is the docstring of
+`TestEditableDagsterProjectConformance` in `tests/test_conformance.py`.
 
 ## The boundary
 
@@ -316,9 +331,10 @@ mechanism; this package runs both
 sibling project in another format, and the reason is the design argument
 itself: two formats describing the same warehouse table is duplication. Where
 two projects meet, the warehouse is the join
-([README, *What this is*](../../README.md#what-this-is)). So a second format
-is its own distribution, depending on this one for the model, the protocol
-and the contract.
+([README, *What this is*](../../README.md#what-this-is)). The contract
+ships inside the package so that a format outside this repository can run it
+(the
+`src/dagster_dex/conformance.py` module docstring).
 
 **How dex finds a format.** From dex-core 1.6.0 the engine resolves the
 `exmergo_dex_core.projects` entry-point group, so an installed format can be
@@ -344,8 +360,9 @@ project in the engine's names back.
   some configurations and not others makes that choice.
 
 **The engine coupling is one file.** `src/dagster_dex/dex.py` is the only
-module that imports dex-core, it imports public API only, and the suite runs
-with the engine uninstalled to prove it
+module that imports dex-core, which the control step proves by running the
+suite with the engine uninstalled, and it imports public API only, which a
+test walking its syntax tree asserts
 ([AGENTS.md, *The rule that matters most here*](../../AGENTS.md#the-rule-that-matters-most-here)).
 `dagster_dex.dex.DexProject` is the wrapper pattern: the format keeps its own
 vocabulary, and the bridge renames `format` to the engine's `name` and maps
