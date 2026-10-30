@@ -67,9 +67,9 @@ Nothing else on a definition is read: not its code, partitions, checks or IO
 managers. Two consequences:
 
 - **Only the last path element survives**, so a key prefix is dropped. Two
-  definitions whose names collide after case folding raise `ValueError`, and
-  the check runs against the raw definitions, because a built asset graph has
-  already collapsed a duplicate into one node.
+  definitions whose names collide after case folding raise `ValueError`,
+  checked against the raw definitions. The reasons for both are in the
+  `dagster_dex.project.DagsterProject.from_asset_graph` docstring.
 - **A dependency is kept whatever it points at.** Filtering to built models
   happens at step 3, where dex-core's meaning of a ref applies, not here.
 
@@ -88,7 +88,9 @@ The YAML is written in dbt's schema-test vocabulary (`unique`, `not_null`,
 `relationships`), and that vocabulary is an input format, not the model:
 everything lands in `src/dagster_dex/model.py` types, so changing the input
 format touches `src/dagster_dex/declarations.py` alone (its module docstring).
-No parser raises on bad input; a malformed file becomes a note and is skipped.
+No parser raises on bad input. A file that is not readable YAML becomes a
+note and is skipped; one that parses to something other than a mapping is
+skipped with no note.
 
 - **Keys.** Read from a directory, a key is `<directory name>/<file name>`.
   Two parsers use it only as a label in notes. `parse_source_declarations`
@@ -102,8 +104,10 @@ No parser raises on bad input; a malformed file becomes a note and is skipped.
 - **Sources are declared, never inferred** from the graph
   ([README, *External sources*](../../README.md#external-sources-the-edge-a-graph-cannot-see)).
 
-`declarations()` then cross-checks. A key, join or source reader naming a model
-the graph does not build is kept, with a note naming it. `freshness` is always
+`declarations()` then cross-checks. A key on, a join from, or a source read by
+a model the graph does not build is kept, with a note naming the model. A
+join's far side is not checked, because it may name a source (the
+`dagster_dex.model.DeclaredJoin` docstring). `freshness` is always
 `NOT_APPLICABLE`, because nothing compiled sits between the graph and the
 reduction. The result is memoized for the instance's life, which is one command.
 
@@ -143,7 +147,7 @@ on the layer, is in [AGENTS.md, *Sharp edges*](../../AGENTS.md#sharp-edges).
 | --- | --- | --- | --- |
 | no files | `files={}` | file-content drift | a note that file hashes are absent, whenever there are models |
 | model names | `models`, sorted | nothing | |
-| `depends_on` | `model_refs`, built models only, self-references dropped | other dependencies | a note listing each dependency on neither a built model nor a declared source |
+| `depends_on` | `model_refs`, built models only, self-references dropped | every other dependency | a note listing each dependency on neither a built model nor a declared source; one on a declared source is dropped unlisted |
 | `ExternalSource` | `SourceTable`: `system` as `source_name`, `schema_name`, `table`, `columns` | nothing | |
 | `ExternalSource.declared_in` | `SourceTable.path`, or `None` | a place, for text handed over in memory | none: `None` says it |
 | `ExternalSource.read_by` | `model_sources`, each reader to sorted `system.table` identifiers | nothing | |
@@ -172,7 +176,7 @@ Which class a configuration gets is decided in
 `dagster_dex.dex.project_from_context`: a named `declarations:` directory builds
 `dagster_dex.dex.EditableDexProject` over
 `dagster_dex.project.EditableDagsterProject`, and anything else builds the
-read-only pair. Why it is a class and not a flag, and the four cases the tests
+read-only pair. Why it is a class and not a flag, and which cases the tests
 pin, are in
 [AGENTS.md, *Tier 3 is reached by ONE class*](../../AGENTS.md#tier-3-is-reached-by-one-class-and-the-split-is-the-design)
 and [README, *The seam, in three tiers*](../../README.md#the-seam-in-three-tiers).
@@ -204,23 +208,27 @@ sequenceDiagram
     E-->>R: the view
     R->>E: edit_path(SCHEMA_YML, table)
     E-->>R: declarations/dim_date.yml, or None
-    Note over R: the edit is stored as a plan, pinned to the file's hash
+    R->>E: load() and editing_surface()
+    Note over R: each edit is checked against the surface, then stored as a plan pinned to the file's hash
+    T->>E: editing_surface()
+    Note over T: an edit outside the surface is refused, confirmed or not
     T->>E: write_edits(edits, project_dir)
     E->>P: propose_edits(ProposedEdit list, root=project_dir)
     P->>F: re-read and hash every target
     alt a hash differs from its pin, and not confirmed
         P-->>E: EditOutcome: conflicts, nothing written
-    else every pin holds
+    else every pin holds, or confirmed
         P->>F: write every target
-        P-->>E: EditOutcome: written
+        P-->>E: EditOutcome: written, and any conflicts
     end
     E-->>T: ApplyResult: written, conflicts
 ```
 
-- **`load()` and the write read different moments on purpose.** The view is
-  built from the text the project was constructed with, so a plan's pin and
-  its surface come from one reading. `propose_edits` re-reads every target
-  from disk, because the plan may be applied days later, after a human edit.
+- **`load()` and the write read different moments.** The view is built from
+  the text the project was constructed with; `propose_edits` re-reads every
+  target from disk. The reasons are in the docstrings of
+  `dagster_dex.project.EditableDagsterProject.editable_view` and
+  `dagster_dex.project.EditableDagsterProject.propose_edits`.
 - **All-or-nothing means "check every target, then write"**, not a
   transaction (the `dagster_dex.project.EditableDagsterProject.propose_edits`
   docstring).
@@ -237,9 +245,11 @@ empty one admitted, the parent as root) are in
 ## The artifact transport: the same inputs, carried as text
 
 `artifact:` is the second construction route. The side that has the graph runs
-step 1 and writes `dagster_dex.artifact.ProjectArtifact` with
-`dagster_dex.artifact.dump`; the side that answers requests reads it with
-`dagster_dex.artifact.loads` and runs steps 2 and 3 itself.
+step 1 and writes the result as JSON with `dagster_dex.artifact.dump`, which
+takes the reduced models and the declaration text as keyword arguments. The
+side that answers requests reads it with `dagster_dex.artifact.loads`, which
+returns a `dagster_dex.artifact.ProjectArtifact`, and runs steps 2 and 3
+itself.
 
 ```mermaid
 flowchart LR
@@ -271,9 +281,9 @@ When to use which route is in
 
 ## What the translation does not do
 
-- **It never edits a model.** A model is a node in a running asset graph,
-  rebuilt from code on the next run, so `edit_path` returns `None` for
-  `MODEL_SQL`.
+- **It never edits a model.** `edit_path` returns `None` for `MODEL_SQL`;
+  why only the declarations can receive an edit is in
+  [AGENTS.md, *Tier 3 is reached by ONE class*](../../AGENTS.md#tier-3-is-reached-by-one-class-and-the-split-is-the-design).
 - **It has no table-to-relation mapping.** `ProjectModel.relation` is `None`
   from the reduction, so placement uses the table name as the file stem rather
   than translating it through a guess.
@@ -285,9 +295,10 @@ When to use which route is in
 
 ## Seeing it run
 
-`examples/walk_the_whole_loop.py` runs every step on this page against a local
-DuckDB warehouse, write-back included. From the root of a clone, as the README
-gives it:
+`examples/walk_the_whole_loop.py` runs the graph route on this page against a
+local DuckDB warehouse, write-back included; it does not use the artifact
+transport, which `scripts/drive_the_write_path_against_the_wheel.py` drives.
+From the root of a clone, as the README gives it:
 
 ```bash
 uv run --no-project --with-editable . --with 'dagster>=1.13' \

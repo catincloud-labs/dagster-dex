@@ -16,7 +16,9 @@ convention and is not itself a document):
   - every backticked path on the Describes line exists in the tree;
   - every backticked `dagster_dex.<module>.<name>` resolves, by import and
     attribute lookup, rather than by a text search a stale name could pass;
-  - every relative link reaches a file, and its anchor a heading there.
+  - every relative inline link reaches a file, spelled with its case, and its
+    anchor a heading there, in the documents and in the README beside them.
+    A link form this file does not read is refused rather than skipped.
 
 **What it cannot check is whether the prose is true.** A document whose named
 paths and symbols all exist can still describe them wrongly; the Reviewed line
@@ -30,6 +32,7 @@ every engine import to the call that needs it.
 from __future__ import annotations
 
 import importlib
+import os
 import re
 from pathlib import Path
 
@@ -42,9 +45,20 @@ _STATUSES = frozenset({"living", "frozen", "dead"})
 _LABELS = ["Status", "Describes", "Reviewed"]
 _BULLET = re.compile(r"^- \*\*(\w+):\*\*\s*(.*)$")
 _TICKED = re.compile(r"`([^`]+)`")
-_SYMBOL = re.compile(r"`(dagster_dex(?:\.[A-Za-z_]\w*)+)`")
-_LINK = re.compile(r"\]\(([^)\s]+)\)")
-_FENCE = re.compile(r"^```.*?^```[ \t]*$", re.M | re.S)
+#: The call form, `dagster_dex.dex.load()`, is read too: this package's own
+#: prose writes methods that way, and a name followed by parentheses that fell
+#: out of scope would be a stale name nothing checks.
+_SYMBOL = re.compile(r"`(dagster_dex(?:\.[A-Za-z_]\w*)+)(?:\([^`]*\))?`")
+#: An inline link, with an optional `<...>` around its target and an optional
+#: title after it. Every `](` in a document has to be read by this pattern, so
+#: a form it does not know is a failure rather than an unread link.
+_LINK = re.compile(r"\]\(<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\)")
+#: Forms this file does not read, refused so they cannot go unchecked.
+_UNREAD = (
+    ("a reference-style link definition", re.compile(r"^ {0,3}\[[^\]]+\]:\s", re.M)),
+    ("an HTML link", re.compile(r"<a\s[^>]*href", re.I)),
+)
+_FENCE = re.compile(r"^(```|~~~).*?^\1[ \t]*$", re.M | re.S)
 _HEADING = re.compile(r"^#{1,6} (.+?)\s*$", re.M)
 
 
@@ -54,6 +68,35 @@ def _documents() -> list[Path]:
 
 def _ids() -> list[str]:
     return [p.name for p in _documents()]
+
+
+def _markdown() -> list[Path]:
+    """The documents and the README beside them, whose links are read too."""
+
+    return sorted(DESIGN.glob("*.md"))
+
+
+def _exists_exactly(path: Path) -> bool:
+    """Does ``path`` exist inside the repository, spelled with this case?
+
+    ``Path.exists`` answers yes for `agents.md` on a case-insensitive
+    filesystem, and the link would then break on the Linux runner and on
+    GitHub. Walking each directory listing holds the spelling on every
+    platform, so a run at a Windows desk answers what CI answers.
+    """
+
+    # `normpath`, not `resolve`: on Windows `resolve` returns the spelling on
+    # disk, which is the answer this function exists not to accept.
+    try:
+        parts = Path(os.path.normpath(path)).relative_to(REPO).parts
+    except ValueError:
+        return False
+    here = REPO
+    for part in parts:
+        if not here.is_dir() or part not in os.listdir(here):
+            return False
+        here = here / part
+    return True
 
 
 def _header(text: str) -> list[tuple[str, str]]:
@@ -119,9 +162,16 @@ def _resolves(dotted: str) -> bool:
                 continue
             raise
         for attribute in parts[cut:]:
-            if not hasattr(found, attribute):
+            # A dataclass field with no default is not a class attribute, so
+            # `hasattr` misses `ProjectModel.name` while it finds
+            # `ProjectModel.relation`. The field table answers for both.
+            fields = getattr(found, "__dataclass_fields__", {})
+            if attribute in fields:
+                found = fields[attribute]
+            elif hasattr(found, attribute):
+                found = getattr(found, attribute)
+            else:
                 return False
-            found = getattr(found, attribute)
         return True
     return False
 
@@ -155,7 +205,7 @@ def test_every_described_path_exists(path):
     values = dict(_header(path.read_text(encoding="utf-8")))
     named = _TICKED.findall(values.get("Describes", ""))
     assert named, f"{path.name}: the Describes line names no backticked path"
-    missing = [token for token in named if not (REPO / token).exists()]
+    missing = [token for token in named if not _exists_exactly(REPO / token)]
     assert not missing, f"{path.name}: Describes names paths not in the tree: {missing}"
 
 
@@ -166,16 +216,19 @@ def test_every_named_symbol_resolves(path):
     assert not missing, f"{path.name}: names that do not resolve: {missing}"
 
 
-@pytest.mark.parametrize("path", _documents(), ids=_ids())
+@pytest.mark.parametrize("path", _markdown(), ids=[p.name for p in _markdown()])
 def test_every_relative_link_reaches_its_target(path):
     text = _FENCE.sub("", path.read_text(encoding="utf-8"))
-    broken: list[str] = []
-    for link in _LINK.findall(text):
+    links = _LINK.findall(text)
+    broken = [label for label, pattern in _UNREAD if pattern.search(text)]
+    if text.count("](") != len(links):
+        broken.append("an inline link in a form this file cannot read")
+    for link in links:
         if re.match(r"[a-z]+:", link):
             continue
         target, _, anchor = link.partition("#")
-        resolved = (path.parent / target).resolve() if target else path
-        if not resolved.exists():
+        resolved = path.parent / target if target else path
+        if not _exists_exactly(resolved):
             broken.append(f"{link} (no such file)")
         elif anchor and resolved.suffix == ".md" and anchor not in _anchors(resolved):
             broken.append(f"{link} (no such heading)")
@@ -187,8 +240,24 @@ def test_the_symbol_check_reads_a_known_name_both_ways():
     test above is not a resolver that accepts everything or nothing."""
 
     assert _resolves("dagster_dex.dex.EditableDexProject.edit_path")
+    assert _resolves("dagster_dex.model.ProjectModel.name")
     assert not _resolves("dagster_dex.dex.EditableDexProject.no_such_method")
+    assert not _resolves("dagster_dex.model.ProjectModel.no_such_field")
     assert not _resolves("dagster_dex.no_such_module.anything")
+    assert _SYMBOL.findall("`dagster_dex.dex.EditableDexProject.load()`") == [
+        "dagster_dex.dex.EditableDexProject.load"
+    ]
+
+
+def test_the_link_reader_refuses_what_it_cannot_read():
+    """The link pattern's scope, both arms: a titled link is read, a
+    reference-style definition is refused, and a case-mismatched path is not
+    found even where the filesystem would say it was."""
+
+    assert _LINK.findall('[a](NOPE.md "t")') == ["NOPE.md"]
+    assert _UNREAD[0][1].search("[ref]: ../../NO_SUCH.md")
+    assert _exists_exactly(REPO / "AGENTS.md")
+    assert not _exists_exactly(REPO / "agents.md")
 
 
 def test_the_slug_matches_github_on_a_heading_with_code_and_quotes():

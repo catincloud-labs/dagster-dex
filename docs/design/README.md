@@ -24,16 +24,18 @@ Three bullets come first after the title:
 - **Reviewed** is the date and the commit the document was last checked
   against.
 
-A bullet may run on to lines indented two spaces. When a document goes out of
-date it is rewritten to state the present, and the text it replaces moves to
-`CHANGELOG.md`; old text is not kept beside new text.
+A bullet may run on to lines indented two spaces. A document states the
+present. Where this repository keeps text a document no longer carries is
+[`CHANGELOG.md`, *How this section read before*](../../CHANGELOG.md#how-this-section-read-before).
 
 ## What is checked
 
 `tests/test_design_docs.py` reads every document in this directory except this
-one. It requires the three bullets and a known Status, that every path on the
-Describes line exists, that every backticked `dagster_dex.<module>.<name>` the
-document mentions resolves to an attribute of that module, and that every
-relative link reaches a file and, where it names one, a heading. It cannot
-check that the prose is true; re-reading against the code is what the
-Reviewed line records.
+one. It requires the three bullets and a known Status, a date and a
+commit-shaped sha on the Reviewed line, that every path on the Describes line
+exists, that every backticked `dagster_dex.<module>.<name>` the document
+mentions resolves to an attribute of that module, and that every relative
+inline link reaches a file and, where it names one, a heading. It refuses
+reference-style links rather than reading them. It does not check that the
+Reviewed commit exists, and it cannot check that the prose is true;
+re-reading against the code is what the Reviewed line records.
