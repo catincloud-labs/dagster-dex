@@ -4,7 +4,7 @@
 - **Describes:** `src/dagster_dex/protocol.py`, `src/dagster_dex/model.py`,
   `src/dagster_dex/conformance.py`, `src/dagster_dex/dex.py`,
   `tests/test_a_second_format.py`
-- **Reviewed:** 2026-10-30 at `ec96fe4`
+- **Reviewed:** 2026-10-30 at `ec96fe4`; re-read 2026-10-30 at `429d8bb`
 
 This page is for someone writing a project format of their own: a reader of
 some other source of project truth that wants to be held to the same seam as
