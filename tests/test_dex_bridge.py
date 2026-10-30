@@ -1791,13 +1791,73 @@ LANDED = {
 }
 
 
+def _as_landed(column, landed):
+    """`COMMENTED_FOR_SCHEMA_DRIFT` parsed, with the one change `landed` names
+    made to `column`: the document a right splice parses to (#143).
+
+    Built from the original rather than from the engine's output, and compared
+    whole, so a column declared twice or a test that belongs to no column
+    differs from it, and so does a document declaring nothing. An added column
+    goes last, where the engine puts it.
+    """
+
+    import yaml
+
+    document = yaml.safe_load(COMMENTED_FOR_SCHEMA_DRIFT)
+    columns = document["models"][0]["columns"]
+    if landed == "present":
+        columns.append({"name": column})
+    elif landed == "absent":
+        columns[:] = [entry for entry in columns if entry["name"] != column]
+    else:
+        (entry,) = [entry for entry in columns if entry["name"] == column]
+        kept = [test for test in entry.get("tests") or [] if test != "not_null"]
+        entry["tests"] = kept + (["not_null"] if landed == "not-null" else [])
+    return document
+
+
+def _normalised(document):
+    """`document` with each entry's `tests` and `data_tests` read as one list,
+    and an empty list dropped.
+
+    dbt and `parse_declarations` read the two keys alike, and an emptied list
+    says what a removed one does; the engine removes the key. So the comparison
+    is of what a document declares rather than of how it spells it.
+    """
+
+    for model in document.get("models") or []:
+        if not isinstance(model, dict):
+            continue
+        for entry in [model, *(model.get("columns") or [])]:
+            if not isinstance(entry, dict):
+                continue
+            tests = [*(entry.pop("tests", None) or []), *(entry.pop("data_tests", None) or [])]
+            if tests:
+                entry["tests"] = tests
+    return document
+
+
+#: The one key `COMMENTED_FOR_SCHEMA_DRIFT` declares: `date`'s `unique`.
+SCHEMA_DRIFT_KEYS = {("dim_date", ("date",))}
+
+
 #: (code, column, the finding's data, the comments the splice replaces, what
 #: the column's entry must show afterwards). Measured at 1.15.1 and 1.15.2
 #: before this was written down, and at 1.8.0 and 1.9.2 for the other arm,
-#: where every case is advisory.
+#: where every case is advisory. The drop of `date`, whose entry spans
+#: several lines (#142), was measured at 1.10.0, 1.15.1, 1.15.2 and 1.16.4,
+#: and at 1.8.0 and 1.9.2 for the other arm.
 SCHEMA_SPLICES = [
     pytest.param("column_added", "fiscal_week", {"data_type": "INTEGER"}, [], "present", id="added"),
     pytest.param("column_dropped", "fiscal_year", {}, ["# last column"], "absent", id="dropped"),
+    pytest.param(
+        "column_dropped",
+        "date",
+        {},
+        ["# the grain", "# never empty"],
+        "absent",
+        id="dropped-several-lines",
+    ),
     pytest.param(
         "nullability_changed",
         "is_weekend",
@@ -1845,6 +1905,10 @@ class TestASchemaEditLosesOnlyTheCommentsOnTheLinesItReplaces:
     ):
         import importlib.metadata as md
 
+        import yaml
+
+        from dagster_dex.declarations import parse_declarations
+
         proposals, after = _reconcile_and_apply(
             tmp_path, COMMENTED_FOR_SCHEMA_DRIFT, _schema_finding(code, column, **data)
         )
@@ -1869,20 +1933,51 @@ class TestASchemaEditLosesOnlyTheCommentsOnTheLinesItReplaces:
             )
             # Every line the edit did not replace is still there, in order; `in`
             # on an iterator is the order check. The replaced lines are the ones
-            # carrying an expected loss and nothing else. The dropped column is
-            # among them only because its entry is one line and that line
-            # carries `# last column`: a column whose entry spans several lines
-            # would need its whole entry derived, which no case here needs yet.
+            # carrying an expected loss and, for a dropped column, its whole
+            # entry as `_column_entry` reads it off the original (#142). Taking
+            # only the lines with a comment worked for `fiscal_year`, whose
+            # entry is one line, and failed for `date`, whose `- name:` line
+            # carries none. Lines are compared as text, which is exact while no
+            # line of a dropped entry repeats elsewhere in the fixture.
             replaced = {
                 line
                 for line in COMMENTED_FOR_SCHEMA_DRIFT.splitlines()
                 if any(comment in line for comment in expected)
             }
+            if code == "column_dropped":
+                replaced.update(_column_entry(COMMENTED_FOR_SCHEMA_DRIFT, column))
             remaining = iter(after.splitlines())
             for line in COMMENTED_FOR_SCHEMA_DRIFT.splitlines():
                 if line in replaced:
                     continue
                 assert line in remaining, f"the original line {line!r} is gone or reordered:\n{after}"
+            # Read back as this package reads it (#143), as the class above
+            # does: the spliced file parses with no note and declares the keys
+            # the original did, less any on a dropped column.
+            keys, _joins, notes = parse_declarations({"declarations/dim_date.yml": after})
+            read = {(k.model, k.columns) for k in keys}
+            kept = {
+                key for key in SCHEMA_DRIFT_KEYS if not (code == "column_dropped" and column in key[1])
+            }
+            assert notes == [], (
+                f"dex-core {engine}: {code} on {column} reads back with notes {notes}:\n{after}"
+            )
+            assert read == kept, (
+                f"dex-core {engine}: {code} on {column} reads back keys {sorted(read)} "
+                f"where {sorted(kept)} were declared:\n{after}"
+            )
+            # `parse_declarations` reads no column list, so the columns and
+            # their `not_null` are read off the parsed document, compared whole
+            # with the original's plus the one change. From 1.10.0 the engine
+            # re-parses its own splice and refuses one whose columns or tests
+            # disagree with the edit, so this is a backstop behind that check;
+            # the notes and keys above are this package's own reader.
+            parsed = _normalised(yaml.safe_load(after))
+            wanted = _normalised(_as_landed(column, landed))
+            assert parsed == wanted, (
+                f"dex-core {engine}: {code} on {column} reads right as lines, but the "
+                f"parsed document is {parsed!r} where {wanted!r} was wanted:\n{after}"
+            )
         else:
             assert after == COMMENTED_FOR_SCHEMA_DRIFT, (
                 f"dex-core {engine} predates the splice, where {code} with no profiled "
