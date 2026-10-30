@@ -105,6 +105,9 @@ EXPECTED: dict[str, dict[str, int]] = {
     # The third command is the whole loop's, on the README's first screen
     # (#109), placed above the output it quotes so a reader can re-run it.
     "README.md": {"==": 4, "~=": 1},
+    # One: the whole loop's command, in the design document's last section, as
+    # the README gives it. A reader running it there is running the README's.
+    "docs/design/dagster-to-dex.md": {"==": 1},
     # The published guarantee. This one entry is the reason the map is keyed by
     # operator: `==` here would be a different promise to every consumer's
     # resolver, with no count anywhere changing to show it.

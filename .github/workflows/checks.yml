@@ -93,8 +93,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Narrow to what this repository actually has. There is no `docs/`, and a
-      # glob matching nothing is noise rather than coverage.
+      # Narrow to what this repository actually has: the root, `.github/` and
+      # `docs/`. A glob matching nothing is noise rather than coverage, so a new
+      # directory of markdown is added here when it is created.
       #
       # The config is passed explicitly and lives at `.github/markdownlint.json`
       # rather than at the repository root. A root `.markdownlint.json` is
@@ -107,7 +108,7 @@ jobs:
       # and MD041 are both ON -- so a wrong path must fail loudly rather than
       # lint quietly against the wrong rules. A missing file gives ENOENT.
       - name: markdownlint
-        run: npx -y markdownlint-cli2 --config .github/markdownlint.json '*.md' '.github/**/*.md'
+        run: npx -y markdownlint-cli2 --config .github/markdownlint.json '*.md' '.github/**/*.md' 'docs/**/*.md'
 
   closing-keywords:
     name: closing keywords
