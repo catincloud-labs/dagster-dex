@@ -19,9 +19,10 @@ conformance suite - runs with dex-core **uninstalled**.
 
 The engine-free control (the `python-floor` job in `checks.yml`, and the first
 test step of `publish.yml`'s `build`) runs the suite with the engine absent.
-**That step is a control, not a speed split.** Add an `exmergo_dex_core` import to
-any other module and it goes red at collection. Merging it into the step below it
-would delete the only thing checking the package's central claim.
+**That control is not a speed split.** Add an `exmergo_dex_core` import to any
+other module and it goes red at collection. Merging it into a step that
+installs the engine, such as the boundary step below it in `build`, would
+delete the only thing checking the package's central claim.
 
 `tests/test_dex_bridge.py` additionally walks `dex.py`'s AST to assert it imports
 **public API only**, rather than trusting it. How both checks fail, and what the
@@ -260,8 +261,8 @@ runnable verbatim now, which was checked by running all of them. What
 
 **The Dagster step exists because everything else uses fakes.** The suite must
 run without an orchestrator, so the `examples/` steps in `suite` are the only
-checks against real Dagster objects. The `[dagster]` extra was declared and installed
-by nothing until that step existed.
+checks against real Dagster objects. The `[dagster]` extra was declared and
+installed by nothing until the first of them, the reduction step, existed.
 
 **The README quotes the whole loop's output, and CI holds the quote to the
 run.** Change a leg's printed line and the README excerpt moves in the same
@@ -281,10 +282,11 @@ plan, is written through this format, changes what the project declares, and is
 REFUSED when a human edited the file behind a second plan. Both run in
 `publish.yml`'s `build` job, which runs on every pull request.
 
-**Keep both, though the conformance contracts now catch every planted defect
-on record.** At both ends of the published range, dex-core's `EditableProjectContract` and
-`PlacingProjectContract` fail on each defect planted so far, the ones that got
-past them at 1.6.6 included. The drivers' claim is the route a host takes, the
+**Keep both, though the conformance contracts now catch every write-path
+defect on record.** Measured on 2026-10-30 at both ends of the published range
+(1.8.0 and 1.16.6), dex-core's `EditableProjectContract` and
+`PlacingProjectContract` fail on each of the seven: the three that got past
+them at 1.6.6, and the write-path driver's four. The drivers' claim is the route a host takes, the
 built wheel, the entry-point scan and dex's own reconcile, plan and apply,
 which no contract takes. The measurement, the engine each half of it ran
 against, and what each driver's legs assert:
@@ -329,8 +331,9 @@ guards beside it, for a skipped criterion and for a contract nobody declined:
 [docs/design/verification.md, *When upstream's contract is missing, skipped or grown*](docs/design/verification.md#when-upstreams-contract-is-missing-skipped-or-grown).
 
 **These three used to be described as "matching CI exactly", and since
-2026-08-18 they do not.** CI runs engine axes these three commands do not
-([docs/design/verification.md, *The engine axes*](docs/design/verification.md#the-engine-axes)).
+2026-08-18 they do not.** CI runs the control on four interpreters and the
+engine at more versions than these three commands do
+([docs/design/verification.md, *The axes CI runs*](docs/design/verification.md#the-axes-ci-runs)).
 The three above are still the right thing to run at a desk - they are the
 fastest path to the same failures - but a green local run is now a weaker claim
 than a green pipeline, which is the opposite of what the old sentence implied.
@@ -349,7 +352,7 @@ remembered.** `requires-python = ">=3.10"` and the `[dex]` extra's
 compatible-release range were both verified by a hand-run matrix at each
 release. A step that has to be remembered is not a control, so both are now jobs.
 What each job proves, and how it fails:
-[docs/design/verification.md, *The engine axes*](docs/design/verification.md#the-engine-axes).
+[docs/design/verification.md, *The axes CI runs*](docs/design/verification.md#the-axes-ci-runs).
 
 - **`python-floor`** runs the engine-free control on 3.10, 3.11, 3.12 and 3.13.
   The list is written out on purpose: `>=3.10` is open-ended, so there is nothing

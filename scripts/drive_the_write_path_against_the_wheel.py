@@ -6,8 +6,8 @@ The suite beside this one judges the write tier against dex-core's two shipped
 conformance contracts, and both pass. That is not evidence that a proposal ever
 reaches this format. A measurement is the reason this file exists: against
 dex-core 1.6.6, of five defects introduced one at a time into the write path,
-those contracts caught two. Against 1.8.0 they catch every planted defect on
-record, and they still call the format's methods from a test: none of them
+those contracts caught two. Against 1.8.0 they catch each of the seven
+write-path defects on record, and they still call the format's methods from a test: none of them
 installs the wheel, resolves the entry point or runs reconcile, plan and apply,
 which is the route this file takes (docs/design/verification.md).
 

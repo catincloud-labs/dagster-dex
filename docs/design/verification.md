@@ -20,17 +20,19 @@ holds which claim, what each check can and cannot see, and where each one has
 been shown to fail. It decides nothing. The rules it touches live in
 [AGENTS.md](../../AGENTS.md), the method behind them in
 [AGENTS.md, *Verification method*](../../AGENTS.md#verification-method), and
-every command that runs a check in
-[AGENTS.md, *Running the suite*](../../AGENTS.md#running-the-suite). The header
+every command that runs a check in `AGENTS.md`, from
+[*Running the suite*](../../AGENTS.md#running-the-suite) onward. The header
 convention is in [README.md](README.md).
 
 ## The jobs, and what each one proves
 
 ```mermaid
 flowchart LR
-    PR["pull request, or push to main"]
+    PR["pull request"]
+    MAIN["push to main"]
     TAG["v* tag"]
     CRON["daily schedule"]
+    BYHAND["manual dispatch"]
 
     subgraph checks["checks.yml"]
         RANGE["engine range: resolve the ends of the published range"]
@@ -38,12 +40,14 @@ flowchart LR
         FLOOR["python 3.10 to 3.13: the suite with no engine (the control)"]
         SUITE["suite: the exact pin, type check, real Dagster, the whole loop"]
         TESTS["tests: refuses unless all four succeeded"]
-        HYG["markdown, closing keywords, pr title, pull request target, third-party pins, power of ten"]
+        HYG["markdown, pull request target, third-party pins, power of ten"]
+        HYGPR["closing keywords, pr title"]
     end
 
     subgraph publish["publish.yml"]
         BUILD["build: control, boundary, wheel, both drivers"]
         REL["publish: only after the tag gate and a reviewer"]
+        REH["rehearse: TestPyPI"]
     end
 
     subgraph upstream["upstream-main.yml"]
@@ -53,22 +57,37 @@ flowchart LR
 
     HPR["pr-hygiene.yml: verification section, one deploy label"]
 
-    PR --> RANGE --> ENDS --> TESTS
-    PR --> FLOOR --> TESTS
-    PR --> SUITE --> TESTS
+    PR --> RANGE
+    MAIN --> RANGE
+    PR --> FLOOR
+    MAIN --> FLOOR
+    PR --> SUITE
+    MAIN --> SUITE
+    RANGE --> ENDS --> TESTS
     RANGE --> TESTS
+    FLOOR --> TESTS
+    SUITE --> TESTS
     PR --> HYG
-    PR --> BUILD
+    MAIN --> HYG
+    PR --> HYGPR
     PR --> HPR
+    PR --> BUILD
     TAG --> BUILD --> REL
-    CRON --> HEAD -->|"on failure"| FILE
+    BYHAND --> BUILD --> REH
+    CRON --> HEAD
+    BYHAND --> HEAD
+    HEAD -->|"on failure"| FILE
 ```
+
+Each edge from a trigger is the event that starts the job, and each edge
+between jobs is a `needs:`. `publish` runs only on a tag and `rehearse` only
+on a dispatch, though both follow `build`.
 
 | Job | Workflow | The claim it holds |
 | --- | --- | --- |
 | `python 3.x (engine-free)` | `checks.yml` | Everything but `src/dagster_dex/dex.py` runs with dex-core absent, on 3.10 to 3.13 |
 | `engine range`, then `dex-core <version>` | `checks.yml` | The boundary and dex-core's own contract pass at both ends of the published `[dex]` range |
-| `suite` | `checks.yml` | The demonstrated pin; the `py.typed` claim at the floor interpreter; the reduction and the scheduled-artifact sketch against real Dagster objects; the whole loop against a real warehouse; the README's quote of that run |
+| `suite` | `checks.yml` | The demonstrated pin; the `py.typed` claim, type-checked against the 3.10 floor; the reduction and the scheduled-artifact sketch against real Dagster objects; the whole loop against a real warehouse; the README's quote of that run |
 | `tests` | `checks.yml` | Every job above it succeeded, read explicitly |
 | `build` | `publish.yml` | The distribution builds, and dex reads and writes a project through the built wheel |
 | `dex-core main` | `upstream-main.yml` | The two contract files still pass against the unreleased head of dex-core; says nothing when they do |
@@ -121,18 +140,22 @@ a walk that matched nothing cannot pass.
 What it does not read: a plain `import exmergo_dex_core._x` statement (it
 reads `from` imports only), and an attribute reached after import. `dex.py`
 uses `from` imports throughout today. It has no standing red arm; the
-positive control is the non-empty assertion.
+positive control is the non-empty assertion. Measured on 2026-10-30 at
+`ec96fe4` against dex-core 1.8.0, both arms: `from exmergo_dex_core._private
+import x`, planted inside a method of `dex.py`, fails it, and
+`import exmergo_dex_core._private` in the same place passes it.
 
-## The engine axes
+## The axes CI runs
 
-Each axis is a different claim, so none of them can stand in for another.
+Four axes, three of which install the engine. Each is a different claim, so
+none of them can stand in for another.
 
 | Axis | Job | Engine | Interpreter | The claim |
 | --- | --- | --- | --- | --- |
 | The demonstrated pin | `suite`, and `publish.yml`'s `build` | one exact version, written as a literal | the runner's | The mapping was demonstrated against this version, and every reproduction command names it |
 | The published range | `engine-ends` | its floor and its ceiling, resolved | 3.13 | A consumer's resolver at either end gets a combination that ran |
 | The interpreter floor | `python-floor` | none | 3.10 to 3.13 | `requires-python` holds for the core |
-| The unreleased head | `upstream main` | dex-core `main`, at a resolved commit | 3.13 | A breaking change upstream is seen within a day of merging, not on bump day |
+| The unreleased head | `upstream main` | dex-core `main`, at a resolved commit | 3.13 | A breaking change upstream is seen at the next scheduled run (daily, best effort), not on bump day |
 
 Why the exact pin and the published range disagree, and must, is in
 [AGENTS.md, *The dependency pin, and why there are two of them*](../../AGENTS.md#the-dependency-pin-and-why-there-are-two-of-them).
@@ -193,9 +216,10 @@ pull request.
    against that engine, with `DEX_UPSTREAM_CONTRACT_REQUIRED=1`, writing junit.
 3. It uploads the tested commit as an artifact, green or red.
 4. On failure only, `scripts/file_upstream_red.py` reads the junit and opens
-   one issue labelled `upstream:dex`, quoting the failing assertion and the
-   upstream range since the last green run on `main`, or saying it cannot name
-   one.
+   one issue labelled `upstream:dex`, quoting the failing assertion and where
+   upstream stands against the last green run on `main`: the commit range
+   since then, that upstream did not move, or that no green run is on record
+   to name a range from.
 
 Green is reported nowhere. The filer runs on `if: failure()`, so the job stays
 red; `continue-on-error` would turn it green.
@@ -210,7 +234,7 @@ red; `continue-on-error` would turn it green.
   is the install or collection breaking before pytest judged anything. It is
   filed under its own key.
 - **Its red arms.** `tests/test_file_upstream_red.py` covers the keying, the
-  de-duplication, the fail-closed arm, the title rule and both arms of the
+  de-duplication, the fail-closed arm, the title rule and the three arms of the
   range line, with `gh` handed in as a callable. In the workflow itself two
   forced reds are on record, both real machinery on a real tree and both
   reproducible by dispatch: `package_dir` set to `packages/dex-core-stub` is
@@ -267,8 +291,20 @@ an all-or-nothing that writes the clean targets beside a conflict, a create
 pinned to absence that is not checked, and containment by string prefix rather
 than by path segment. The two that were caught are not named in the record.
 
-Re-read on 2026-10-30. The three named defects were reconstructed from those
-descriptions and calibrated first: at `1c3dfab`, the commit that recorded the
+Re-read on 2026-10-30. The three named defects were rebuilt from those
+descriptions, each as one replacement in `src/dagster_dex/project.py`:
+
+- **writes the clean targets beside a conflict:** in `propose_edits`, the
+  early `return EditOutcome(conflicts=tuple(conflicts))` under
+  `if conflicts and not confirmed:` is replaced by dropping the conflicting
+  targets from `planned`, so the rest are written;
+- **a create pinned to absence is not checked:**
+  `if found != edit.pinned_hash:` becomes
+  `if edit.pinned_hash is not None and found != edit.pinned_hash:`;
+- **containment by string prefix:** the `any(...)` that `_within` returns
+  becomes `any(str(candidate).startswith(prefix) for prefix in surface)`.
+
+They were calibrated first: at `1c3dfab`, the commit that recorded the
 measurement, against dex-core 1.6.6, each passes both contracts in full, as
 the record says, and fails one test in this package's own suite. Then at
 `ec96fe4` against dex-core 1.8.0:
@@ -286,23 +322,36 @@ methods of the two contracts shows none of them at 1.6.6 and all three at
 engine this package admits carries them. The 1.6.6 figure is history: it is
 true of the engine it was measured on, and of none this package installs.
 
-The write-path driver's own four recorded mutations, in `dex.py`, were re-run
-the same way at `ec96fe4` against 1.8.0:
+The write-path driver's own four recorded mutations, in
+`src/dagster_dex/dex.py`, were re-run the same way at `ec96fe4` against 1.8.0.
+As replacements: in `edit_path`, `if kind is not EditKind.SCHEMA_YML:` becomes
+`if kind is not None:`; `editing_surface` returns `[]`; `def load(self)` is
+renamed `def _not_load(self)`; and in `write_edits`,
+`written=list(outcome.written)` becomes
+`written=[edit.key for edit in proposed]`.
 
 | Planted in `dex.py` | Contracts at 1.8.0 | The write-path driver |
 | --- | --- | --- |
 | Placement declines `SCHEMA_YML` | fail: `test_it_places_at_least_one_kind` | fails leg 2 |
-| The editing surface is declared empty | fail: `test_every_placement_lands_inside_the_declared_surface` | stops at leg 3 with dex's `PlanError` |
+| The editing surface is declared empty | fail: `test_every_placement_lands_inside_the_declared_surface` | raises an uncaught `PlanError` from dex during leg 3, rather than naming the leg |
 | `load()` is not implemented | fail: 21 tests, among them `test_satisfies_the_placing_protocol` | fails leg 1 |
 | `write_edits` reports a write it did not do | fail: `test_the_write_result_reports_what_happened`, among six | fails leg 6 |
 
 All seven were run once more against dex-core 1.16.6, the ceiling of the
 published range as `scripts/resolve_engine_range.py` resolved it that day, and
-each fails the shipped contracts there too; the unmutated tree passes them. So
-at both ends of the range, no planted defect on record passes the shipped
-contracts, and every one also fails this package's own suite. That is a
-reading of seven defects at two engines, not a proof: the contracts are
-behavioural rather than exhaustive, and say so.
+each fails the shipped write contracts there too; the unmutated tree passes
+them. So, measured on 2026-10-30 at 1.8.0 and at 1.16.6, the seven write-path
+defects on record (the three #25 named as passing, and the driver's four) each
+fail the shipped write contracts, and each also fails this package's own suite.
+That is a reading of seven defects at two engines, not a proof: the contracts
+are behavioural rather than exhaustive, and say so.
+
+**Not every planted defect on record is a write-path one, and the contracts
+do not catch the others.** The notes mutation
+([Notes asserted on the layer](#notes-asserted-on-the-layer)) passes the
+shipped contracts at both engines, and passes the read-path driver too; only
+this package's own test sees it. The two defects #25 recorded as caught were
+never named, so they were not re-planted.
 
 ### What the drivers add
 
@@ -313,13 +362,16 @@ claim:
 - they run against the **built wheel**, installed by path in `publish.yml`'s
   `build`, after the step that proves the wheel imports, declares its entry
   point and ships `py.typed`;
-- they reach the format through dex-core's own entry-point scan
-  (`resolve_project_factory`) and `construct_project`, never through an import
-  of this package;
+- they build the project through dex-core's own entry-point scan
+  (`resolve_project_factory`) and `construct_project`, rather than by
+  importing a project class (they import `dagster_dex` only for fixtures and
+  the version line);
 - the write-path driver runs dex's own `maintain reconcile`, `transform plan`
   and `transform apply`, and reads the result back through `definitions()`.
 
 No defect is on record that the shipped contracts miss and a driver catches.
+The one the contracts miss above, the read-path driver misses too; the
+write-path driver was not run against it.
 What the drivers would catch that the contracts cannot is a defect on that
 route: a wheel missing a module, a broken entry point, a plan that dex refuses.
 
@@ -344,9 +396,11 @@ module docstring gives each leg's reason.
   a method the write tier adds, so pressing on against a tier-2 project would
   report an `AttributeError` traceback instead of naming the leg. Found by
   running it against the tree from before the write tier existed.
-- **After any failure, every later leg reports nothing**, because `announce`
-  returns `False`. So a mutation can only be shown to fire the earliest leg it
-  breaks. A mutation that breaks both transports fires on legs 1 to 6 and never
+- **The run stops at the first failed leg.** Once a check has failed,
+  `announce` returns `False` and `main` returns the report, so no later leg
+  runs. A leg that raises, as dex's `PlanError` does above, ends the run with
+  a traceback instead of a named leg. So a mutation can only be shown to fire
+  the earliest leg it breaks. A mutation that breaks both transports fires on legs 1 to 6 and never
   reaches the artifact half, so it says nothing about that half. Measured
   rather than reasoned, like the next point.
 - **Leg 11's pin assertion is a backstop no mutation reaches.** It was written
@@ -478,12 +532,15 @@ The method is to show a guard failing on a planted defect before reading its
 green ([AGENTS.md, *Verification method*](../../AGENTS.md#verification-method)).
 Standing means a test that plants the defect on every run; recorded means a
 mutation measured once and written down where named; none means none is on
-record.
+record. The table covers what runs before a merge. The release path in
+`publish.yml` (the tag-signature step, the version-match gate, the provenance
+read-back, and the wheel-content step that `build` also runs) is left out,
+and its red arms are not read here.
 
 | Guard | Red arm | Kind |
 | --- | --- | --- |
 | Engine-absent control | A planted engine import, five collection errors (2026-10-30) | recorded, here |
-| `dex.py` imports public API only | The non-empty assertion is a positive control | none |
+| `dex.py` imports public API only | A planted private `from` import fails it; a plain `import` passes (2026-10-30) | recorded, here; positive control standing |
 | `scripts/resolve_engine_range.py` | Fails closed by exit code; no test | none |
 | `engine-ends` | The 1.11.0 ceiling red | recorded, #86 |
 | `tests` aggregate | Reads every result; no test | none |
@@ -506,5 +563,7 @@ record.
 | Vendored guards: closing keywords, pr title, pull request target, third-party pins, power of ten, verification section, deploy label | Each job runs the checker's self-test before the checker | standing |
 
 The vendored guards are copies of checkers kept elsewhere and compared from
-there, so their self-tests are the only red arm this repository runs; do not
-edit them here (the head of `checks.yml` lists them).
+there, so their self-tests are the only red arm this repository runs. Which
+files are vendored, and the rule for them, are in
+[AGENTS.md, *Change workflow*](../../AGENTS.md#change-workflow) and in the
+comment on each job that runs one.
