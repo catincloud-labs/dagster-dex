@@ -46,9 +46,10 @@ major if you depend on the contract.
     measured against dex-core 1.6.6. Re-run at both ends of the published
     range, they catch all three it named as passing, and the write-path
     driver's four recorded mutations too: the three assertions arrived in
-    1.7.0. The paragraph in `AGENTS.md`, the comment in `publish.yml` and the
-    write-path driver's docstring, which each said so, are quoted under *How
-    this section read before*, below.
+    1.7.0. The paragraph in `AGENTS.md`, the comment in `publish.yml`, the
+    write-path driver's docstring and the sentence in
+    `docs/design/implementing-a-format.md`, which each said so, are quoted
+    under *How this section read before*, below.
   - **`AGENTS.md` names the control step where it runs.** It said the first
     step of the `tests` job ran the suite without the engine; `tests` has been
     an aggregate with no such step since 2026-08-18, and the control is the
@@ -1099,6 +1100,22 @@ reaches this format. It was measured, and the measurement is the reason this
 file exists: of five defects introduced one at a time into the write path, those
 contracts caught two. They are honest about being behavioural rather than
 exhaustive; a format treating them as proof is the one making the mistake.
+```
+
+### `docs/design/implementing-a-format.md`, *What the contracts do not prove*, its second and third sentences
+
+Read dead on 2026-10-30, against dex-core 1.8.0 at `ec96fe4`, on the same
+measurement as the `AGENTS.md` paragraph above; written the same day from
+that paragraph, before the re-measurement reached `main`. It read:
+
+```markdown
+Defects planted one at a time in this
+package's `propose_edits` were mostly passed by the write-tier contracts
+dex-core ships, which is why a driver runs this package's write path end to
+end against the built wheel on every pull request, beside a second driver
+that proves dex can read the project through it. The measurement and what
+each driver proves are in
+[AGENTS.md, *The two drivers, and why passing the contracts is not enough*](../../AGENTS.md#the-two-drivers-and-why-passing-the-contracts-is-not-enough).
 ```
 
 ## Why this file names no engine version
