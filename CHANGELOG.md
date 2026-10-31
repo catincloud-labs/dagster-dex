@@ -34,6 +34,26 @@ major if you depend on the contract.
   finds a format. Its example is `tests/test_a_second_format.py`, a toy
   format passing the tier-2 contract in the engine-free control step, with
   two planted defects the contract is shown to catch.
+- **A design document on how the package proves its claims**
+  (`docs/design/verification.md`). It names each CI job and the claim it
+  holds, the engine-absent control, the four axes CI runs, what dex-core's
+  shipped contracts catch and what the two wheel drivers add, the guards that
+  hold prose to runs, and where each guard has been shown to fail, naming
+  those with no red arm. The explanation it carries moved out of `AGENTS.md`,
+  which keeps the rules and points to it.
+  - **The contracts' catch rate is re-measured.** The record that dex-core's
+    write contracts caught two of five planted `propose_edits` defects was
+    measured against dex-core 1.6.6. Re-run at both ends of the published
+    range, they catch all three it named as passing, and the write-path
+    driver's four recorded mutations too: the three assertions arrived in
+    1.7.0. The paragraph in `AGENTS.md`, the comment in `publish.yml`, the
+    write-path driver's docstring and the sentence in
+    `docs/design/implementing-a-format.md`, which each said so, are quoted
+    under *How this section read before*, below.
+  - **`AGENTS.md` names the control step where it runs.** It said the first
+    step of the `tests` job ran the suite without the engine; `tests` has been
+    an aggregate with no such step since 2026-08-18, and the control is the
+    `python-floor` job and the first test step of `publish.yml`'s `build`.
 
 ### Fixed
 
@@ -1023,6 +1043,79 @@ of #57. It read:
 # until 2026-08-27, which had been false since 0.4.0 shipped the write path --
 # the truth pass that retired that claim's four other sites did not reach this
 # file. The Alpha claim never rested on it.)
+```
+
+### `AGENTS.md`, *The rule that matters most here*, the paragraph on the control step
+
+Read dead on 2026-10-30, against `.github/workflows/checks.yml` at `ec96fe4`,
+where the job named `tests` is an aggregate whose one step reads the other
+jobs' results; the suite without the engine runs in `python-floor`, and in the
+first test step of `publish.yml`'s `build`. It had been so since the engine
+axes split the job on 2026-08-18. Its first sentence read:
+
+```markdown
+The first step of the `tests` job runs the whole suite with the engine absent.
+```
+
+### `AGENTS.md`, *The two drivers, and why passing the contracts is not enough*, the paragraph on the contracts
+
+Read dead on 2026-10-30, against dex-core 1.8.0 at `ec96fe4`: the three
+defects it names as passing the shipped contracts in full each fail them
+there, and the four mutations recorded for the write-path driver do too
+(`docs/design/verification.md`, *The measurement, and what it was measured
+against*). It was measured on 2026-08-18 against dex-core 1.6.6, and was true
+there. It read:
+
+```markdown
+**Neither is redundant with the conformance contracts.** Measured, not
+assumed: five defects were introduced one at a time into `propose_edits`, and
+dex-core's `EditableProjectContract` and `PlacingProjectContract` caught **two**.
+All-or-nothing, a create whose pin is `None`, and segment-wise containment all
+pass the shipped contracts in full. They are honest about being behavioural
+rather than exhaustive; treating them as proof is the caller's mistake.
+```
+
+### `.github/workflows/publish.yml`, the comment above the write-path driver's step
+
+Read dead on 2026-10-30, against dex-core 1.8.0 at `ec96fe4`, on the same
+measurement as the `AGENTS.md` paragraph above. It read:
+
+```yaml
+      # The step above proves dex can READ a project through the wheel. It says
+      # nothing about the write path, and the two conformance contracts dex-core
+      # ships do not close that gap either: of five defects introduced one at a
+      # time into `propose_edits`, those contracts caught two. A format treating
+      # them as proof is the one making the mistake.
+```
+
+### `scripts/drive_the_write_path_against_the_wheel.py`, its module docstring, the first paragraph
+
+Read dead on 2026-10-30, against dex-core 1.8.0 at `ec96fe4`, on the same
+measurement as the `AGENTS.md` paragraph above. It read:
+
+```text
+The suite beside this one judges the write tier against dex-core's two shipped
+conformance contracts, and both pass. That is not evidence that a proposal ever
+reaches this format. It was measured, and the measurement is the reason this
+file exists: of five defects introduced one at a time into the write path, those
+contracts caught two. They are honest about being behavioural rather than
+exhaustive; a format treating them as proof is the one making the mistake.
+```
+
+### `docs/design/implementing-a-format.md`, *What the contracts do not prove*, its second and third sentences
+
+Read dead on 2026-10-30, against dex-core 1.8.0 at `ec96fe4`, on the same
+measurement as the `AGENTS.md` paragraph above; written the same day from
+that paragraph, before the re-measurement reached `main`. It read:
+
+```markdown
+Defects planted one at a time in this
+package's `propose_edits` were mostly passed by the write-tier contracts
+dex-core ships, which is why a driver runs this package's write path end to
+end against the built wheel on every pull request, beside a second driver
+that proves dex can read the project through it. The measurement and what
+each driver proves are in
+[AGENTS.md, *The two drivers, and why passing the contracts is not enough*](../../AGENTS.md#the-two-drivers-and-why-passing-the-contracts-is-not-enough).
 ```
 
 ## Why this file names no engine version

@@ -4,7 +4,7 @@
 - **Describes:** `src/dagster_dex/protocol.py`, `src/dagster_dex/model.py`,
   `src/dagster_dex/conformance.py`, `src/dagster_dex/dex.py`,
   `tests/test_a_second_format.py`
-- **Reviewed:** 2026-10-30 at `ec96fe4`
+- **Reviewed:** 2026-10-30 at `ec96fe4`; re-read 2026-10-30 at `429d8bb`
 
 This page is for someone writing a project format of their own: a reader of
 some other source of project truth that wants to be held to the same seam as
@@ -308,13 +308,15 @@ uv run --no-project --with-editable . --with pytest==8.4.1 \
 
 ## What the contracts do not prove
 
-They are behavioural, not exhaustive. Defects planted one at a time in this
-package's `propose_edits` were mostly passed by the write-tier contracts
-dex-core ships, which is why a driver runs this package's write path end to
-end against the built wheel on every pull request, beside a second driver
-that proves dex can read the project through it. The measurement and what
+They are behavioural, not exhaustive. Against dex-core 1.6.6, the write-tier
+contracts dex-core ships passed three of five defects planted one at a time in
+this package's `propose_edits`. Both ends of the published range catch those
+three, measured on 2026-10-30, but no contract takes the route a host takes, which is
+why a driver runs this package's write path end to end against the built
+wheel on every pull request, beside a second driver that proves dex can read
+the project through it. The measurement, the engines it ran against, and what
 each driver proves are in
-[AGENTS.md, *The two drivers, and why passing the contracts is not enough*](../../AGENTS.md#the-two-drivers-and-why-passing-the-contracts-is-not-enough).
+[verification.md, *What the shipped contracts catch, and what the drivers add*](verification.md#what-the-shipped-contracts-catch-and-what-the-drivers-add).
 The contracts in `dagster_dex.conformance` are behavioural in the same way,
 and a green run of them is the same weaker claim.
 
