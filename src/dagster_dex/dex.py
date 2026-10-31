@@ -614,11 +614,12 @@ class DexProject:
         return to_semantic_layer(self._project.declarations())
 
     def notes(self) -> tuple[str, ...]:
-        """What the two tier-2 layers could not carry, since neither has a field for it.
+        """What the two tier-2 layers disclose about what they could not carry.
 
         Both halves, in one call: a caller surfacing a snapshot to a human wants the
-        transform caveats and the semantic ones together, and neither
-        ``TransformLayer`` nor ``SemanticLayer`` has anywhere to put them.
+        transform caveats and the semantic ones together. Each layer also carries
+        its own half on its ``notes`` field, set by :func:`to_transform_layer` and
+        :func:`to_semantic_layer`; this returns both without building either layer.
         """
 
         declarations = self._project.declarations()

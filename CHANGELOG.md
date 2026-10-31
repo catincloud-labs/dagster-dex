@@ -94,6 +94,15 @@ major if you depend on the contract.
   `docs/design/verification.md`, which named the blind spot, says what the
   check reads now; its two passages are quoted under *How this section read
   before*, below.
+- **Two docstrings say what the code does** (`src/dagster_dex/dex.py`,
+  `src/dagster_dex/conformance.py`). `DexProject.notes` said neither tier-2
+  layer has a field for notes; both are built with their notes set, and the
+  method joins the two halves. `EditableProjectContract`'s conflict hook was
+  contrasted with `make_unreadable_project` "on the read contract", which
+  reads as a contract in `dagster_dex.conformance`; that hook is dex-core's,
+  on its `ExploreProjectContract`. Comments only: the syntax tree of each file,
+  docstrings removed, is unchanged. Both passages are quoted under *How this
+  section read before*, below.
 
 ## 1.0.0 - 2026-10-24
 
@@ -1159,6 +1168,35 @@ Read dead on 2026-10-30, on the same change as the section above. It read:
 
 ```markdown
 | `dex.py` imports public API only | A planted private `from` import fails it; a plain `import` passes (2026-10-30) | recorded, here; positive control standing |
+```
+
+### `src/dagster_dex/dex.py`, `DexProject.notes`, its docstring
+
+Read dead on 2026-10-30, against `to_transform_layer` and
+`to_semantic_layer`, which each set the layer's `notes`. It read:
+
+```markdown
+"""What the two tier-2 layers could not carry, since neither has a field for it.
+
+Both halves, in one call: a caller surfacing a snapshot to a human wants the
+transform caveats and the semantic ones together, and neither
+``TransformLayer`` nor ``SemanticLayer`` has anywhere to put them.
+"""
+```
+
+### `src/dagster_dex/conformance.py`, `an_edit_against_a_changed_target`, its docstring, the paragraph on the hook
+
+Read dead on 2026-10-30, against dex-core's `ExploreProjectContract`, which
+defines `make_unreadable_project`, and `dagster_dex.conformance`, which does
+not. It read:
+
+```markdown
+This hook is mandatory, unlike ``make_unreadable_project`` on the read
+contract. A format may honestly have no unparseable state; a format that
+writes into a source of truth a human can also edit always has the state
+where the human got there first. One that cannot stage that scenario
+cannot detect it either, and one that cannot detect it overwrites work
+silently.
 ```
 
 ## Why this file names no engine version

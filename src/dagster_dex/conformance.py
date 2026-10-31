@@ -637,12 +637,12 @@ class EditableProjectContract:
         assertions use it and one of them writes, so a shared fixture would let
         the second see what the first left behind.
 
-        This hook is mandatory, unlike ``make_unreadable_project`` on the read
-        contract. A format may honestly have no unparseable state; a format that
-        writes into a source of truth a human can also edit always has the state
-        where the human got there first. One that cannot stage that scenario
-        cannot detect it either, and one that cannot detect it overwrites work
-        silently.
+        This hook is mandatory, unlike ``make_unreadable_project`` on dex-core's
+        ``ExploreProjectContract``, which a format may leave to skip. A format may
+        honestly have no unparseable state; a format that writes into a source of
+        truth a human can also edit always has the state where the human got
+        there first. One that cannot stage that scenario cannot detect it either,
+        and one that cannot detect it overwrites work silently.
         """
 
         raise NotImplementedError(
