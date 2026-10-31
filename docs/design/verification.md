@@ -13,7 +13,7 @@
   `scripts/drive_dex_against_the_wheel.py`,
   `scripts/drive_the_write_path_against_the_wheel.py`,
   `examples/walk_the_whole_loop.py`
-- **Reviewed:** 2026-10-30 at `50a3983`
+- **Reviewed:** 2026-10-30 at `19a4088`
 
 This page describes how the package's claims are checked today: which job
 holds which claim, what each check can and cannot see, and where each one has
@@ -141,17 +141,19 @@ and a private name in both forms. The test also asserts that the walk found at
 least one engine import, so a walk that matched nothing cannot pass.
 
 What it does not read: an attribute reached after import (a public module
-imported, then a private name used off it), and a module imported at run time
-through `importlib`.
+imported, then a private name used off it), and a module imported at run time,
+through `importlib` or `__import__`.
 
-Its red arm is standing. Two tests in the same class feed planted statements,
-each inside a method, through `engine_imports` itself, the function the real
-test calls: a private plain import with and without an alias, a private
-module path and a private name in a `from` import are each refused, and a
-public import of either form is found and passes. Measured on 2026-10-30 at
-`50a3983` against dex-core 1.8.0, against `dex.py` itself:
+The red arm of `engine_imports` is standing. Two tests in the same class feed
+planted statements, each inside a method, through that function itself, the
+one the real test calls: a private plain import with and without an alias, a
+private module path and a private name in a `from` import are each refused,
+as is a private name sharing its statement with another name, in either form,
+and a public import of either form is found and passes. The real test's own
+assertion on `dex.py` has a recorded red arm, not a standing one: measured on
+2026-10-30 at `19a4088` against dex-core 1.8.0,
 `import exmergo_dex_core._private` and `from exmergo_dex_core._private import x`,
-each planted inside a method, each fail the real test.
+each planted inside a method of `dex.py`, each fail it.
 
 ## The axes CI runs
 

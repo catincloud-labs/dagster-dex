@@ -89,7 +89,7 @@ major if you depend on the contract.
   `import exmergo_dex_core._private` inside a method of `dex.py` passed it
   where the `from` form of the same import failed. `dex.py` has used `from`
   imports throughout, so nothing private was imported unseen. The walk is now
-  one function that reads both forms and the test calls, and two standing
+  one function, called by the test, that reads both forms, and two standing
   tests feed planted private and public imports of each form through it.
   `docs/design/verification.md`, which named the blind spot, says what the
   check reads now; its two passages are quoted under *How this section read
@@ -1130,7 +1130,7 @@ each driver proves are in
 
 ### `docs/design/verification.md`, *Public API only*, its two paragraphs
 
-Read dead on 2026-10-30, against `tests/test_dex_bridge.py` at `50a3983`,
+Read dead on 2026-10-30, against `tests/test_dex_bridge.py` at `19a4088`,
 where the check reads plain imports as well as `from` imports, through one
 function that two standing tests feed planted imports of both forms. It was
 true at `ec96fe4`, and re-measured at `2710425` against dex-core 1.8.0: the
