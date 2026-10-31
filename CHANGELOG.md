@@ -84,6 +84,16 @@ major if you depend on the contract.
   key, matches the column exactly at every engine in the published range. So
   at 1.8.0 a Snowflake run with every identifier in upper case still stores
   no plan.
+- **The check that `dex.py` imports public dex-core API only reads plain
+  imports** (`tests/test_dex_bridge.py`). It read `from` imports only, so
+  `import exmergo_dex_core._private` inside a method of `dex.py` passed it
+  where the `from` form of the same import failed. `dex.py` has used `from`
+  imports throughout, so nothing private was imported unseen. The walk is now
+  one function that reads both forms and the test calls, and two standing
+  tests feed planted private and public imports of each form through it.
+  `docs/design/verification.md`, which named the blind spot, says what the
+  check reads now; its two passages are quoted under *How this section read
+  before*, below.
 
 ## 1.0.0 - 2026-10-24
 
@@ -1116,6 +1126,39 @@ end against the built wheel on every pull request, beside a second driver
 that proves dex can read the project through it. The measurement and what
 each driver proves are in
 [AGENTS.md, *The two drivers, and why passing the contracts is not enough*](../../AGENTS.md#the-two-drivers-and-why-passing-the-contracts-is-not-enough).
+```
+
+### `docs/design/verification.md`, *Public API only*, its two paragraphs
+
+Read dead on 2026-10-30, against `tests/test_dex_bridge.py` at `50a3983`,
+where the check reads plain imports as well as `from` imports, through one
+function that two standing tests feed planted imports of both forms. It was
+true at `ec96fe4`, and re-measured at `2710425` against dex-core 1.8.0: the
+plain-import plant passed and the `from` plant failed. It read:
+
+```markdown
+`TestNoPrivateImports.test_the_boundary_module_imports_nothing_private` in
+`tests/test_dex_bridge.py` parses `dex.py` and reads it rather than trusting
+it. It walks the syntax tree, collects every `from exmergo_dex_core... import`
+statement, and refuses a module path with a segment starting `_` or an imported
+name starting `_`. It also asserts that it found at least one such import, so
+a walk that matched nothing cannot pass.
+
+What it does not read: a plain `import exmergo_dex_core._x` statement (it
+reads `from` imports only), and an attribute reached after import. `dex.py`
+uses `from` imports throughout today. It has no standing red arm; the
+positive control is the non-empty assertion. Measured on 2026-10-30 at
+`ec96fe4` against dex-core 1.8.0, both arms: `from exmergo_dex_core._private
+import x`, planted inside a method of `dex.py`, fails it, and
+`import exmergo_dex_core._private` in the same place passes it.
+```
+
+### `docs/design/verification.md`, *Where each guard's red arm lives*, the public-API row
+
+Read dead on 2026-10-30, on the same change as the section above. It read:
+
+```markdown
+| `dex.py` imports public API only | A planted private `from` import fails it; a plain `import` passes (2026-10-30) | recorded, here; positive control standing |
 ```
 
 ## Why this file names no engine version
