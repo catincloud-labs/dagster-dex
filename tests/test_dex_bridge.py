@@ -446,8 +446,7 @@ def engine_imports(source: str) -> tuple[list[str], list[str]]:
     path (an `as` alias changes the local name, not what is imported); a
     `from` import contributes the module path joined to each imported name.
     So one rule covers a private module, a private name, and either form: a
-    name is private when any dotted segment of it starts with `_`. A plain
-    `import` was not read until the check was found blind to it.
+    name is private when any dotted segment of it starts with `_`.
     """
 
     def is_engine(module: str) -> bool:
@@ -489,21 +488,35 @@ class TestNoPrivateImports:
         assert not private, f"private engine imports: {private}"
 
     @pytest.mark.parametrize(
-        "statement",
+        ("statement", "expected"),
         [
-            "import exmergo_dex_core._private",
-            "import exmergo_dex_core._private as engine",
-            "from exmergo_dex_core._private import x",
-            "from exmergo_dex_core.dbt_project import _declared_from_yaml",
+            ("import exmergo_dex_core._private", ["exmergo_dex_core._private"]),
+            (
+                "import exmergo_dex_core._private as engine",
+                ["exmergo_dex_core._private"],
+            ),
+            ("import os, exmergo_dex_core._x", ["exmergo_dex_core._x"]),
+            ("from exmergo_dex_core._private import x", ["exmergo_dex_core._private.x"]),
+            (
+                "from exmergo_dex_core.dbt_project import _declared_from_yaml",
+                ["exmergo_dex_core.dbt_project._declared_from_yaml"],
+            ),
+            # Several names to one statement is the form dex.py uses, so the
+            # private one must be read wherever it sits in the list.
+            (
+                "from exmergo_dex_core.transform.plans import EditKind, _hidden",
+                ["exmergo_dex_core.transform.plans._hidden"],
+            ),
         ],
     )
-    def test_the_checker_refuses_a_private_import(self, statement):
-        """The red arm, through the function the real test calls: each form a
-        private engine name can be imported in, planted inside a method."""
+    def test_the_checker_refuses_a_private_import(self, statement, expected):
+        """The red arm, through the function the real test calls: a private
+        engine name in either form, alone or beside other names, planted
+        inside a method."""
 
-        found, private = engine_imports(inside_a_method(statement))
+        _, private = engine_imports(inside_a_method(statement))
 
-        assert found and private == found
+        assert private == expected
 
     @pytest.mark.parametrize(
         "statement",
