@@ -34,85 +34,36 @@ conversation - please open an issue rather than working around the step.
 
 ## Running the tests
 
-From the repository root:
+Every command the suite runs has one home, in `AGENTS.md`, and this file
+links to it rather than carrying a copy:
 
-```bash
-# 1. the control -- no orchestrator, no engine
-uv run --no-project --with-editable . --with pytest==8.4.1 \
-  python -m pytest tests --ignore=tests/test_dex_bridge.py \
-  --ignore=tests/test_upstream_contract.py
+- [*Running the suite*](AGENTS.md#running-the-suite): the three pytest steps,
+  the control first, then the checks that are not pytest - the type check, the
+  coding standard, and the `examples/` that run against real Dagster objects
+  and a real warehouse.
+- [*The two drivers*](AGENTS.md#the-two-drivers-and-why-passing-the-contracts-is-not-enough):
+  the two end-to-end checks that drive dex through the built wheel, one for the
+  read path and one for the write path.
 
-# 2. the boundary, against the real engine
-uv run --no-project --with-editable . --with pytest==8.4.1 \
-  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
-  python -m pytest tests --ignore=tests/test_upstream_contract.py
+Each command there runs verbatim from the repository root, and each one runs in
+CI on every pull request. `tests/test_documented_commands.py` parses the
+commands in every tracked markdown file and refuses a malformed one, or one
+naming a script that does not exist.
 
-# 3. dex-core's own project contract
-DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
-  --with pytest==8.4.1 --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
-  python -m pytest tests/test_upstream_contract.py -p no:cacheprovider
-```
+This section carried its own copy of those commands until 2026-10-30, so each
+had two homes, and the copy had fallen behind: it did not list
+`examples/write_project_artifact.py`, which CI runs, or the coding-standard
+check. Earlier still, it inlined an eight-line `python -c` script standing in
+for `examples/reduce_asset_graph.py`. That script worked, which is why it
+survived, and it was a second copy of a check that already had a home.
 
-Plus the following checks, which are not pytest:
+=> **A command in a document is a claim, and a second copy is a second claim
+that nothing keeps in step with the first.**
 
-```bash
-# annotations must check clean -- this package ships a py.typed marker.
-# The type checker's version comes from the manifest Dependabot moves, never
-# from a pin typed into this line: `--with mypy==1.14.1` stood here until
-# 2026-09-07, and that frozen pin is the shape the coding rule was written against
-uv run --no-project --with-editable . \
-  --with-requirements scripts/power_of_ten_requirements.txt --with types-PyYAML \
-  python -m mypy
-
-# the reduction against real Dagster objects (everything above uses fakes)
-uv run --no-project --with-editable . --with 'dagster>=1.13' \
-  python examples/reduce_asset_graph.py
-
-# the whole loop against a real warehouse: real graph, real drift, real edit,
-# and the README's quote of its output, held to what this run printed
-uv run --no-project --with-editable . --with 'dagster>=1.13' \
-  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 --with duckdb \
-  python examples/walk_the_whole_loop.py | tee whole-loop.txt
-python scripts/check_readme_excerpt.py whole-loop.txt
-```
-
-Every command above runs in CI on every pull request, and the two `examples/`
-ones **are those files** rather than copies of them. (This sentence used to
-open "All five run in CI", and the count went wrong the moment a sixth was
-added - a number in a document that something else can change, which is the
-defect this repository names elsewhere and committed here. The line introducing
-the block made the same mistake one sentence away: it read "Plus two checks"
-until 2026-09-07 while the block beneath it held three commands, which is why it
-now names no number - #83.) This block used to inline an eight-line `python -c` script
-that built an asset and printed its tier. It worked, which is why it survived,
-and it was still wrong twice over: it was a second copy of a check that already
-had a home, and the sentence above it claimed CI ran it. CI has run
-`examples/reduce_asset_graph.py` since that example existed.
-
-=> **A command in a document is a claim, and a runnable wrong command is the
-expensive kind.** A broken one gets fixed by the first person who tries it; this
-one printed a plausible answer, so nothing pushed back.
-
-**If you touch `from_asset_graph`, run the Dagster check.** The suite uses
+**If you touch `from_asset_graph`, run the Dagster check**
+(`examples/reduce_asset_graph.py`, in *Running the suite*). The suite uses
 fakes so it can run without an orchestrator, which means it cannot see that
 method breaking against the objects Dagster actually passes it.
-
-Two more end-to-end checks run in `publish.yml`'s `build` job on every pull
-request, against the built wheel rather than the source tree:
-
-```bash
-uv run --no-project --with-editable . \
-  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
-  python scripts/drive_dex_against_the_wheel.py
-
-uv run --no-project --with-editable . \
-  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
-  python scripts/drive_the_write_path_against_the_wheel.py
-```
-
-The first reads a project through the distribution; the second drives a
-`maintain reconcile` proposal through plan, apply, and back out to
-`definitions()`, then requires the next apply to refuse over a human's edit.
 
 ## This repository is ASCII
 

@@ -295,7 +295,7 @@ that way is in the changelog.
 | A second plan is refused over a human's edit rather than written | release workflow |
 
 Every row runs from a clean checkout with no access to anything private:
-[CONTRIBUTING.md](https://github.com/catincloud-labs/dagster-dex/blob/main/CONTRIBUTING.md)
+[AGENTS.md, *Running the suite*](https://github.com/catincloud-labs/dagster-dex/blob/main/AGENTS.md#running-the-suite)
 gives the commands, and the workflows under
 `.github/workflows/` run the rest.
 

@@ -104,6 +104,18 @@ major if you depend on the contract.
   docstrings removed, is unchanged. Both passages are quoted under *How this
   section read before*, below.
 
+- **Each documented suite command has one home, in `AGENTS.md`.**
+  `AGENTS.md`'s block of checks that are not pytest listed two of the three
+  `examples/` steps the `suite` job runs, leaving out
+  `examples/write_project_artifact.py`; it lists all three now, and its
+  drivers block, which said "Run either by hand" above one command, carries
+  both. `CONTRIBUTING.md` repeated the suite and driver commands, and its copy
+  had fallen behind in the same way; it links to the two `AGENTS.md` sections
+  instead. The README's pointer to the commands names `AGENTS.md` now, and
+  the floor of `tests/test_documented_commands.py`, which required commands
+  from `CONTRIBUTING.md`, requires them from `README.md` in its place. The two
+  rewritten sentences are quoted under *How this section read before*, below.
+
 ## 1.0.0 - 2026-10-24
 
 The first stable release. From it the seam follows semantic versioning: a
@@ -1197,6 +1209,28 @@ writes into a source of truth a human can also edit always has the state
 where the human got there first. One that cannot stage that scenario
 cannot detect it either, and one that cannot detect it overwrites work
 silently.
+```
+
+### `README.md`, *Status*, the paragraph under its table
+
+Read dead on 2026-10-30, when `CONTRIBUTING.md`'s copies of the suite
+commands were replaced by links to `AGENTS.md`. It read:
+
+```markdown
+Every row runs from a clean checkout with no access to anything private:
+[CONTRIBUTING.md](https://github.com/catincloud-labs/dagster-dex/blob/main/CONTRIBUTING.md)
+gives the commands, and the workflows under
+`.github/workflows/` run the rest.
+```
+
+### `docs/design/verification.md`, *Documented commands*, the floor
+
+Read dead on 2026-10-30, on the same change as the section above. It read:
+
+```markdown
+- **Its floor.** At least six commands found, from at least `AGENTS.md` and
+  `CONTRIBUTING.md`, so a pattern that stopped matching cannot leave every
+  other assertion vacuously true.
 ```
 
 ## Why this file names no engine version

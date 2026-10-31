@@ -476,7 +476,7 @@ bare `Ellipsis`, so the command ran, exited 0 and checked nothing, and a
 reader saw the exit code CI produces.
 
 - **Its floor.** At least six commands found, from at least `AGENTS.md` and
-  `CONTRIBUTING.md`, so a pattern that stopped matching cannot leave every
+  `README.md`, so a pattern that stopped matching cannot leave every
   other assertion vacuously true.
 - **Its scope list fails open**, so it is checked per fence: a command in a
   fence with a label outside the shell list is refused. Recorded in its

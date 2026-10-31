@@ -212,12 +212,13 @@ DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
 ```
 
 Plus the following checks, which are not pytest. They do not share a CI job:
-the type check, the two `examples/` commands and the README excerpt check that
-reads the second one's output run in `suite`, and the two
+the type check, the three `examples/` commands and the README excerpt check
+that reads the last one's output run in `suite`, and the two
 power-of-ten commands run in `power of ten` (both are the literal `name:` of a
 job in `checks.yml`). Until 2026-09-07 this line read "Plus two checks that are
 not pytest, and both run in the same CI job", while the block beneath it held
-five commands across two jobs - both halves were false (#83).
+five commands across two jobs - both halves were false (#83). Until 2026-10-30
+it named two `examples/` commands, while `suite` ran three.
 
 ```bash
 # the py.typed claim, actually checked -- at the FLOOR, not the newest interpreter.
@@ -239,6 +240,10 @@ uv run --no-project --python 3.10 \
 # the reduction against REAL dagster objects -- no other step installs it
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
   python examples/reduce_asset_graph.py
+
+# the scheduled-artifact sketch's mechanics, against real dagster objects
+uv run --no-project --with-editable . --with 'dagster>=1.13' \
+  python examples/write_project_artifact.py
 
 # the WHOLE loop against a real (DuckDB) warehouse -- the only command that
 # installs the orchestrator, the engine and a warehouse at once -- and the
@@ -295,6 +300,10 @@ against, and what each driver's legs assert:
 Run either by hand:
 
 ```bash
+uv run --no-project --with-editable . \
+  --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
+  python scripts/drive_dex_against_the_wheel.py
+
 uv run --no-project --with-editable . \
   --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 \
   python scripts/drive_the_write_path_against_the_wheel.py

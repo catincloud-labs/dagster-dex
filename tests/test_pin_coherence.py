@@ -86,16 +86,13 @@ EXPECTED: dict[str, dict[str, int]] = {
     # added after this guard existed and caught on its first run, which is the
     # per-file map earning its keep twice.
     ".github/workflows/publish.yml": {"==": 3},
-    # Four commands plus the "Tested" line in the two-pins section. That line
+    # Five commands plus the "Tested" line in the two-pins section. That line
     # named the version without naming the package until the 1.6.5 bump, which
     # put the one sentence stating the tested version outside this scan. The
-    # fourth command is the write-path driver's, in the section on the two
-    # drivers.
-    "AGENTS.md": {"==": 5, "~=": 1},
-    # Four: the two runnable suite commands, plus the two end-to-end drivers
-    # added when the write path landed. Both drivers run in CI, and a reader
-    # running one against a different engine than CI is not reproducing CI.
-    "CONTRIBUTING.md": {"==": 5},
+    # fourth and fifth commands are the two drivers', in the section on them;
+    # the read driver's arrived on 2026-10-30 from CONTRIBUTING.md, which held
+    # five pins in copies of these commands until it linked here instead.
+    "AGENTS.md": {"==": 6, "~=": 1},
     # Four `==` and one `~=`: three runnable commands, plus the two-pins
     # paragraph, which named both versions without naming the package until
     # 2026-08-15 and so stated the tested version from outside this scan. It
