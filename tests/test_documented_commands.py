@@ -114,6 +114,11 @@ def test_there_are_documented_commands_to_check():
     that stopped matching would leave all of them vacuously true and this file
     green while checking nothing. That is the failure a scanner cannot see about
     itself.
+
+    The second file was `CONTRIBUTING.md` until 2026-10-30, when its copies of
+    `AGENTS.md`'s commands were replaced by links, leaving it none. The README
+    carries the whole loop's command above the output it quotes, and it is a
+    different file from the first, which is what the set is for.
     """
 
     commands = _commands()
@@ -122,7 +127,7 @@ def test_there_are_documented_commands_to_check():
         "repository has. The fence or command patterns have probably stopped "
         "matching, and every assertion in this file is vacuous when they do"
     )
-    assert {name for name, _ in commands} >= {"AGENTS.md", "CONTRIBUTING.md"}
+    assert {name for name, _ in commands} >= {"AGENTS.md", "README.md"}
 
 
 def test_no_command_hides_in_a_fence_this_file_does_not_scan():
