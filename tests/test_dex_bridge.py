@@ -9,6 +9,8 @@ skippable, the "engine-free core" claim would be untestable.
 
 from __future__ import annotations
 
+import ast
+import pathlib
 import re
 
 import pytest
@@ -434,6 +436,40 @@ class TestTheSemanticLayerMapping:
         assert snapshot.semantic_layer.semantic_models[0].measures["daily_revenue_net"]
 
 
+ENGINE = "exmergo_dex_core"
+
+
+def engine_imports(source: str) -> tuple[list[str], list[str]]:
+    """Every `exmergo_dex_core` name `source` imports, and the private ones.
+
+    Both statement forms are read. A plain `import` contributes its dotted
+    path (an `as` alias changes the local name, not what is imported); a
+    `from` import contributes the module path joined to each imported name.
+    So one rule covers a private module, a private name, and either form: a
+    name is private when any dotted segment of it starts with `_`.
+    """
+
+    def is_engine(module: str) -> bool:
+        return module == ENGINE or module.startswith(ENGINE + ".")
+
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            found.extend(alias.name for alias in node.names if is_engine(alias.name))
+        elif isinstance(node, ast.ImportFrom) and node.level == 0:
+            module = node.module or ""
+            if is_engine(module):
+                found.extend(f"{module}.{alias.name}" for alias in node.names)
+    private = [name for name in found if any(p.startswith("_") for p in name.split("."))]
+    return found, private
+
+
+def inside_a_method(statement: str) -> str:
+    """Where the gap was measured: an import a module-level scan would miss."""
+
+    return f"class Bridge:\n    def method(self):\n        {statement}\n"
+
+
 class TestNoPrivateImports:
     def test_the_boundary_module_imports_nothing_private(self):
         """`exmergo/dex#144`'s acceptance criterion, asserted rather than asserted-to.
@@ -442,24 +478,60 @@ class TestNoPrivateImports:
         `_semantic_from_yaml`, which passes tests and fails the criterion.
         """
 
-        import ast
-        import pathlib
-
         import dagster_dex.dex as bridge
 
-        tree = ast.parse(pathlib.Path(bridge.__file__).read_text(encoding="utf-8"))
-        imported: list[str] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
-                "exmergo_dex_core"
-            ):
-                imported.extend(alias.name for alias in node.names)
-                assert not any(
-                    part.startswith("_") for part in (node.module or "").split(".")
-                ), f"private module: {node.module}"
+        found, private = engine_imports(
+            pathlib.Path(bridge.__file__).read_text(encoding="utf-8")
+        )
 
-        assert imported, "expected the bridge to import from exmergo_dex_core"
-        assert not [name for name in imported if name.startswith("_")]
+        assert found, "expected the bridge to import from exmergo_dex_core"
+        assert not private, f"private engine imports: {private}"
+
+    @pytest.mark.parametrize(
+        ("statement", "expected"),
+        [
+            ("import exmergo_dex_core._private", ["exmergo_dex_core._private"]),
+            (
+                "import exmergo_dex_core._private as engine",
+                ["exmergo_dex_core._private"],
+            ),
+            ("import os, exmergo_dex_core._x", ["exmergo_dex_core._x"]),
+            ("from exmergo_dex_core._private import x", ["exmergo_dex_core._private.x"]),
+            (
+                "from exmergo_dex_core.dbt_project import _declared_from_yaml",
+                ["exmergo_dex_core.dbt_project._declared_from_yaml"],
+            ),
+            # Several names to one statement is the form dex.py uses, so the
+            # private one must be read wherever it sits in the list.
+            (
+                "from exmergo_dex_core.transform.plans import EditKind, _hidden",
+                ["exmergo_dex_core.transform.plans._hidden"],
+            ),
+        ],
+    )
+    def test_the_checker_refuses_a_private_import(self, statement, expected):
+        """The red arm, through the function the real test calls: a private
+        engine name in either form, alone or beside other names, planted
+        inside a method."""
+
+        _, private = engine_imports(inside_a_method(statement))
+
+        assert private == expected
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            "import exmergo_dex_core.transform.plans",
+            "from exmergo_dex_core.transform.plans import EditKind",
+        ],
+    )
+    def test_the_checker_passes_a_public_import(self, statement):
+        """The clean arm: a public import of either form is found, so the
+        pass is a reading rather than an empty walk, and none of it is private."""
+
+        found, private = engine_imports(inside_a_method(statement))
+
+        assert found and not private
 
 
 class TestProjectContext:

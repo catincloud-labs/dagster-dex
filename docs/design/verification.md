@@ -13,7 +13,7 @@
   `scripts/drive_dex_against_the_wheel.py`,
   `scripts/drive_the_write_path_against_the_wheel.py`,
   `examples/walk_the_whole_loop.py`
-- **Reviewed:** 2026-10-30 at `ec96fe4`
+- **Reviewed:** 2026-10-30 at `19a4088`
 
 This page describes how the package's claims are checked today: which job
 holds which claim, what each check can and cannot see, and where each one has
@@ -132,18 +132,28 @@ The rule that keeps the control a separate step is in
 
 `TestNoPrivateImports.test_the_boundary_module_imports_nothing_private` in
 `tests/test_dex_bridge.py` parses `dex.py` and reads it rather than trusting
-it. It walks the syntax tree, collects every `from exmergo_dex_core... import`
-statement, and refuses a module path with a segment starting `_` or an imported
-name starting `_`. It also asserts that it found at least one such import, so
-a walk that matched nothing cannot pass.
+it. It hands the source to `engine_imports`, in the same file, which walks the
+syntax tree and collects every `exmergo_dex_core` name imported in either
+form: the dotted path of a plain `import`, with or without an `as` alias, and
+the module path of a `from` import joined to each name it imports. A name with
+a dotted segment starting `_` is private, so one rule refuses a private module
+and a private name in both forms. The test also asserts that the walk found at
+least one engine import, so a walk that matched nothing cannot pass.
 
-What it does not read: a plain `import exmergo_dex_core._x` statement (it
-reads `from` imports only), and an attribute reached after import. `dex.py`
-uses `from` imports throughout today. It has no standing red arm; the
-positive control is the non-empty assertion. Measured on 2026-10-30 at
-`ec96fe4` against dex-core 1.8.0, both arms: `from exmergo_dex_core._private
-import x`, planted inside a method of `dex.py`, fails it, and
-`import exmergo_dex_core._private` in the same place passes it.
+What it does not read: an attribute reached after import (a public module
+imported, then a private name used off it), and a module imported at run time,
+through `importlib` or `__import__`.
+
+The red arm of `engine_imports` is standing. Two tests in the same class feed
+planted statements, each inside a method, through that function itself, the
+one the real test calls: a private plain import with and without an alias, a
+private module path and a private name in a `from` import are each refused,
+as is a private name sharing its statement with another name, in either form,
+and a public import of either form is found and passes. The real test's own
+assertion on `dex.py` has a recorded red arm, not a standing one: measured on
+2026-10-30 at `19a4088` against dex-core 1.8.0,
+`import exmergo_dex_core._private` and `from exmergo_dex_core._private import x`,
+each planted inside a method of `dex.py`, each fail it.
 
 ## The axes CI runs
 
@@ -540,7 +550,7 @@ and its red arms are not read here.
 | Guard | Red arm | Kind |
 | --- | --- | --- |
 | Engine-absent control | A planted engine import, five collection errors (2026-10-30) | recorded, here |
-| `dex.py` imports public API only | A planted private `from` import fails it; a plain `import` passes (2026-10-30) | recorded, here; positive control standing |
+| `dex.py` imports public API only | Planted private imports of both forms, through the function the test calls; both forms planted in `dex.py` (2026-10-30) | standing, and recorded, here |
 | `scripts/resolve_engine_range.py` | Fails closed by exit code; no test | none |
 | `engine-ends` | The 1.11.0 ceiling red | recorded, #86 |
 | `tests` aggregate | Reads every result; no test | none |
