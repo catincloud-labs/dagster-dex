@@ -94,6 +94,14 @@ major if you depend on the contract.
   `docs/design/verification.md`, which named the blind spot, says what the
   check reads now; its two passages are quoted under *How this section read
   before*, below.
+- **Two docstrings say what the code does** (`src/dagster_dex/dex.py`,
+  `src/dagster_dex/conformance.py`). `DexProject.notes` said neither tier-2
+  layer has a field for notes; both are built with their notes set, and the
+  method joins the two halves. `EditableProjectContract`'s conflict hook was
+  contrasted with `make_unreadable_project` "on the read contract", which
+  reads as a contract in `dagster_dex.conformance`; that hook is dex-core's,
+  on its `ExploreProjectContract`. Comments only: the syntax tree of each file,
+  docstrings removed, is unchanged.
 
 ## 1.0.0 - 2026-10-24
 
