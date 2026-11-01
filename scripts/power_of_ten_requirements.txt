@@ -12,4 +12,4 @@
 # reading of the versions pinned in whichever copy of this file its tools were
 # installed from.
 ruff==0.17.3
-mypy==2.4.0
+mypy==2.4.1
