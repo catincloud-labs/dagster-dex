@@ -115,6 +115,15 @@ major if you depend on the contract.
   the floor of `tests/test_documented_commands.py`, which required commands
   from `CONTRIBUTING.md`, requires them from `README.md` in its place. The two
   rewritten sentences are quoted under *How this section read before*, below.
+- **`AGENTS.md` states the template exception by the scope it was ruled
+  with.** Its note on the pull request template's label line called this
+  "the one public repository that carries a template", and
+  `catincloud-labs/ration` is public and has carried a pull request template
+  since its first commit, `9ada7a1`. The note now says the line is cut in a
+  public repository with a template, as this one is, and that the 2026-10-03
+  ruling made the exception for every such repository; the template itself
+  is unchanged. The sentence is quoted under *How this section read before*,
+  below.
 
 ## 1.0.0 - 2026-10-24
 
@@ -1231,6 +1240,20 @@ Read dead on 2026-10-30, on the same change as the section above. It read:
 - **Its floor.** At least six commands found, from at least `AGENTS.md` and
   `CONTRIBUTING.md`, so a pattern that stopped matching cannot leave every
   other assertion vacuously true.
+```
+
+### `AGENTS.md`, *Change workflow*, the note on the template's label line
+
+Read dead on 2026-11-01, against `catincloud-labs/ration`, which is public
+and whose first commit, `9ada7a1` (2026-10-29), carries a pull request
+template and two issue templates. It was true when written on 2026-10-03.
+Its second sentence read:
+
+```markdown
+The shared line is identical in
+every estate template by ruling and links a private issue, so here, the
+one public repository that carries a template, it ends after its first
+sentence (#108).
 ```
 
 ## Why this file names no engine version
