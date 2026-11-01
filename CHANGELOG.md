@@ -118,11 +118,12 @@ major if you depend on the contract.
 - **`AGENTS.md` states the template exception by the scope it was ruled
   with.** Its note on the pull request template's label line called this
   "the one public repository that carries a template", and
-  `catincloud-labs/ration` is public and carries both templates. The note
-  now says the line is cut in a public repository that carries a template,
-  as this one does, which is how the 2026-10-03 ruling scopes the exception;
-  the template itself is unchanged. The sentence is quoted under *How this
-  section read before*, below.
+  `catincloud-labs/ration` is public and has carried a pull request template
+  since its first commit, `9ada7a1`. The note now says the line is cut in a
+  public repository with a template, as this one is, and that the 2026-10-03
+  ruling made the exception for every such repository; the template itself
+  is unchanged. The sentence is quoted under *How this section read before*,
+  below.
 
 ## 1.0.0 - 2026-10-24
 
@@ -1249,9 +1250,10 @@ template and two issue templates. It was true when written on 2026-10-03.
 Its second sentence read:
 
 ```markdown
-The shared line is identical in every estate template by ruling and links a
-private issue, so here, the one public repository that carries a template, it
-ends after its first sentence (#108).
+The shared line is identical in
+every estate template by ruling and links a private issue, so here, the
+one public repository that carries a template, it ends after its first
+sentence (#108).
 ```
 
 ## Why this file names no engine version

@@ -570,11 +570,10 @@ moves stand behind that rule, each paid for in this organisation:
   - **The template's label line is the estate's shared line with its link
     sentence cut, and nothing else changed.** The shared line is identical in
     every estate template by ruling and links a private issue, so in a public
-    repository that carries a template, as this one does, it ends after its first
+    repository with a template, as this one is, it ends after its first
     sentence (#108). Ruled 2026-10-03 on the private side (constellation #214,
     comment 5973354633), as an exception to "the identical line yields to
-    nobody", scoped to every public repository that carries a template. The
-    line beneath it is this
+    nobody", for every such repository. The line beneath it is this
     repository's own: the two values above, and what a contributor from a fork
     should expect. Do not re-add the link, and do not merge the two lines: the
     first stays a byte-identical prefix of the shared one.
