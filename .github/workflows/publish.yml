@@ -492,9 +492,10 @@ jobs:
 
   # A Release is decoration on a shipped version, not a parallel claim that one
   # shipped -- so this runs only after `publish` has uploaded AND read the
-  # provenance back. All seven existing Releases (v0.1.0-v0.6.1) were created by
-  # hand in one sitting on 2026-08-27; this job exists so the next one is not a
-  # remembered step (#62). The rehearsal path structurally cannot reach it:
+  # provenance back. The seven Releases v0.1.0-v0.6.1 were created by hand in
+  # one sitting on 2026-08-27, before this job existed; it exists so a later
+  # one is not a remembered step (#62). The rehearsal path structurally cannot
+  # reach it:
   # `workflow_dispatch` skips `publish`, and a skipped dependency skips this job
   # with it -- fitting, since a `.dev` rehearsal has no tag and no changelog
   # entry to release.
