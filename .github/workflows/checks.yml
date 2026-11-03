@@ -131,6 +131,21 @@ jobs:
       - name: Guard fires and goes quiet
         run: python scripts/test_check_closing_keywords.py
 
+      # git on Linux and macOS skips a hook that is not executable, so a
+      # `.githooks/commit-msg` tracked as 100644 runs nothing there and fails
+      # nothing. Git for Windows ignores the bit, which is how this
+      # repository's hook sat at 100644 unseen until #174, and a delete and
+      # re-add there would put it back. The check reads the mode from the
+      # index, after its own self-test shows it fire on a planted 100644 and
+      # go quiet on 100755. `scripts/check_hook_mode.py` is vendored like the
+      # guard and compared from the private side the same way; it is not
+      # edited here.
+      - name: Hook-mode check fires and goes quiet
+        run: python scripts/check_hook_mode.py --self-test
+
+      - name: Commit-msg hook is executable
+        run: python scripts/check_hook_mode.py .githooks/commit-msg
+
       - name: Scan the pull request body
         run: |
           gh pr view "$PR" --json body -q .body > "$RUNNER_TEMP/pr-body.md"
