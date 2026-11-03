@@ -1,12 +1,16 @@
 #!/bin/sh
 # Refuse a commit message that closes an issue without acknowledging it.
 #
-# Enable per clone (hooks are not tracked into .git/hooks by git):
+# Enable per clone (hooks are not tracked into .git/hooks by git). The command
+# below replaces, or for a global setting overrides, any core.hooksPath the
+# clone already has, so whether to run it at all is decided in AGENTS.md,
+# *Change workflow*, in the sub-bullet *Enable the hook per clone* under the
+# closing-keyword rule; read it first:
 #
 #     git config core.hooksPath .githooks
 #
-# The hook only exists on branches that contain it, and a clone that has not
-# run the command above has no guard at all. CI re-runs the same check on the
+# The hook only exists on branches that contain it, and a clone whose hooks
+# never reach this file has no guard at all. CI re-runs the same check on the
 # pull request, which is the copy that actually gates a merge.
 
 set -e
