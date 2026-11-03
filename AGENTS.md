@@ -582,8 +582,14 @@ moves stand behind that rule, each paid for in this organisation:
   including in a sentence warning against it. Only *adjacency* fires, so "part of
   #N" and "refs #N" are safe.
   - Guarded by `scripts/check_closing_keywords.py`, as a `commit-msg` hook and
-    again in CI. **Enable the hook per clone - it does not install itself:**
-    `git config core.hooksPath .githooks`
+    again in CI. **Enable the hook per clone - it does not install itself -
+    unless the clone already sets a hooks directory.** If
+    `git config --get core.hooksPath` prints a value, keep it: that hooks
+    directory is expected to run `.githooks/commit-msg` itself. Otherwise run
+    `git config core.hooksPath .githooks`. The command replaces whatever was
+    set, with no warning, so on a clone that had a directory it drops every
+    other hook that directory ran (#172). This bullet is the rule's one home;
+    `CONTRIBUTING.md` and the header of `.githooks/commit-msg` point here.
   - Check a draft before pushing: `python scripts/check_closing_keywords.py <file>`
 - `scripts/check_closing_keywords.py` is a **vendored copy**, present so the
   hook works offline. CI diffs it against its source and fails on drift. **Never

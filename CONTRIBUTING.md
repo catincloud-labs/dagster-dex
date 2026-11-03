@@ -93,7 +93,11 @@ re-vendor is a defect at the source, and that test is the first to see it.
 - **Branch off `main`.** Please do not commit to `main` directly.
 - **Conventional commit subjects** - `feat:`, `fix:`, `docs:`, `test:`, `chore:` -
   with a body explaining *why*, not what. The diff already says what.
-- **Enable the commit hook once per clone.** It does not install itself:
+- **Enable the commit hook once per clone.** It does not install itself, and
+  the command below replaces any hooks directory the clone already sets.
+  Whether to run it at all is decided in
+  [the hook step in `AGENTS.md`](AGENTS.md#change-workflow), which is that
+  rule's one home; read it first:
 
   ```bash
   git config core.hooksPath .githooks
