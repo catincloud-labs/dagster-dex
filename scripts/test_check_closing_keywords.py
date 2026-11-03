@@ -199,10 +199,10 @@ expect(
 
 # --- the CI cross-check reconciles, and finds the trailer only one way -----
 # `reconcile` compares GitHub's own answer against the trailer. It exists so
-# that "find the trailer" has a single implementation. The shell `grep` it
-# replaced was anchored at line start and not fence-aware, so CI failed the
-# fenced case pinned above while this file certified it clean - a guard against
-# two copies of a rule, containing two copies of a rule.
+# that "find the trailer" has a single implementation. A second reader in CI
+# that is not fence-aware, such as a shell `grep` for the trailer, would fail
+# the fenced case pinned above while this file certified it clean - a guard
+# against two copies of a rule, containing two copies of a rule.
 
 expect_reconcile("both empty is the ordinary pull request", "docs: rewrite the preamble\n", set(), 0)
 expect_reconcile("agrees on one", "Closes #12\n\nAutoclose: #12\n", {12}, 0)
