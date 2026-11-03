@@ -584,12 +584,15 @@ moves stand behind that rule, each paid for in this organisation:
   - Guarded by `scripts/check_closing_keywords.py`, as a `commit-msg` hook and
     again in CI. **Enable the hook per clone - it does not install itself -
     unless the clone already sets a hooks directory.** If
-    `git config --get core.hooksPath` prints a value, keep it: that hooks
-    directory is expected to run `.githooks/commit-msg` itself. Otherwise run
-    `git config core.hooksPath .githooks`. The command replaces whatever was
-    set, with no warning, so on a clone that had a directory it drops every
-    other hook that directory ran (#172). This bullet is the rule's one home;
-    `CONTRIBUTING.md` and the header of `.githooks/commit-msg` point here.
+    `git config --get core.hooksPath` prints a value (it reads every scope, so
+    a global setting counts), keep it: that hooks directory is expected to run
+    `.githooks/commit-msg` itself, and if its `commit-msg` does not, add that
+    call there. Otherwise run `git config core.hooksPath .githooks`. The
+    command sets this clone's value with no warning, replacing a local one and
+    overriding a global one, so on a clone that had a directory it stops every
+    other hook that directory ran here (#172). This bullet is the rule's one
+    home; `CONTRIBUTING.md` and the header of `.githooks/commit-msg` point
+    here.
   - Check a draft before pushing: `python scripts/check_closing_keywords.py <file>`
 - `scripts/check_closing_keywords.py` is a **vendored copy**, present so the
   hook works offline. CI diffs it against its source and fails on drift. **Never

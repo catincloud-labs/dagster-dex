@@ -94,10 +94,11 @@ re-vendor is a defect at the source, and that test is the first to see it.
 - **Conventional commit subjects** - `feat:`, `fix:`, `docs:`, `test:`, `chore:` -
   with a body explaining *why*, not what. The diff already says what.
 - **Enable the commit hook once per clone.** It does not install itself, and
-  the command below replaces any hooks directory the clone already sets.
-  Whether to run it at all is decided in
-  [the hook step in `AGENTS.md`](AGENTS.md#change-workflow), which is that
-  rule's one home; read it first:
+  the command below replaces, or for a global setting overrides, any
+  `core.hooksPath` the clone already has. Whether to run it at all is decided
+  in `AGENTS.md`, [*Change workflow*](AGENTS.md#change-workflow), in the
+  sub-bullet *Enable the hook per clone* under the closing-keyword rule; read
+  it first:
 
   ```bash
   git config core.hooksPath .githooks

@@ -2,9 +2,10 @@
 # Refuse a commit message that closes an issue without acknowledging it.
 #
 # Enable per clone (hooks are not tracked into .git/hooks by git). The command
-# below replaces any hooks directory the clone already sets, so whether to run
-# it at all is decided in AGENTS.md, under *Change workflow*, which is that
-# rule's one home; read it first:
+# below replaces, or for a global setting overrides, any core.hooksPath the
+# clone already has, so whether to run it at all is decided in AGENTS.md,
+# *Change workflow*, in the sub-bullet *Enable the hook per clone* under the
+# closing-keyword rule; read it first:
 #
 #     git config core.hooksPath .githooks
 #
