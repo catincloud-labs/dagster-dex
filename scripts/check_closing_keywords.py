@@ -90,11 +90,11 @@ _TRAILER = re.compile(r"^[ \t]*Autoclose[ \t]*:[ \t]*(?P<refs>.+?)[ \t]*$", re.I
 _TRAILER_REF = re.compile(r"#(\d+)")
 
 # A fence closes with the marker that opened it, at least as long, and with
-# nothing but whitespace after - CommonMark's rule, and the difference bit for
-# real, on a live pull request: a Python 3.11+ traceback's `~~~~~~^^^` caret
-# line inside a ``` fence used to toggle the state, so the true closing ```
-# re-opened it and a well-formed trailer two lines later read as fenced
-# documentation.
+# nothing but whitespace after, at any indentation. A rule that let any
+# fence-shaped line close the fence would misread real bodies: a Python 3.11+
+# traceback's `~~~~~~^^^` caret line inside a ``` fence would toggle the
+# state, the true closing ``` would re-open it, and a well-formed trailer two
+# lines later would read as fenced documentation. The self-test pins that case.
 _FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 _SCISSORS = re.compile(r"^[ \t]*#[ \t]*-+[ \t]*>8[ \t]*-+")
 
@@ -313,11 +313,10 @@ def reconcile(text: str, reported: set[int]) -> tuple[int, list[str]]:
 
     WARNING: The trailer is found with `find_acknowledged`, the same function the
     rest of this file uses, and that shared call is the entire point of this
-    mode. CI used to re-implement the search as a shell `grep` anchored at line
-    start, which was not fence-aware. The self-test pins that a fenced example
-    of a trailer is documentation rather than a claim - so the second
-    implementation is how CI came to fail precisely the case this file's own
-    test certifies as clean.
+    mode. The self-test pins that a fenced example of a trailer is
+    documentation rather than a claim. A second implementation in CI that is
+    not fence-aware, such as a shell `grep` for the trailer, would fail
+    precisely the case this file's own test certifies as clean.
 
     WARNING: `reported` arrives as bare numbers, and that is the reason the body is
     scanned for cross-repo spellings here too. The field itself is NOT
