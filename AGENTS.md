@@ -675,10 +675,12 @@ everywhere or nowhere. Nothing checks it.
   command: it gets the pull request number, the issue or ruling it builds
   against, this file's binding sections and the commands to run, and it runs
   them against the head and against `main`. Its findings are posted as a
-  comment on the pull request. Each is closed as taken, with the fixing commit,
-  or declined, with the reason, against the review's own checks re-run at the
-  new head, in that comment or in a dispositions comment after it. A second
-  review happens only when the owner asks for one.
+  comment on the pull request. That comment names the model effort the review
+  ran at: medium by default, or another effort when one is chosen. Each
+  finding is closed as taken, with the fixing commit, or declined, with the
+  reason, against the review's own checks re-run at the new head, in that
+  comment or in a dispositions comment after it. A second review happens only
+  when the owner asks for one.
 - **A pull request leaves draft when its code is ready, not when its slot
   comes.** It opens as a draft, so its cold review comes before it leaves.
   Ready means its one cold review is dispositioned, the latest run of every
@@ -695,8 +697,9 @@ everywhere or nowhere. Nothing checks it.
   in a body.
 - **A claim a session posted on an issue, wrong when it was posted, is
   corrected by a follow-up comment** that cites the comment it corrects, not by
-  editing it. A pull request body may be corrected in place, with a visible
-  dated note saying what changed.
+  editing it. A draft pull request's body is edited freely, with no note of
+  what changed; once it has left draft, its body may be corrected in place,
+  with a visible dated note saying what changed.
 - **A ruling given in a session becomes a record once it is a comment on the
   issue it decides,** carrying the owner's words and posted before the pull
   request that cites it.
