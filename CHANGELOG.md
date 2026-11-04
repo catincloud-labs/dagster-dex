@@ -55,6 +55,21 @@ major if you depend on the contract.
     an aggregate with no such step since 2026-08-18, and the control is the
     `python-floor` job and the first test step of `publish.yml`'s `build`.
 
+### Changed
+
+- **`AGENTS.md` lets a draft pull request's body be edited without a note,
+  and a cold review's findings comment names its model effort.** Both
+  sentences are in *Merging, the cold review and the record*, the subsection
+  the organisation's repositories keep byte-identical, and both follow the
+  owner's rulings of 2026-11-04. The bullet on correcting a posted claim said
+  a pull request body may be corrected in place with a visible dated note,
+  and said nothing of drafts. It now says a draft's body is edited freely,
+  with no note of what changed, and the note applies once a pull request has
+  left draft. The old sentence is quoted under *How this section read
+  before*, below. The cold-review bullet now says the findings comment names
+  the model effort the review ran at: medium by default, or another effort
+  when one is chosen.
+
 ### Fixed
 
 - **A schema edit for an upper-case table is placed in its lower-case
@@ -1254,6 +1269,18 @@ The shared line is identical in
 every estate template by ruling and links a private issue, so here, the
 one public repository that carries a template, it ends after its first
 sentence (#108).
+```
+
+### `AGENTS.md`, *Merging, the cold review and the record*, the bullet on correcting a posted claim
+
+Read dead on 2026-11-04, against the owner's ruling that day that a draft
+pull request's body is edited freely, with no note of what changed, and that
+the visible dated note applies once a pull request has left draft. It
+entered with `aad89a3` (2026-10-12). Its second sentence read:
+
+```markdown
+A pull request body may be corrected in place, with a visible
+dated note saying what changed.
 ```
 
 ## Why this file names no engine version
