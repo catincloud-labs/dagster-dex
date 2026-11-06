@@ -9,6 +9,7 @@ graph readable the same way, without the graph having to pretend to be a dbt
 project first.
 
 Copyright 2026 David Anaya. Apache-2.0.
+Maintained by [CatInCloud Labs](https://catincloudlabs.com/gh).
 
 ```bash
 pip install dagster-dex          # the core: no orchestrator, no engine
