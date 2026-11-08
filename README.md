@@ -79,6 +79,29 @@ project:
     assets: my_project.definitions:all_assets
 ```
 
+### Naming each model's table
+
+dex places a model in the warehouse by its relation, and `maintain verify`
+judges a declared key only on a model it can place. The format reads each
+model's relation from its asset's `dagster/table_name` metadata, the key
+Dagster itself keeps a table name under. Where that is missing or wrong,
+`relations:` corrects it per model, and wins:
+
+```yaml
+project:
+  format: dagster
+  options:
+    assets: my_project.definitions:all_assets
+    relations:
+      fact_orders: analytics.orders_v2   # plain dotted parts, no quoting
+```
+
+A model with neither is named in a note on what dex reads, so a run that could
+not judge it does not read as a clean one. A name under `relations:` that the
+graph does not build is refused, like an unknown option. `relations:` is also
+admitted beside `artifact:`, where it corrects what the artifact carries
+without writing it again.
+
 ## What this is
 
 A contract for reading an asset graph as a project, and a bridge that puts dex

@@ -61,7 +61,14 @@ one. They are named as a structural protocol,
 | `keys` | the last element of each key's `path` | `ProjectModel.name` |
 | `asset_deps[key]` | the last element of each dependency's `path`, sorted | `ProjectModel.depends_on` |
 | `metadata_by_key[key]` | the `layer` entry, lowercased, when present | `ProjectModel.layer` |
-| nothing | | `ProjectModel.relation` stays `None` |
+| `metadata_by_key[key]` | `dagster/table_name`, or `dagster/relation_identifier` when that key is absent, unwrapped and lowercased | `ProjectModel.relation`, or `None` when neither names a table |
+
+The relation is read by key, the way Dagster's own
+`TableMetadataSet.extract_normalized_table_name` reads it, because nothing here
+imports the orchestrator; `dagster_dex.project._table_name` gives the rule,
+and `examples/reduce_asset_graph.py` holds it equal to Dagster's against real
+objects. A `relations:` project option then overrides it per model, and a name
+there the project does not build is refused (`dagster_dex.project.DagsterProject`).
 
 Nothing else on a definition is read: not its code, partitions, checks or IO
 managers. Two consequences:
@@ -133,6 +140,7 @@ on the layer, is in [AGENTS.md, *Sharp edges*](../../AGENTS.md#sharp-edges).
 | `DeclaredJoin`, one column a side | `DeclaredForeignKey` | nothing | |
 | `DeclaredJoin`, several columns | omitted | the join | a note listing each omitted join |
 | `freshness` of `NOT_APPLICABLE` | `manifest_loaded=False`, `manifest_stale=False` | the third state | a note that `False` means not applicable |
+| `ProjectModel.relation` | `model_relations`, one entry per model that has one | the models with none | a note naming each model with no relation |
 | model names | `built_relation_names`, lowercased | case | |
 | each semantic model's `model` | `metric_models` | nothing | |
 | no project directory | `project_dir=None` | nothing | |
@@ -260,16 +268,19 @@ flowchart LR
     D["declarations: directory, beside the artifact"] --> E
 ```
 
-- **What it carries.** Exactly `DagsterProject`'s constructor arguments (the
-  name, the reduced models, the three mappings of declaration text) plus
-  `generated_at` and `schema_version`. It carries text, never parsed
+- **What it carries.** `DagsterProject`'s constructor arguments (the name,
+  the reduced models with their relations, the three mappings of declaration
+  text) plus `generated_at` and `schema_version`. `relations` is the one it
+  does not carry: that override is the reading side's, from its own
+  `.dex/config.yml`. It carries text, never parsed
   structures, so a project rebuilt from an artifact runs the same parsers and
   notes as one built from the graph (the `src/dagster_dex/artifact.py` module
   docstring).
 - **What the reader checks.** `loads` requires `schema_version` to equal
   `dagster_dex.artifact.SCHEMA_VERSION`, and refuses anything it cannot read.
   `project_from_context` refuses a missing artifact, and refuses `semantics:`,
-  `sources:` and `name:` beside one.
+  `sources:` and `name:` beside one. It admits `relations:`, which corrects
+  the relations the artifact carries without writing it again.
 - **Which tier.** An artifact alone builds `DagsterProject`. A `declarations:`
   directory beside it builds the editable pair, and the directory supersedes
   the declaration text the artifact carries, disclosed in
@@ -284,9 +295,9 @@ When to use which route is in
 - **It never edits a model.** `edit_path` returns `None` for `MODEL_SQL`;
   why only the declarations can receive an edit is in
   [AGENTS.md, *Tier 3 is reached by ONE class*](../../AGENTS.md#tier-3-is-reached-by-one-class-and-the-split-is-the-design).
-- **It has no table-to-relation mapping.** `ProjectModel.relation` is `None`
-  from the reduction, so placement uses the table name as the file stem rather
-  than translating it through a guess.
+- **It does not place an edit through a relation.** Placement uses the
+  warehouse table's name as the file stem, and does not translate it through
+  `ProjectModel.relation`; doing so would move where a write lands.
 - **It reports no file-content drift.** `files` is empty, and the transform
   layer's note says so rather than letting two empty mappings read as no change.
 - **It does not infer sources** from dependencies, for the reason step 2 links.

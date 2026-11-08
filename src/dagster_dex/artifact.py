@@ -90,10 +90,12 @@ class ArtifactError(ValueError):
 class ProjectArtifact:
     """A reduced project, as it travels between two processes.
 
-    The fields are exactly :class:`~.project.DagsterProject`'s constructor
-    arguments, plus provenance. That correspondence is deliberate: it is what
-    keeps this a transport for the existing model rather than a second model
-    that has to be kept in step with it.
+    The fields are :class:`~.project.DagsterProject`'s constructor arguments,
+    plus provenance. That correspondence is deliberate: it is what keeps this a
+    transport for the existing model rather than a second model that has to be
+    kept in step with it. ``relations`` is the one argument not carried, and on
+    purpose: it is the reading side's correction of what the models' relations
+    say, read from that side's own configuration (#179).
 
     ``name`` is the graph's name, fixed by the writer. The reader refuses a
     ``name`` option beside an artifact rather than letting one override the

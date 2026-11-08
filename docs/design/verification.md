@@ -200,6 +200,12 @@ upstream publishes a release the promise widens and the matrix moves with it.
 - **The cross product is one cell.** The engine axis runs on 3.13, the newest
   interpreter `python-floor` claims. The intermediate interpreters never meet
   the engine here, and 3.10 cannot: dex-core requires 3.11 or later.
+- **It installs a warehouse.** The boundary step carries `--with duckdb`, as
+  `upstream main` does, for the `maintain verify` reproduction in
+  `tests/test_dex_bridge.py` (#179). Those tests skip on an engine older than
+  1.12.5, which cannot judge this format, so the demonstrated pin never runs
+  them and the ceiling does. From 1.12.5 a missing `duckdb` fails them rather
+  than skipping, so a cell without the warehouse goes red.
 
 Red arm: no test plants a resolution failure. On record, the ceiling cell went
 red when dex-core 1.11.0 shipped a contract this format had not declined

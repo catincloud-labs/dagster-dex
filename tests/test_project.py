@@ -1461,6 +1461,174 @@ class TestFromAssetGraph:
         assert DagsterProject.from_asset_graph([]).declarations().is_empty
 
 
+class _MetadataValue:
+    """Dagster's `TextMetadataValue` by shape, and by the package its class is
+    defined in, which is how the reduction tells Dagster's value objects from
+    any other object that happens to hold a `.value`."""
+
+    __module__ = "dagster._core.definitions.metadata.metadata_value"
+
+    def __init__(self, value) -> None:
+        self.value = value
+
+
+class _NotDagsters:
+    """The same shape from outside Dagster. Dagster unwraps only its own
+    `MetadataValue`, so to it this holds no table (#182's cold review)."""
+
+    def __init__(self, value) -> None:
+        self.value = value
+
+
+def _relation_from(metadata) -> str | None:
+    """The relation the reduction reads off one asset carrying `metadata`."""
+
+    key = _Key("dim_date")
+    project = DagsterProject.from_asset_graph([_Definition([key], metadata={key: metadata})])
+    return project.declarations().models[0].relation
+
+
+#: (metadata, the relation the reduction should read). Every row is one of the
+#: cases `examples/reduce_asset_graph.py` holds equal to Dagster's own
+#: `TableMetadataSet.extract_normalized_table_name`, which is where these
+#: expectations come from; this file only says the reduction gives them.
+TABLE_NAME_CASES = [
+    pytest.param({"dagster/table_name": "analytics.dim_date"}, "analytics.dim_date", id="plain"),
+    pytest.param({"dagster/table_name": "ANALYTICS.Dim_Date"}, "analytics.dim_date", id="lowercased"),
+    pytest.param(
+        {"dagster/table_name": _MetadataValue("analytics.dim_date")},
+        "analytics.dim_date",
+        id="a-metadata-value-unwrapped",
+    ),
+    pytest.param(
+        {"dagster/relation_identifier": "analytics.dim_date"},
+        "analytics.dim_date",
+        id="the-older-key-alone",
+    ),
+    pytest.param(
+        {"dagster/table_name": "analytics.new", "dagster/relation_identifier": "analytics.old"},
+        "analytics.new",
+        id="the-newer-key-wins",
+    ),
+    pytest.param(
+        {"dagster/table_name": None, "dagster/relation_identifier": "analytics.old"},
+        None,
+        id="the-newer-key-present-and-empty-still-wins",
+    ),
+    pytest.param({"dagster/table_name": ""}, None, id="empty-text"),
+    pytest.param({"dagster/table_name": 7}, None, id="not-text"),
+    pytest.param({"dagster/table_name": _MetadataValue(7)}, None, id="a-value-holding-not-text"),
+    pytest.param(
+        {"dagster/table_name": _NotDagsters("analytics.dim_date")},
+        None,
+        id="a-value-object-from-outside-dagster",
+    ),
+    pytest.param({"layer": "gold"}, None, id="no-table-key"),
+    pytest.param({}, None, id="no-metadata"),
+]
+
+
+class TestTheRelationComesFromTheAssetsMetadata:
+    """#179: each model names the warehouse table its asset builds, read from
+    the metadata Dagster keeps it in, and names none rather than a guess."""
+
+    @pytest.mark.parametrize(("metadata", "expected"), TABLE_NAME_CASES)
+    def test_the_reduction_reads_the_table_dagster_would(self, metadata, expected):
+        assert _relation_from(metadata) == expected
+
+    def test_a_model_is_never_given_its_own_name_as_a_relation(self):
+        """The arm a guess would fail. A relation equal to the model name is
+        what a reader inventing one would produce, and it would be read as
+        declared by whatever consumes it."""
+
+        assert _relation_from({"layer": "gold"}) is None
+
+
+def _with_tables(*tables: tuple[str, str | None]) -> list[_Definition]:
+    definitions = []
+    for name, table in tables:
+        key = _Key(name)
+        metadata = {key: {"dagster/table_name": table}} if table else {}
+        definitions.append(_Definition([key], metadata=metadata))
+    return definitions
+
+
+def _relations(project: DagsterProject) -> dict[str, str | None]:
+    return {m.name: m.relation for m in project.declarations().models}
+
+
+class TestTheRelationsOverride:
+    """#179, option C: a written override wins over the metadata, per model."""
+
+    def test_the_override_wins_where_the_two_disagree(self):
+        project = DagsterProject.from_asset_graph(
+            _with_tables(("dim_date", "analytics.dim_date_old"), ("fact_orders", "analytics.fact_orders")),
+            relations={"dim_date": "analytics.dim_date"},
+        )
+        assert _relations(project) == {
+            "dim_date": "analytics.dim_date",
+            "fact_orders": "analytics.fact_orders",
+        }
+
+    def test_the_override_places_a_model_the_metadata_does_not(self):
+        project = DagsterProject.from_asset_graph(
+            _with_tables(("dim_date", None)), relations={"dim_date": "analytics.dim_date"}
+        )
+        assert _relations(project) == {"dim_date": "analytics.dim_date"}
+
+    def test_the_override_is_kept_as_written(self):
+        """Lowercasing is Dagster's rule for its own metadata. The override is a
+        person's exact statement, and dex compares relations without regard to
+        case anyway, so folding it here would only lose information."""
+
+        project = DagsterProject(
+            [ProjectModel(name="dim_date")], relations={"dim_date": "ANALYTICS.Dim_Date"}
+        )
+        assert _relations(project) == {"dim_date": "ANALYTICS.Dim_Date"}
+
+    def test_without_an_override_the_metadata_stands(self):
+        """The quiet arm. Without it the precedence test above is equally
+        consistent with the override being applied to every model."""
+
+        project = DagsterProject.from_asset_graph(_with_tables(("dim_date", "analytics.dim_date")))
+        assert _relations(project) == {"dim_date": "analytics.dim_date"}
+
+    def test_a_name_the_project_does_not_build_is_refused_by_name(self):
+        """A typo in a committed config is the likeliest way to write one, and
+        ignoring it would leave the model unplaced while the file reads as
+        though it had been corrected."""
+
+        with pytest.raises(ValueError, match="dim_dat\\b"):
+            DagsterProject(
+                [ProjectModel(name="dim_date")], relations={"dim_dat": "analytics.dim_date"}
+            )
+
+    def test_names_are_matched_exactly(self):
+        with pytest.raises(ValueError, match="Dim_Date"):
+            DagsterProject(
+                [ProjectModel(name="dim_date")], relations={"Dim_Date": "analytics.dim_date"}
+            )
+
+    @pytest.mark.parametrize("relation", ["", "   "], ids=["empty", "blank"])
+    def test_an_empty_or_blank_relation_is_refused(self, relation):
+        """A blank relation names no table, yet would count as placed and
+        drop out of the note naming unplaced models (#182's cold review)."""
+
+        with pytest.raises(ValueError, match="empty or blank relation for: dim_date"):
+            DagsterProject([ProjectModel(name="dim_date")], relations={"dim_date": relation})
+
+    def test_the_editable_class_takes_it_too(self, tmp_path):
+        from dagster_dex import EditableDagsterProject
+
+        project = EditableDagsterProject.from_asset_graph(
+            _with_tables(("dim_date", "analytics.old")),
+            root=tmp_path,
+            surface=("declarations",),
+            relations={"dim_date": "analytics.dim_date"},
+        )
+        assert _relations(project) == {"dim_date": "analytics.dim_date"}
+
+
 class TestModelInvariants:
     def test_a_key_with_no_columns_is_refused(self):
         with pytest.raises(ValueError):

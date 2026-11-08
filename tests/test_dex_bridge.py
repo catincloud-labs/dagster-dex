@@ -756,6 +756,7 @@ class TestTheFactory:
             "declarations",
             "semantics",
             "sources",
+            "relations",
         }
 
     def test_a_missing_source_option_is_refused(self):
@@ -2197,7 +2198,9 @@ DECLARE_FROM = (1, 10)
 
 def _read_back(tmp_path):
     """The declared keys dex reads from the directory as it now stands, and any
-    note besides the one every reduction carries.
+    note besides the two every reduction of `FACTORY_ASSETS` carries: the
+    `manifest_stale` one, and since #179 the one naming `dim_date` as a model
+    with no relation, since that fake asset names no table.
 
     Through `definitions()`, the layer dex reads, rather than the parser that
     feeds it. And through a FRESH instance: one instance lives for one command
@@ -2209,7 +2212,8 @@ def _read_back(tmp_path):
         _context(assets=f"{__name__}:FACTORY_ASSETS", declarations=str(tmp_path / "declarations"))
     ).definitions()
     keys = sorted((k.model, k.column) for k in definitions.declared_keys)
-    return keys, [n for n in definitions.notes if "manifest_stale" not in n]
+    carried = ("manifest_stale", "name no warehouse relation")
+    return keys, [n for n in definitions.notes if not any(c in n for c in carried)]
 
 
 def _declaration_edits():
@@ -2277,3 +2281,397 @@ class TestTheKeyReconcileWritesIsAKeyThisPackageReads:
     ):
         after = _apply_a_unique_test(tmp_path, declaration, column=column)
         assert _read_back(tmp_path) == (expected, []), after
+
+
+# --- #179: the format names each model's table ------------------------------
+
+
+def _placed(*models: tuple[str, str | None]) -> DagsterProject:
+    return DagsterProject(
+        [ProjectModel(name=name, relation=relation) for name, relation in models],
+        name="demo_project",
+    )
+
+
+def _unplaced_notes(definitions) -> list[str]:
+    return [n for n in definitions.notes if "name no warehouse relation" in n]
+
+
+class TestEachModelNamesItsRelation:
+    """`model_relations` is the map `maintain verify` places a model with.
+    Empty, it judged nothing and still said its checks ran (#179)."""
+
+    def test_a_model_that_names_its_table_is_mapped_to_it(self):
+        definitions = to_project_definitions(
+            _placed(("dim_date", "analytics.dim_date"), ("fact_orders", "analytics.orders_v2"))
+            .declarations()
+        )
+        assert definitions.model_relations == {
+            "dim_date": "analytics.dim_date",
+            "fact_orders": "analytics.orders_v2",
+        }
+
+    def test_a_model_that_names_none_is_absent_and_named_in_a_note(self):
+        """The loud arm, asserted on the definitions dex reads rather than on
+        the function that writes the note (AGENTS.md, *Sharp edges*)."""
+
+        definitions = to_project_definitions(
+            _placed(("dim_date", "analytics.dim_date"), ("fact_orders", None), ("dim_store", None))
+            .declarations()
+        )
+        assert definitions.model_relations == {"dim_date": "analytics.dim_date"}
+        (note,) = _unplaced_notes(definitions)
+        assert note.startswith("2 built model(s)"), note
+        assert note.endswith("project option"), note
+        assert "dim_store, fact_orders." in note, note
+
+    def test_no_note_when_every_model_names_its_table(self):
+        """The quiet arm. A note claiming a gap that is not there is the same
+        defect as silence about one that is, pointing the other way."""
+
+        definitions = to_project_definitions(
+            _placed(("dim_date", "analytics.dim_date")).declarations()
+        )
+        assert _unplaced_notes(definitions) == []
+
+    def test_an_empty_project_has_nothing_to_place_and_says_nothing(self):
+        assert _unplaced_notes(to_project_definitions(_placed().declarations())) == []
+
+    def test_built_relation_names_stay_the_model_names(self):
+        """Upstream's contract requires `built_relation_names` to contain the
+        transform layer's models, so a table name that differs from its
+        model's name must not replace it there."""
+
+        project = _placed(("fact_orders", "analytics.orders_v2"))
+        definitions = to_project_definitions(project.declarations())
+        assert definitions.built_relation_names == ["fact_orders"]
+        assert to_transform_layer(project.declarations()).models == ["fact_orders"]
+
+
+def _metadata_asset(name: str, *, table: str | None = None, deps: tuple[str, ...] = ()):
+    key = _FactoryKey(name)
+    return _FactoryDefinition(
+        [key],
+        deps={key: [_FactoryKey(dep) for dep in deps]},
+        metadata={key: {"dagster/table_name": table}} if table else {},
+    )
+
+
+#: The issue's three assets, each naming its table the way Dagster does.
+PLACED_ASSETS = [
+    _metadata_asset("dim_date", table="analytics.dim_date"),
+    _metadata_asset("dim_store", table="analytics.dim_store"),
+    _metadata_asset("fact_orders", table="analytics.fact_orders", deps=("dim_date", "dim_store")),
+]
+
+#: The same graph with two of the three wrong: `dim_store`'s metadata names a
+#: table the warehouse does not have, and `fact_orders` names none at all.
+MISPLACED_ASSETS = [
+    _metadata_asset("dim_date", table="analytics.dim_date"),
+    _metadata_asset("dim_store", table="analytics.dim_store_v0"),
+    _metadata_asset("fact_orders", deps=("dim_date", "dim_store")),
+]
+
+#: What corrects MISPLACED_ASSETS, written as `.dex/config.yml` would carry it.
+CORRECTIONS = {"dim_store": "analytics.dim_store", "fact_orders": "analytics.fact_orders"}
+
+
+class TestTheRelationsOption:
+    """Option C through the factory: metadata first, `relations` over it per
+    model, beside both `assets` and `artifact` (#179, comment 6715765837)."""
+
+    def test_the_metadata_reaches_model_relations(self):
+        project = project_from_context(_context(assets=f"{__name__}:PLACED_ASSETS"))
+        assert project.definitions().model_relations == {
+            "dim_date": "analytics.dim_date",
+            "dim_store": "analytics.dim_store",
+            "fact_orders": "analytics.fact_orders",
+        }
+
+    def test_the_option_wins_over_the_metadata_and_fills_what_it_lacks(self):
+        project = project_from_context(
+            _context(assets=f"{__name__}:MISPLACED_ASSETS", relations=CORRECTIONS)
+        )
+        definitions = project.definitions()
+        assert definitions.model_relations == {
+            "dim_date": "analytics.dim_date",
+            "dim_store": "analytics.dim_store",
+            "fact_orders": "analytics.fact_orders",
+        }
+        assert _unplaced_notes(definitions) == []
+
+    def test_the_option_reaches_dex_as_written(self):
+        """Asserted on the map dex reads, not on the model that feeds it
+        (#182's cold review): a fold on the way into `model_relations` would
+        leave every model-level test green."""
+
+        definitions = project_from_context(
+            _context(
+                assets=f"{__name__}:PLACED_ASSETS",
+                relations={"dim_date": "ANALYTICS.Dim_Date"},
+            )
+        ).definitions()
+        assert definitions.model_relations["dim_date"] == "ANALYTICS.Dim_Date"
+
+    def test_without_the_option_the_unplaced_model_is_named(self):
+        definitions = project_from_context(
+            _context(assets=f"{__name__}:MISPLACED_ASSETS")
+        ).definitions()
+        assert definitions.model_relations == {
+            "dim_date": "analytics.dim_date",
+            "dim_store": "analytics.dim_store_v0",
+        }
+        (note,) = _unplaced_notes(definitions)
+        assert "fact_orders." in note, note
+
+    def test_it_reaches_the_write_tier_too(self, tmp_path):
+        from dagster_dex.dex import EditableDexProject
+
+        project = project_from_context(
+            _context(
+                assets=f"{__name__}:MISPLACED_ASSETS",
+                declarations=str(tmp_path),
+                relations=CORRECTIONS,
+            )
+        )
+        assert isinstance(project, EditableDexProject)
+        assert project.definitions().model_relations["fact_orders"] == "analytics.fact_orders"
+
+    @pytest.mark.parametrize("with_directory", [False, True], ids=["artifact", "artifact+declarations"])
+    def test_it_corrects_an_artifact_without_rewriting_it(self, tmp_path, with_directory):
+        """Admitted beside `artifact`, unlike `name`, `semantics` and `sources`:
+        the artifact wrote down what the metadata named when it was reduced,
+        and this is the engine side's correction of it."""
+
+        path = _write_artifact(
+            tmp_path,
+            models=[
+                ProjectModel(name="dim_date", relation="analytics.dim_date_old"),
+                ProjectModel(name="fact_orders"),
+            ],
+        )
+        options = {"artifact": str(path), "relations": {"dim_date": "analytics.dim_date"}}
+        if with_directory:
+            (tmp_path / "declarations").mkdir()
+            options["declarations"] = str(tmp_path / "declarations")
+        written = path.read_text(encoding="utf-8")
+
+        definitions = project_from_context(_context(**options)).definitions()
+
+        assert definitions.model_relations == {"dim_date": "analytics.dim_date"}
+        (note,) = _unplaced_notes(definitions)
+        assert "fact_orders." in note, note
+        assert path.read_text(encoding="utf-8") == written
+
+    def test_an_artifact_alone_keeps_the_relations_it_carries(self, tmp_path):
+        """The quiet arm of the test above."""
+
+        path = _write_artifact(
+            tmp_path, models=[ProjectModel(name="dim_date", relation="analytics.dim_date")]
+        )
+        definitions = project_from_context(_context(artifact=str(path))).definitions()
+        assert definitions.model_relations == {"dim_date": "analytics.dim_date"}
+
+    @pytest.mark.parametrize("source", ["assets", "artifact"])
+    def test_a_model_the_project_does_not_build_is_refused_by_name(self, tmp_path, source):
+        """Refused rather than noted: a correction with nothing to apply to
+        reads exactly like one that was applied, and a typo in a committed
+        file is the likeliest way to write one."""
+
+        options = (
+            {"assets": f"{__name__}:PLACED_ASSETS"}
+            if source == "assets"
+            else {"artifact": str(_write_artifact(tmp_path))}
+        )
+        with pytest.raises(ValueError, match="does not build: dim_dat\\b"):
+            project_from_context(_context(relations={"dim_dat": "analytics.dim_date"}, **options))
+
+    @pytest.mark.parametrize(
+        ("value", "match"),
+        [
+            pytest.param(["dim_date"], "must map model names", id="a-list"),
+            pytest.param("analytics.dim_date", "must map model names", id="a-string"),
+            pytest.param(None, "must map model names", id="written-empty"),
+            pytest.param({"dim_date": 7}, "written as text; it does not for: dim_date", id="not-text"),
+            pytest.param({"dim_date": ""}, "empty or blank relation", id="empty-text"),
+            pytest.param({"dim_date": "  "}, "empty or blank relation", id="blank-text"),
+        ],
+    )
+    def test_a_value_it_cannot_read_is_refused(self, value, match):
+        with pytest.raises(ValueError, match=match):
+            project_from_context(
+                _context(assets=f"{__name__}:PLACED_ASSETS", relations=value)
+            )
+
+
+# --- #179's reproduction: maintain verify on a local DuckDB warehouse ---------
+
+#: The first engine whose `maintain verify` reads `model_relations` through
+#: the project format seam for a format that is not dbt. Measured on this
+#: reproduction (#179): 1.9.2 to 1.12.4 refuse this format ("maintain verify
+#: needs a dbt project") and 1.12.5 judges it. A fact about released
+#: versions, which is why it may be written down.
+VERIFY_SEAM_FROM = (1, 12, 5)
+
+#: The issue's declarations, verbatim: one single-column key, one composite
+#: key, and two joins to the same parent.
+VERIFY_DECLARATIONS = {
+    "dim_date.yml": """\
+models:
+  - name: dim_date
+    columns:
+      - name: date_key
+        tests: [unique, not_null]
+""",
+    "dim_store.yml": """\
+models:
+  - name: dim_store
+    tests:
+      - unique_combination_of_columns:
+          combination_of_columns: [region, store_code]
+""",
+    "fact_orders.yml": """\
+models:
+  - name: fact_orders
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: order_date_key
+        tests:
+          - relationships: {to: "ref('dim_date')", field: date_key}
+      - name: ship_date_key
+        tests:
+          - relationships: {to: "ref('dim_date')", field: date_key}
+""",
+}
+
+#: The clean arm: every declaration holds. `store_code` alone repeats across
+#: regions, so only the declared combination is unique.
+CLEAN_WAREHOUSE = [
+    "CREATE SCHEMA analytics",
+    "CREATE TABLE analytics.dim_date AS SELECT i AS date_key FROM range(1, 91) t(i)",
+    "CREATE TABLE analytics.dim_store AS SELECT CASE WHEN i % 2 = 0 THEN 'east' ELSE 'west' END "
+    "AS region, i // 2 AS store_code FROM range(0, 20) t(i)",
+    "CREATE TABLE analytics.fact_orders AS SELECT i AS order_id, 1 + (i % 90) AS order_date_key, "
+    "1 + ((i + 3) % 90) AS ship_date_key FROM range(1, 401) t(i)",
+]
+
+#: The violated arm: one break per declaration kind, as the issue plants them.
+VIOLATIONS = [
+    "INSERT INTO analytics.fact_orders SELECT * FROM analytics.fact_orders WHERE order_id = 7",
+    "INSERT INTO analytics.dim_store VALUES ('east', 0)",
+    "UPDATE analytics.fact_orders SET ship_date_key = 999 WHERE order_id = 11",
+]
+
+#: What verify must report on the violated arm, and nothing else. The orphan
+#: on `ship_date_key` is absent on purpose: verify suppresses join checks for
+#: this format, which is dex-core's gap and out of #179's scope.
+BOTH_BROKEN_KEYS = [
+    ("grain_broken", "dim_store", ("region", "store_code"), "unique_test_composite"),
+    ("grain_broken", "fact_orders", ("order_id",), "unique_test"),
+]
+
+
+def _engine_version() -> tuple[int, ...]:
+    import importlib.metadata as md
+
+    return tuple(int(part) for part in re.findall(r"\d+", md.version("exmergo-dex-core"))[:3])
+
+
+def _verify(tmp_path, *, violated: bool, assets: str, **options):
+    """`maintain verify` over the issue's reproduction, as (code, model,
+    columns, source) per finding, plus its warnings.
+
+    **The engine's version decides the skip, never a failed import**, the way
+    `_declaration_edits` decides its own: below 1.12.5 verify cannot judge this
+    format at all, so there is nothing to assert. From 1.12.5 a missing
+    `duckdb` or a moved import is a failure, so a cell that forgot to install
+    the warehouse goes red instead of reading green over a skip.
+    """
+
+    import importlib.metadata as md
+
+    if _engine_version() < VERIFY_SEAM_FROM:
+        pytest.skip(
+            f"exmergo-dex-core {md.version('exmergo-dex-core')} predates maintain verify "
+            f"reading this format, which it does from "
+            f"{'.'.join(str(part) for part in VERIFY_SEAM_FROM)}"
+        )
+
+    import duckdb
+    import yaml
+    from exmergo_dex_core import DexEngine
+
+    declarations = tmp_path / "declarations"
+    declarations.mkdir()
+    for name, text in VERIFY_DECLARATIONS.items():
+        (declarations / name).write_text(text, encoding="utf-8")
+
+    warehouse = tmp_path / "warehouse.duckdb"
+    connection = duckdb.connect(str(warehouse))
+    try:
+        for statement in CLEAN_WAREHOUSE + (VIOLATIONS if violated else []):
+            connection.execute(statement)
+    finally:
+        connection.close()
+
+    (tmp_path / ".dex").mkdir()
+    config = {
+        "connector": "duckdb",
+        "duckdb": {"path": str(warehouse)},
+        "project": {
+            "format": "dagster",
+            "options": {
+                "assets": f"{__name__}:{assets}",
+                "declarations": str(declarations),
+                **options,
+            },
+        },
+    }
+    (tmp_path / ".dex" / "config.yml").write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    with DexEngine.from_repo(str(tmp_path)) as engine:
+        result = engine.verify()
+    findings = sorted(
+        (f.code, f.identifier, tuple(f.data.get("columns") or ()), f.data.get("source"))
+        for f in result.findings
+    )
+    return findings, list(result.warnings)
+
+
+class TestVerifyJudgesTheDeclaredKeys:
+    """#179's *How we would know it worked*, on the reproduction it sets out:
+    local DuckDB, nothing billed. Red at `bc7fa2e` on every arm but the clean
+    one, which read zero findings there as it does here; the others read zero
+    findings or refused the `relations` option."""
+
+    def test_the_violated_arm_reports_both_broken_keys_and_nothing_else(self, tmp_path):
+        findings, _ = _verify(tmp_path, violated=True, assets="PLACED_ASSETS")
+        assert findings == BOTH_BROKEN_KEYS
+
+    def test_the_clean_arm_reports_nothing(self, tmp_path):
+        """The quiet arm. Without it the test above is equally consistent with
+        verify reporting every declared key whatever the data holds."""
+
+        findings, _ = _verify(tmp_path, violated=False, assets="PLACED_ASSETS")
+        assert findings == []
+
+    def test_the_option_wins_where_it_and_the_metadata_disagree(self, tmp_path):
+        """Precedence, end to end: the metadata alone would send verify to a
+        table that is not there and leave `fact_orders` unjudged; the option
+        corrects both, and verify finds what the placed graph finds."""
+
+        findings, _ = _verify(
+            tmp_path, violated=True, assets="MISPLACED_ASSETS", relations=CORRECTIONS
+        )
+        assert findings == BOTH_BROKEN_KEYS
+
+    def test_without_the_option_the_gap_is_loud_rather_than_clean(self, tmp_path):
+        """No silent drops. The wrong table is reported as missing, and the
+        model with no relation is named in verify's own warnings - so the run
+        does not read as two clean models."""
+
+        findings, warnings = _verify(tmp_path, violated=True, assets="MISPLACED_ASSETS")
+        assert [(code, model) for code, model, _, _ in findings] == [("no_relation", "dim_store")]
+        named = [w for w in warnings if "name no warehouse relation" in w]
+        assert len(named) == 1 and "fact_orders." in named[0], warnings

@@ -142,7 +142,7 @@ jobs:
           uv run --no-project --python 3.13 --with-editable . \
             --with pytest==8.4.1 \
             --with "exmergo-dex-core @ git+https://github.com/exmergo/dex@${SHA}#subdirectory=${DIR}" \
-            --with sqlglot==30.13.0 \
+            --with sqlglot==30.13.0 --with duckdb \
             python -m pytest tests/test_upstream_contract.py tests/test_dex_bridge.py \
               -p no:cacheprovider -o junit_family=xunit2 --junitxml "$RUNNER_TEMP/junit.xml"
 

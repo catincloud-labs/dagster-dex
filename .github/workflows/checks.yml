@@ -440,11 +440,18 @@ jobs:
       # `--python 3.13` is the cross-product cell: the newest interpreter the
       # `python-floor` list claims, named here rather than inherited from
       # whatever the runner resolves. Move it when that list gains a version.
+      #
+      # `duckdb` is the warehouse #179's `maintain verify` reproduction runs
+      # on. Those tests skip on an engine older than 1.12.5, where verify
+      # cannot read this format, and FAIL rather than skip from 1.12.5 when the
+      # warehouse is missing - so dropping this line reddens the ceiling cell
+      # instead of letting it read green over a skip.
       - name: Boundary runs against this end of the range
         run: |
           uv run --no-project --python 3.13 --with-editable . \
             --with pytest==8.4.1 \
             --with exmergo-dex-core==${{ matrix.version }} --with sqlglot==30.13.0 \
+            --with duckdb \
             python -m pytest tests --ignore=tests/test_upstream_contract.py
 
       # Upstream's own contract judges a SHAPE, and since the write tier reached
