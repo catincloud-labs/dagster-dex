@@ -178,10 +178,11 @@ files = ["src/dagster_dex"]
 
 # These are OPTIONAL EXTRAS, and a clean type check must not require them.
 # `conformance.py` imports pytest so a third format can subclass the contract;
-# `dex.py` imports the engine at the one boundary allowed to know it exists.
-# Installing either to satisfy mypy would make the type check depend on exactly
-# the coupling the control step exists to keep out -- so they are declared
-# unresolvable here instead, which is what they actually are.
+# `dex.py` imports the engine at the one boundary allowed to know it exists;
+# `checks.py` imports the orchestrator for `AssetCheckSpec`, at the point of use.
+# Installing any of them to satisfy mypy would make the type check depend on
+# exactly the coupling the control step exists to keep out -- so they are
+# declared unresolvable here instead, which is what they actually are.
 [[tool.mypy.overrides]]
-module = ["pytest", "exmergo_dex_core.*"]
+module = ["pytest", "exmergo_dex_core.*", "dagster", "dagster.*"]
 ignore_missing_imports = true
