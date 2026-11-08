@@ -125,8 +125,10 @@ def declaration_check_specs(
     """One ``AssetCheckSpec`` per declared key, and notes for the rest.
 
     ``asset_keys`` are the keys of the assets the project was reduced from,
-    such as ``[key for asset in assets for key in asset.keys]``. Each spec
-    attaches to the key whose last segment is the declared model.
+    such as ``[key for asset in assets for key in asset.keys]``: Dagster's
+    ``AssetKey``, or any object whose ``path`` is a sequence of strings. A key
+    passed twice counts once. Each spec attaches to the key whose last segment
+    is the declared model.
 
     Each spec carries the claim id under :data:`CLAIM_ID`, and the declared
     model and columns under :data:`MODEL` and :data:`COLUMNS`. Its name is
@@ -137,7 +139,8 @@ def declaration_check_specs(
     then ends with ``__`` and the first 12 characters of the claim id, since
     the replacement can map two columns to one name. Two keys on one asset that
     would still share a name both take that suffix, and a key whose name is
-    taken even so is named in the notes rather than rendered.
+    taken even so is named in the notes rather than rendered; see
+    :func:`_names` for which one keeps it.
 
     A declared key repeating another's claim id is rendered once. Raises
     ``ImportError`` when Dagster is not installed.
@@ -240,35 +243,51 @@ def _base_name(entry: _Placed) -> str:
     return name
 
 
+def _owns(entry: _Placed, name: str) -> bool:
+    """Does ``name`` end in ``entry``'s own claim id?"""
+
+    return name.endswith(_SEPARATOR + entry.claim[:_SUFFIX_LENGTH])
+
+
 def _names(placed: list[_Placed], notes: list[str]) -> list[tuple[_Placed, str]]:
-    """Each placed key's check name, unique on its asset.
+    """Each placed key's check name, unique on its asset, in declaration order.
 
     A name two keys on one asset share is suffixed for both. ``_`` is a name
     character and the separator is made of it, so ``(a__b, c)`` and
-    ``(a, b__c)`` share a name before the suffix. A name still taken after that
-    is noted, and that key is not rendered: two specs with one name on one
-    asset are one check to Dagster, which accepts them without complaint
-    (``Definitions.validate_loadable``, read in dagster 1.13.29).
+    ``(a, b__c)`` share a name before the suffix. A suffix is never added for
+    a name shared across assets: a check's name is its identity on its own
+    asset, and a key added to one asset must not rename another's check.
+
+    A name still taken after that is noted, and that key is not rendered: two
+    specs with one name on one asset are one check to Dagster, which accepts
+    them without complaint (``Definitions.validate_loadable``, read in dagster
+    1.13.29). **A name ending in its own key's claim id keeps it**, so which
+    key goes unrendered does not turn on declaration order: the other key's
+    name only happens to end in those characters. Between two names that both
+    do, which needs 48 bits of two claim ids to agree, the first declared
+    keeps it.
     """
 
     bases = [(entry, _base_name(entry)) for entry in placed]
     shared = Counter((entry.path, base) for entry, base in bases)
-    named: list[tuple[_Placed, str]] = []
-    taken: set[tuple[tuple[str, ...], str]] = set()
-    for entry, base in bases:
-        name = base
-        if shared[(entry.path, base)] > 1:
-            name = base + _SEPARATOR + entry.claim[:_SUFFIX_LENGTH]
-        if (entry.path, name) in taken:
+    wanted = [
+        (entry, base + _SEPARATOR + entry.claim[:_SUFFIX_LENGTH])
+        if shared[(entry.path, base)] > 1
+        else (entry, base)
+        for entry, base in bases
+    ]
+    holder: dict[tuple[tuple[str, ...], str], _Placed] = {}
+    # `sorted` is stable, so declaration order breaks every tie.
+    for entry, name in sorted(wanted, key=lambda pair: not _owns(*pair)):
+        if (entry.path, name) in holder:
             notes.append(
                 f"declared key {_label(entry.key)} renders to the check name "
                 f"{name!r}, which another declared key on {'/'.join(entry.path)} "
                 "already has; it is not rendered"
             )
             continue
-        taken.add((entry.path, name))
-        named.append((entry, name))
-    return named
+        holder[(entry.path, name)] = entry
+    return [(entry, name) for entry, name in wanted if holder[(entry.path, name)] is entry]
 
 
 def _join_notes(joins: Sequence[DeclaredJoin]) -> list[str]:

@@ -312,6 +312,34 @@ class TestTheSpecSetIsTheDeclaredKeySet:
         declarations = ProjectDeclarations(format="dagster", name="x", declared_keys=(key, key))
         assert len(declaration_check_specs(declarations, ASSETS).specs) == 1
 
+    def test_one_column_declared_on_two_models_is_two_checks_named_alike(self):
+        """Two claims, not one: the model is part of the claim. And one name on
+        two assets is no clash, so neither takes a suffix (cold review of #181,
+        findings 1 and 2)."""
+
+        keys = (DeclaredKey("fact_orders", ("id",)), DeclaredKey("dim_store", ("id",)))
+        declarations = ProjectDeclarations(format="dagster", name="x", declared_keys=keys)
+        result = declaration_check_specs(declarations, ASSETS)
+        assert {(tuple(s.asset_key.path), s.name) for s in result.specs} == {
+            (("warehouse", "fact_orders"), "declared_key__id"),
+            (("warehouse", "dim_store"), "declared_key__id"),
+        }
+        assert len({s.metadata[CLAIM_ID] for s in result.specs}) == 2
+        assert result.notes == ()
+
+    def test_an_asset_key_passed_twice_counts_once(self):
+        """Not two assets ending in one model, so not ambiguous (cold review of
+        #181, finding 4)."""
+
+        project = DagsterProject.from_asset_graph(
+            [_Definition([key]) for key in ASSETS], declaration_sources=SOURCES
+        )
+        once = declaration_check_specs(project.declarations(), ASSETS)
+        twice = declaration_check_specs(project.declarations(), ASSETS + ASSETS)
+        assert len(twice.specs) == 3
+        assert rendered(twice) == rendered(once)
+        assert twice.notes == once.notes
+
 
 # --- 2. no check for a declared join -----------------------------------------
 
@@ -397,9 +425,11 @@ class TestClaimIds:
         assert _claims(render(changed))["dim_store"] != before["dim_store"]
 
     def test_reordering_a_composite_keeps_its_claim_id_and_its_name(self):
-        """The parser reads the two orders as one claim, so they are one id."""
+        """The parser reads a composite without order or case, so a reordered
+        and recased one is one claim, one id and one name (cold review of #181,
+        finding 3, for the case)."""
 
-        reordered = {**SOURCES, "declarations/dim_store.yml": DIM_STORE.replace("[store_code, region]", "[region, store_code]")}
+        reordered = {**SOURCES, "declarations/dim_store.yml": DIM_STORE.replace("[store_code, region]", "[region, Store_Code]")}
         names = {s.metadata[CLAIM_ID]: s.name for s in render(SOURCES).specs}
         assert {s.metadata[CLAIM_ID]: s.name for s in render(reordered).specs} == names
 
@@ -446,14 +476,22 @@ class TestCheckNames:
             claim_id(two): f"declared_key__a__b__c__{claim_id(two)[:12]}",
         }
 
-    def test_a_name_still_taken_after_the_suffix_is_named_not_rendered(self):
+    @pytest.mark.parametrize("order", [(0, 1, 2), (2, 0, 1)], ids=["declared-last", "declared-first"])
+    def test_a_name_still_taken_after_the_suffix_is_named_not_rendered(self, order):
+        """The key whose name only happens to end in another's claim id is the
+        one left out, whichever is declared first (cold review of #181,
+        finding 5)."""
+
         one, two = DeclaredKey("m", ("a__b", "c")), DeclaredKey("m", ("a", "b__c"))
         # Its name, unsuffixed, is the name `one` takes once suffixed.
         three = DeclaredKey("m", ("a", "b", f"c__{claim_id(one)[:12]}"))
-        result = _on_one_asset(one, two, three)
+        keys = (one, two, three)
+        result = _on_one_asset(*(keys[i] for i in order))
         names = [spec.name for spec in result.specs]
         assert len(names) == len(set(names)) == 2
-        assert [n for n in result.notes if _label(three) in n and "is not rendered" in n]
+        assert {spec.metadata[CLAIM_ID] for spec in result.specs} == {claim_id(one), claim_id(two)}
+        (note,) = result.notes
+        assert _label(three) in note and "is not rendered" in note
 
 
 def _label(key: DeclaredKey) -> str:
