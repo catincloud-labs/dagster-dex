@@ -111,9 +111,11 @@ every other `EditKind` is `None`, and that is a complete answer rather than a
 partial implementation - upstream's protocol names this exact shape as what it
 was built for. Two consequences worth knowing before changing anything here:
 
-- `edit_path`'s `model` is the **warehouse table**, not our model name. There is
-  no table-to-relation mapping here (`ProjectModel.relation` is `None`), so the
-  table name is used as the file stem rather than guessed through one. The stem
+- `edit_path`'s `model` is the **warehouse table**, not our model name. Since
+  #179 a model carries its relation where the asset's `dagster/table_name`
+  metadata or the `relations` option names one, but placement does not
+  translate through it: the table name is used as the file stem, and
+  translating would move where a write lands, which #179 did not rule. The stem
   is matched against the declarations **without regard to case** (#141), since
   Snowflake reports `DIM_DATE` for a `dim_date.yml`, under `.yml` and `.yaml`
   alike. Two files the table could name, differing by case or by suffix, make
@@ -354,6 +356,12 @@ versions in, and substitute one into steps 2 and 3:
 python scripts/resolve_engine_range.py
 ```
 
+Step 2 at an engine from 1.12.5 also needs `--with duckdb`, as `engine-ends`
+carries. That is where `maintain verify` first reads this format, and the
+reproduction from #179 in `tests/test_dex_bridge.py` runs on a local DuckDB
+warehouse there. It skips below 1.12.5, and from 1.12.5 a missing `duckdb`
+fails rather than skips, so a forgotten install reads red.
+
 ## What CI runs that these three do not
 
 **Two promises were asserted in prose and measured only when somebody
@@ -391,7 +399,7 @@ What each job proves, and how it fails:
 
   ```bash
   DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
-    --with pytest==8.4.1 --with sqlglot==30.13.0 \
+    --with pytest==8.4.1 --with sqlglot==30.13.0 --with duckdb \
     --with 'exmergo-dex-core @ git+https://github.com/exmergo/dex@main#subdirectory=packages/dex-core' \
     python -m pytest tests/test_upstream_contract.py tests/test_dex_bridge.py -p no:cacheprovider
   ```

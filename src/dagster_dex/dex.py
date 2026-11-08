@@ -52,7 +52,7 @@ __all__ = [
 #: is reading the wrong project, and a typo in a committed config file is the
 #: likeliest way to produce one.
 _KNOWN_OPTIONS = frozenset(
-    {"artifact", "assets", "name", "declarations", "semantics", "sources"}
+    {"artifact", "assets", "name", "declarations", "semantics", "sources", "relations"}
 )
 
 #: The two ways to say where the project comes from, and they are mutually
@@ -71,6 +71,11 @@ _SOURCE_OPTIONS = frozenset({"assets", "artifact"})
 #: in, so beside an ``artifact`` it does not read from nowhere - it *is* the live
 #: source, and the artifact's copy of the same text is the one that loses. See
 #: :func:`_project_from_artifact` for why the artifact cannot keep that job.
+#:
+#: ``relations`` is admitted too, for a different reason (#179, ruled in
+#: comment 6715765837): it corrects the artifact rather than competing with
+#: it. ``.dex/config.yml`` is always read on this side, so a wrong or missing
+#: table name in an artifact is fixed here without writing the artifact again.
 _ARTIFACT_INAPPLICABLE = frozenset({"semantics", "sources", "name"})
 
 
@@ -420,6 +425,19 @@ def to_project_definitions(declarations: ProjectDeclarations) -> Any:
     consumer reading ``manifest_stale=False`` would otherwise be reading an
     assurance nobody gave. It is the one place the neutral model says something
     the engine's model cannot hear.
+
+    **``model_relations`` holds each model that names its table, and only
+    those** (#179). It is what ``maintain verify`` places a model with, from
+    exmergo-dex-core 1.12.5: its no-relation and grain checks walk this map, so a
+    model missing from it is judged by neither, and verify's own warning still
+    says the checks ran. That is why it stayed empty unnoticed, and why a model
+    with no relation is named in a note here rather than left to be read as
+    clean. It is absent rather than present-and-empty because the values are
+    ``str``: nothing on the far side can say "no relation" except by omission.
+
+    ``built_relation_names`` stays the model names. Upstream's own conformance
+    contract holds it to the transform layer's model list, which a relation's
+    table name can differ from.
     """
 
     try:
@@ -486,6 +504,7 @@ def to_project_definitions(declarations: ProjectDeclarations) -> Any:
             f"{len(widened)} multi-column join(s) omitted, having no "
             f"single-column representation: {listed}"
         )
+    notes.extend(_unplaced_notes(declarations))
 
     return ProjectDefinitions(
         present=not declarations.is_empty,
@@ -497,10 +516,31 @@ def to_project_definitions(declarations: ProjectDeclarations) -> Any:
         declared_keys=keys,
         declared_composite_keys=composite,
         foreign_keys=foreign,
+        model_relations={m.name: m.relation for m in declarations.models if m.relation},
         built_relation_names=sorted(n.lower() for n in declarations.model_names()),
         metric_models=sorted({m.model for m in declarations.semantic_models if m.model}),
         notes=notes,
     )
+
+
+def _unplaced_notes(declarations: ProjectDeclarations) -> list[str]:
+    """The note naming each built model with no relation, or nothing.
+
+    Both arms matter. A project whose every model names its table gets no note,
+    because claiming a gap that is not there is the same defect as hiding one
+    that is, pointing the other way.
+    """
+
+    unplaced = sorted(m.name for m in declarations.models if not m.relation)
+    if not unplaced:
+        return []
+    return [
+        f"{len(unplaced)} built model(s) name no warehouse relation, so they are "
+        f"absent from model_relations and maintain verify judges neither their "
+        f"relation nor their declared keys: {', '.join(unplaced)}. Name the table "
+        f"in the asset's dagster/table_name metadata, or under the 'relations' "
+        f"project option"
+    ]
 
 
 class DexProject:
@@ -651,13 +691,15 @@ class EditableDexProject(DexProject):
     names exactly this shape as what it was built for.
 
     **``model`` is the warehouse table, not our model name**, which upstream
-    names as the thing this method is most often gotten wrong on. This format
-    has no table-to-relation mapping - ``ProjectModel.relation`` is ``None`` -
-    so the table name is used as the file stem rather than translated through a
-    guess, compared without regard to case (see :meth:`edit_path`). A project
-    whose declaration file is not named after the table it declares gets no edit
-    and a warning saying so, which is upstream refusing to guess rather than
-    this format writing to the wrong file.
+    names as the thing this method is most often gotten wrong on. Since #179 a
+    model carries its relation where the asset's metadata or the ``relations``
+    option names one, but placement does not translate through it: the table
+    name is used as the file stem, compared without regard to case (see
+    :meth:`edit_path`). Translating would move where a write lands, which is a
+    change to the write path that #179 did not rule. A project whose
+    declaration file is not named after the table it declares gets no edit and
+    a warning saying so, which is upstream refusing to guess rather than this
+    format writing to the wrong file.
 
     **A project that packs several models into one declaration file gets a
     warning, not an edit.** Reconcile reads the model name out of the placed
@@ -901,7 +943,44 @@ def _read_yaml_dir(directory: Any) -> dict[str, str]:
     }
 
 
-def _project_from_artifact(repo_root: str | None, options: Mapping[str, Any]) -> DexProject:
+def _relations_option(options: Mapping[str, Any]) -> dict[str, str] | None:
+    """The ``relations`` option as ``{model: relation}``, or ``None`` when unset.
+
+    Checked here because this is where the value arrives untyped: YAML hands
+    over whatever was written, and a list or a number in place of a mapping
+    would otherwise reach the project as a correction nobody can read. A
+    relation is written as plain dotted parts (``analytics.dim_date``), the
+    form dex-core compares relations in once it has stripped quoting from its
+    own. Whether each name is a model this project builds is checked where the
+    models are known, in :class:`~.project.DagsterProject`.
+    """
+
+    if "relations" not in options:
+        return None
+    value = options["relations"]
+    if not isinstance(value, Mapping):
+        raise ValueError(
+            f"project option 'relations' must map model names to relations, "
+            f"got {type(value).__name__}"
+        )
+    not_text = sorted(
+        str(model)
+        for model, relation in value.items()
+        if not isinstance(model, str) or not isinstance(relation, str)
+    )
+    if not_text:
+        raise ValueError(
+            f"project option 'relations' must map each model name to a relation "
+            f"written as text; it does not for: {', '.join(not_text)}"
+        )
+    return dict(value)
+
+
+def _project_from_artifact(
+    repo_root: str | None,
+    options: Mapping[str, Any],
+    relations: Mapping[str, str] | None,
+) -> DexProject:
     """Build from a serialized project rather than from a live graph.
 
     **A missing artifact is refused, not treated as an empty project.** The
@@ -944,6 +1023,11 @@ def _project_from_artifact(repo_root: str | None, options: Mapping[str, Any]) ->
     is, and it matters more: read as "nothing is editable" it would decline the
     write tier on a typo, and a declined tier looks exactly like a format that
     never had one.
+
+    **``relations`` overrides the relations the artifact carries**, per model,
+    exactly as it overrides the metadata on the graph path. The artifact wrote
+    down what the metadata named when it was reduced; the override is the
+    engine side's correction of that, made without writing the artifact again.
     """
 
     from pathlib import Path  # noqa: PLC0415 - stdlib, kept local for symmetry
@@ -1008,6 +1092,7 @@ def _project_from_artifact(repo_root: str | None, options: Mapping[str, Any]) ->
                 declaration_sources=parsed.declaration_sources,
                 semantic_sources=parsed.semantic_sources,
                 source_declarations=parsed.source_declarations,
+                relations=relations,
             )
         )
 
@@ -1039,6 +1124,7 @@ def _project_from_artifact(repo_root: str | None, options: Mapping[str, Any]) ->
             declaration_sources=declarations,
             semantic_sources=parsed.semantic_sources,
             source_declarations=parsed.source_declarations,
+            relations=relations,
         ),
         declarations_prefix=directory.name,
         extra_notes=superseded,
@@ -1097,6 +1183,20 @@ def project_from_context(context: Any) -> DexProject:
     transport reaches the write tier at all. The supersession is disclosed
     through :meth:`DexProject.notes`. See :func:`_project_from_artifact`.
 
+    **``relations:`` corrects a model's table, beside either source** (#179)::
+
+        project:
+          format: dagster
+          options:
+            assets: my_project.definitions:all_assets
+            relations:
+              fact_orders: analytics.orders_v2
+
+    Each model's relation is read first from its asset's ``dagster/table_name``
+    metadata, and an entry here wins for that model. A model with neither is
+    named in a note on ``definitions()``. An entry naming a model the project
+    does not build is refused, like an unknown option and for the same reason.
+
     **Unknown options are refused by name.** Upstream's own factory contract
     checks for this, and the reasoning is the same one that makes a declined tier
     honest: accepting a setting you do not implement is a claim you cannot keep.
@@ -1140,9 +1240,10 @@ def project_from_context(context: Any) -> DexProject:
         )
 
     repo_root = getattr(context, "repo_root", None)
+    relations = _relations_option(options)
 
     if named == ["artifact"]:
-        return _project_from_artifact(repo_root, options)
+        return _project_from_artifact(repo_root, options, relations)
 
     target = options.get("assets")
     if not isinstance(target, str) or ":" not in target:
@@ -1209,6 +1310,7 @@ def project_from_context(context: Any) -> DexProject:
                 declaration_sources=declarations,
                 semantic_sources=semantics,
                 source_declarations=sources,
+                relations=relations,
             )
         )
 
@@ -1236,6 +1338,7 @@ def project_from_context(context: Any) -> DexProject:
             declaration_sources=declarations,
             semantic_sources=semantics,
             source_declarations=sources,
+            relations=relations,
         ),
         declarations_prefix=directories["declarations"].name,
     )

@@ -72,6 +72,31 @@ major if you depend on the contract.
 
 ### Fixed
 
+- **The `dagster` format names each model's table, so `maintain verify`
+  judges declared keys** (`src/dagster_dex/project.py`,
+  `src/dagster_dex/dex.py`, #179). `to_project_definitions` never filled
+  `ProjectDefinitions.model_relations`, the map verify places a model with, so
+  on this format verify judged no declared key and reported zero findings
+  over broken data while its warning said the checks ran. The reduction now
+  reads each model's relation from its asset's `dagster/table_name` metadata,
+  or the older `dagster/relation_identifier`, the way Dagster's
+  `TableMetadataSet.extract_normalized_table_name` reads it, and
+  `examples/reduce_asset_graph.py` holds the two equal against real Dagster.
+  A new `relations:` project option overrides it per model, beside `assets:`
+  and beside `artifact:`; a name there the project does not build is refused.
+  `DagsterProject` and `EditableDagsterProject` take the same override as a
+  `relations=` keyword. A model with no relation is absent from
+  `model_relations` and named in a note on the definitions.
+  - **What it needs from the engine:** `maintain verify` reads this map
+    through the project format seam from exmergo-dex-core 1.12.5. Below that,
+    in the `~=1.8` range, the map is filled and verify does not judge this
+    format at all.
+  - **What it costs a consumer:** nothing, unless they run verify. A relation
+    naming the wrong table makes verify judge that table, and one naming no
+    table is reported as `no_relation`.
+  - The `engine-ends` and `upstream main` boundary steps now install
+    `duckdb`, which the #179 reproduction in `tests/test_dex_bridge.py` runs
+    on from 1.12.5.
 - **A schema edit for an upper-case table is placed in its lower-case
   declaration** (`src/dagster_dex/dex.py`, #141). `edit_path` used the
   warehouse table's spelling as the file stem, so on Snowflake, which reports

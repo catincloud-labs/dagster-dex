@@ -149,8 +149,8 @@ def _wrapped(**sources) -> DexProject:
 
 #: The warehouse table placement is asked about. It is also a model name here,
 #: which is a property of this fixture rather than of the format: `edit_path`
-#: takes the table as the warehouse spells it, and this format has no
-#: table-to-relation mapping to translate one into the other.
+#: takes the table as the warehouse spells it, and placement does not translate
+#: a table through a model's relation into the model's name.
 _PLACEABLE_TABLE = "dim_date"
 
 

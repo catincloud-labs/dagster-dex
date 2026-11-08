@@ -158,6 +158,22 @@ class TestTheRoundTrip:
             **_sources(),
         )
 
+    def test_a_relation_survives_and_its_absence_survives_as_absence(self):
+        """#179 made the relation load-bearing: it is what `maintain verify`
+        places a model with. Both arms, because a reader that turned a missing
+        relation into an empty string, or into the model name, would round
+        trip the present one perfectly."""
+
+        models = (
+            ProjectModel(name="dim_date", relation="analytics.dim_date"),
+            ProjectModel(name="fact_orders", depends_on=("dim_date",)),
+        )
+        parsed = _round_trip(models=models)
+        assert {m.name: m.relation for m in parsed.models} == {
+            "dim_date": "analytics.dim_date",
+            "fact_orders": None,
+        }
+
     def test_provenance_survives(self):
         parsed = _round_trip()
         assert parsed.generated_at == GENERATED_AT

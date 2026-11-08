@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
@@ -122,6 +123,14 @@ class DagsterProject:
     copied in ``__init__`` and never written again, so a memo cannot go stale
     against its own inputs. Re-reading a changed declaration file means building a
     new instance, which is what ``project_from_context`` does per command anyway.
+
+    **``relations`` overrides a model's relation, per model, and wins** (#179).
+    A model's relation comes first from its asset's own table metadata (see
+    :func:`_table_name`); a written override is how a wrong or missing table
+    name is corrected without touching the asset. An override naming a model
+    these models do not include is refused with :class:`ValueError` rather than
+    dropped: it would change nothing while reading as a working correction, and
+    a typo in a committed file is the likeliest way to write one.
     """
 
     format = "dagster"
@@ -134,8 +143,11 @@ class DagsterProject:
         declaration_sources: Mapping[str, str] | None = None,
         semantic_sources: Mapping[str, str] | None = None,
         source_declarations: Mapping[str, str] | None = None,
+        relations: Mapping[str, str] | None = None,
     ) -> None:
-        self._models = tuple(sorted(models, key=lambda m: m.name))
+        self._models = tuple(
+            sorted(_with_relations(models, relations or {}), key=lambda m: m.name)
+        )
         self._name = name
         self._declaration_sources = dict(declaration_sources or {})
         self._semantic_sources = dict(semantic_sources or {})
@@ -298,6 +310,7 @@ class DagsterProject:
         declaration_sources: Mapping[str, str] | None = None,
         semantic_sources: Mapping[str, str] | None = None,
         source_declarations: Mapping[str, str] | None = None,
+        relations: Mapping[str, str] | None = None,
     ) -> DagsterProject:
         """Reduce a live Dagster asset graph to a project.
 
@@ -324,6 +337,9 @@ class DagsterProject:
         own SQL has no dependency edge to find - so the reduction neither
         derives it nor validates it against the graph beyond noting a reader it
         does not build.
+
+        ``relations`` is applied after the reduction, so it overrides what the
+        metadata named; see the class docstring.
         """
 
         return cls(
@@ -332,6 +348,7 @@ class DagsterProject:
             declaration_sources=declaration_sources,
             semantic_sources=semantic_sources,
             source_declarations=source_declarations,
+            relations=relations,
         )
 
 
@@ -362,18 +379,89 @@ def _reduce_asset_graph(assets: Iterable[_AssetDefinition]) -> list[ProjectModel
         deps_by_key = definition.asset_deps
         metadata_by_key = definition.metadata_by_key
         for key in definition.keys:
-            layer = (metadata_by_key.get(key) or {}).get("layer")
+            metadata = metadata_by_key.get(key) or {}
+            layer = metadata.get("layer")
             models.append(
                 ProjectModel(
                     name=key.path[-1],
                     depends_on=tuple(
                         sorted(p.path[-1] for p in deps_by_key.get(key, ()))
                     ),
+                    relation=_table_name(metadata),
                     layer=str(layer).lower() if layer else None,
                 )
             )
 
     return models
+
+
+#: Where Dagster names an asset's table, newest spelling first. The second is
+#: read only when the first is ABSENT, whatever the first holds.
+_TABLE_NAME_KEYS = ("dagster/table_name", "dagster/relation_identifier")
+
+
+def _table_name(metadata: Mapping[str, Any]) -> str | None:
+    """The table an asset's metadata names, normalized the way Dagster does.
+
+    This is ``TableMetadataSet.extract_normalized_table_name`` (dagster 1.13.29,
+    ``_core/definitions/metadata/metadata_set.py``) read by key rather than
+    called, because nothing in this module imports the orchestrator (see the
+    module docstring). ``examples/reduce_asset_graph.py`` holds the two readings
+    equal against real Dagster, case by case, which is what makes copying the
+    rule safer than it looks.
+
+    Three steps. ``dagster/table_name`` wins whenever the key is present, even
+    holding nothing; the older ``dagster/relation_identifier`` is read only
+    when it is absent. A metadata value object is unwrapped when what it holds
+    is text, and anything that is not text in the end - a number, a null - is
+    no table. Text is lowercased, and an empty string is no table either.
+
+    ``None`` is the honest answer for an asset that names no table. A relation
+    guessed from the model name would be indistinguishable from a declared one
+    at the point it is consumed (``ProjectModel``'s docstring), so the model is
+    left without one and :func:`~dagster_dex.dex.to_project_definitions` names
+    it in a note.
+    """
+
+    present = [key for key in _TABLE_NAME_KEYS if key in metadata]
+    if not present:
+        return None
+    value = metadata[present[0]]
+    if value is not None and not isinstance(value, str):
+        # A `MetadataValue`, named by shape for the reason this module never
+        # imports one. Dagster unwraps one whose inner value is text.
+        value = getattr(value, "value", None)
+    return value.lower() if isinstance(value, str) and value else None
+
+
+def _with_relations(
+    models: Sequence[ProjectModel], relations: Mapping[str, str]
+) -> list[ProjectModel]:
+    """``models``, each relation replaced where ``relations`` names the model.
+
+    Refuses a name the models do not include, and an empty relation. Both would
+    otherwise change nothing while reading as a correction that was applied.
+    Names match exactly, as declarations match model names: the reduction
+    refuses two names that differ only in case, so a case-blind match would
+    be unambiguous, and it would still be a second spelling rule for one name.
+    """
+
+    built = {model.name for model in models}
+    unknown = sorted(set(relations) - built)
+    if unknown:
+        raise ValueError(
+            f"relations names model(s) this project does not build: "
+            f"{', '.join(unknown)}. Refused rather than ignored, because an "
+            f"override with no model to apply to reads exactly like one that "
+            f"was applied. Names are matched exactly as the graph spells them."
+        )
+    empty = sorted(name for name, relation in relations.items() if not relation)
+    if empty:
+        raise ValueError(f"relations gives an empty relation for: {', '.join(empty)}")
+    return [
+        replace(model, relation=relations[model.name]) if model.name in relations else model
+        for model in models
+    ]
 
 
 class EditableDagsterProject(DagsterProject):
@@ -415,6 +503,7 @@ class EditableDagsterProject(DagsterProject):
         declaration_sources: Mapping[str, str] | None = None,
         semantic_sources: Mapping[str, str] | None = None,
         source_declarations: Mapping[str, str] | None = None,
+        relations: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(
             models,
@@ -422,6 +511,7 @@ class EditableDagsterProject(DagsterProject):
             declaration_sources=declaration_sources,
             semantic_sources=semantic_sources,
             source_declarations=source_declarations,
+            relations=relations,
         )
         self._root = Path(root)
         self._surface = tuple(surface)
@@ -437,6 +527,7 @@ class EditableDagsterProject(DagsterProject):
         declaration_sources: Mapping[str, str] | None = None,
         semantic_sources: Mapping[str, str] | None = None,
         source_declarations: Mapping[str, str] | None = None,
+        relations: Mapping[str, str] | None = None,
     ) -> EditableDagsterProject:
         """The same reduction, plus the two coordinates the write tier needs.
 
@@ -455,6 +546,7 @@ class EditableDagsterProject(DagsterProject):
             declaration_sources=declaration_sources,
             semantic_sources=semantic_sources,
             source_declarations=source_declarations,
+            relations=relations,
         )
 
     # -- tier 3 ---------------------------------------------------------------

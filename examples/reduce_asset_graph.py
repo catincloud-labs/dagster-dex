@@ -38,6 +38,7 @@ pass every positive assertion above them.
 from __future__ import annotations
 
 import dagster as dg
+from dagster._core.definitions.metadata import TableMetadataSet
 
 from dagster_dex import DagsterProject, EditableProject, tier_of
 
@@ -65,6 +66,62 @@ def duplicate_dim_date() -> None:
     """
 
 
+#: Metadata an asset can carry, one case per entry, chosen so each step of the
+#: rule is reached: the newer key, the older one alone, both, a value object
+#: wrapping text and one wrapping something else, empty text, and no key.
+TABLE_NAME_CASES = {
+    "text": {"dagster/table_name": "analytics.dim_date"},
+    "mixed case": {"dagster/table_name": "Analytics.Dim_Date"},
+    "a text value": {"dagster/table_name": dg.MetadataValue.text("Analytics.Dim_Date")},
+    "a path value": {"dagster/table_name": dg.MetadataValue.path("analytics.dim_date")},
+    "the older key": {"dagster/relation_identifier": "analytics.dim_date"},
+    "both keys": {
+        "dagster/table_name": "analytics.new",
+        "dagster/relation_identifier": "analytics.old",
+    },
+    "newer key empty": {
+        "dagster/table_name": None,
+        "dagster/relation_identifier": "analytics.old",
+    },
+    "empty text": {"dagster/table_name": ""},
+    "a number": {"dagster/table_name": 7},
+    "an int value": {"dagster/table_name": dg.MetadataValue.int(7)},
+    "a json value": {"dagster/table_name": dg.MetadataValue.json({"table": "dim_date"})},
+    "a null value": {"dagster/table_name": dg.MetadataValue.null()},
+    "no table key": {"layer": "gold"},
+}
+
+
+def check_the_relation_matches_dagster() -> None:
+    """Each case as a real asset, read both ways from what Dagster hands over.
+
+    **The relation is held equal to Dagster's own rule here** (#179). The
+    reduction reads an asset's table out of its metadata by key, because
+    nothing in the package imports the orchestrator, so the rule it follows is
+    a copy of `TableMetadataSet.extract_normalized_table_name`. A copy can
+    drift from the original, and this is the one place both run on the same
+    objects. That class is not exported from `dagster` itself, so it is
+    imported from the module that defines it: if Dagster moves it, this file
+    fails to import, which is the comparison going red rather than going away.
+    """
+
+    placed = 0
+    for label, metadata in TABLE_NAME_CASES.items():
+
+        @dg.asset(name="table_case", metadata=metadata)
+        def table_case() -> None: ...
+
+        (key,) = table_case.keys
+        theirs = TableMetadataSet.extract_normalized_table_name(table_case.metadata_by_key[key])
+        ours = DagsterProject.from_asset_graph([table_case]).declarations().models[0].relation
+        assert ours == theirs, f"{label}: the reduction read {ours!r}, Dagster reads {theirs!r}"
+        placed += theirs is not None
+
+    # Both arms reached, or the loop above could agree on `None` throughout.
+    assert 0 < placed < len(TABLE_NAME_CASES), placed
+    print(f"relation          : equal to Dagster's rule on {len(TABLE_NAME_CASES)} cases")
+
+
 def main() -> None:
     project = DagsterProject.from_asset_graph([dim_date, fact_sales], name="demo")
     declarations = project.declarations()
@@ -86,6 +143,10 @@ def main() -> None:
     # Folded, so `GOLD` and `gold` are one layer rather than two.
     assert models["fact_sales"].layer == "gold", "metadata case was not folded"
     assert models["dim_date"].layer == "silver"
+
+    # Neither asset names its table, so neither gets one: no guess from the name.
+    assert {m.relation for m in models.values()} == {None}
+    check_the_relation_matches_dagster()
 
     # -- what it declines ---------------------------------------------------
     #
