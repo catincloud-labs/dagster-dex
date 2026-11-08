@@ -1383,6 +1383,12 @@ _NAME_CHARACTER = "A-Za-z0-9_"
 #: The one grain note of verify's that is about columns rather than a model
 #: (``grain_findings``, read in exmergo-dex-core 1.12.5 and 1.17.4).
 _MISSING_COLUMNS = "names a column the relation does not have"
+#: Where dex starts quoting the warehouse: "the warehouse refused <what>",
+#: then the warehouse's message after a colon or an opening parenthesis (read
+#: in `WarehouseQueryError` and `grain_findings`, 1.12.5 and 1.17.4).
+_WAREHOUSE_SAYS = re.compile(r"(the warehouse refused [^(:]*)[(:].*", re.DOTALL)
+#: What `_unplaced_notes` says, found again among the definitions' notes.
+_UNPLACED = "absent from model_relations"
 
 
 @dataclass(frozen=True)
@@ -1404,7 +1410,25 @@ class KeyVerdict:
 
 
 def _unmeasured(claim: str, reason: str) -> KeyVerdict:
-    return KeyVerdict(claim=claim, measured=False, passed=False, reason=reason)
+    return KeyVerdict(claim=claim, measured=False, passed=False, reason=_carried(reason))
+
+
+def _carried(reason: str) -> str:
+    """``reason`` up to where the warehouse's own words would begin.
+
+    dex introduces a warehouse's message as "the warehouse refused ..." and
+    then quotes it, after a colon or in parentheses. That message can quote a
+    row value, which no result may carry, so it is cut there.
+    """
+
+    found = _WAREHOUSE_SAYS.search(reason)
+    if found is None:
+        return reason
+    return (
+        reason[: found.start()]
+        + found.group(1).rstrip()
+        + "; the warehouse's own message is not carried, since it can quote a row value"
+    )
 
 
 def engine_release() -> str:
@@ -1484,7 +1508,6 @@ def open_verify_engine(
 
 
 def verify_declared_keys(
-    project: ProjectSource,
     claims: Sequence[tuple[str, DeclaredKey]],
     open_engine: Callable[[], Any],
 ) -> tuple[KeyVerdict, ...]:
@@ -1493,7 +1516,11 @@ def verify_declared_keys(
 
     ``open_engine`` is called once and its engine used as a context manager,
     so it is closed when verify returns. :func:`open_verify_engine` is the
-    usual one.
+    usual one. **The verdicts are read against the definitions that engine's
+    own project format gives**, not against ``project``: an engine reading a
+    different instance of this format (another ``relations:`` option, another
+    artifact) judged what it read, so a model it could not place is reported
+    not measured rather than read as clean.
 
     **A pass needs every route to "not judged" ruled out**, because verify
     reports a broken key and stays silent on a clean one: its result has no
@@ -1501,14 +1528,28 @@ def verify_declared_keys(
     model's grain check ran (not in ``suppressed``), its model is placed (in
     ``model_relations``, and no ``no_relation`` finding), verify's own
     ``grain_plan`` includes this key (a composite on a model that also declares
-    a single-column key is not checked), no grain note of verify's names the
-    model (its note on columns the relation lacks counts only for a key using
-    one), and no ``grain_broken`` finding matches it. Anything else is not
-    measured, with the reason. A probe dex refuses (its cost gate, its query
-    firewall, or the warehouse), or returns for confirmation instead of
-    running, leaves every key not measured, with dex's message as the reason.
+    a single-column key is not checked), no note of verify's names the model
+    (its note on columns the relation lacks counts only for a key using one),
+    and no ``grain_broken`` finding matches it. Anything else is not measured,
+    with the reason. Any ``DexError`` from verify (its cost gate, its query
+    firewall, the warehouse, a dropped connection) or a probe returned for
+    confirmation leaves every key not measured, with dex's message as the
+    reason.
+
+    **What this reads off verify's notes fails open in one way, stated so it
+    is not assumed:** a note that stopped naming the model would no longer
+    mark it unjudged. A note reworded any other way costs a pass, never grants
+    one; the real-engine tests reach every such note there is a fixture for.
+
+    **A reason never carries the warehouse's own words.** A warehouse error
+    can quote a row value (a cast that failed on it, say), so where dex marks
+    text as the warehouse's ("the warehouse refused ..."), the reason stops
+    there and says the rest is not carried.
     """
 
+    if not claims:
+        # An empty `objects` is every model to verify, so ask nothing at all.
+        return ()
     release = engine_release()
     if _release_tuple(release) < VERIFY_JUDGES_FROM:
         floor = ".".join(str(part) for part in VERIFY_JUDGES_FROM)
@@ -1518,27 +1559,24 @@ def verify_declared_keys(
         )
         return tuple(_unmeasured(claim, reason) for claim, _ in claims)
 
-    from exmergo_dex_core import (  # noqa: PLC0415 - optional dependency
-        BudgetExhaustedError,
-        CostGuardError,
-        QueryRefusedError,
-        WarehouseQueryError,
-    )
+    from exmergo_dex_core import DexError  # noqa: PLC0415 - optional dependency
     from exmergo_dex_core.maintain.verify import (  # noqa: PLC0415 - optional dependency
         grain_plan,
     )
 
-    # The cost gate (a refusal, or a wish for confirmation nobody is there to
-    # give), the spent budget, the query firewall, and the warehouse refusing
-    # a statement dex built. Before dex-core resolved declared columns against
-    # the relation, a key naming a missing column reached the warehouse and
-    # failed there (read at 1.12.5), and every key in the call went with it.
-    stopped = (CostGuardError, BudgetExhaustedError, QueryRefusedError, WarehouseQueryError)
+    # Every engine error, not only the cost gate's: the ruling chose a result
+    # carrying its reason over no result, and a check with no result carries
+    # no metadata. It covers the cost gate (a refusal, or a wish for
+    # confirmation nobody is there to give), the spent budget, the query
+    # firewall, a connection lost mid-run, and the warehouse refusing a
+    # statement dex built - which is how 1.12.5 reports a declared key on a
+    # column the relation lacks, ending verify for every key in the call.
     models = sorted({key.model for _, key in claims})
     try:
         with open_engine() as engine:
             result = engine.verify(models)
-    except stopped as exc:
+            definitions = engine.project_format().definitions()
+    except DexError as exc:
         reason = (
             f"maintain verify was stopped before it judged this key "
             f"({type(exc).__name__}): {exc}"
@@ -1554,10 +1592,8 @@ def verify_declared_keys(
         )
         return tuple(_unmeasured(claim, reason) for claim, _ in claims)
 
-    declarations = project.declarations()
-    definitions = to_project_definitions(declarations)
     plan = grain_plan(definitions, scope={model.lower() for model in models})
-    unplaced = " ".join(_unplaced_notes(declarations))
+    unplaced = " ".join(note for note in definitions.notes if _UNPLACED in note)
     return tuple(
         _judge(claim, key, result, definitions, plan, unplaced)
         for claim, key in claims
@@ -1608,7 +1644,7 @@ def _judge(
             claim=claim,
             measured=True,
             passed=False,
-            reason=str(broken.detail),
+            reason=_carried(str(broken.detail)),
             duplicate_count=count if isinstance(count, int) else None,
         )
     skipped = _skip_reason(key, result, plan, frozenset(definitions.notes))
@@ -1656,10 +1692,13 @@ def _skip_reason(
     for finding in result.findings:
         if finding.code == "no_relation" and _about(finding, key.model):
             return str(finding.detail)
+    # Any note of verify's naming the model, not only one saying "grain": a
+    # note reworded upstream then still costs the pass, unless it stops
+    # naming the model.
     for note in [*result.warnings, *result.notes]:
         if note in own_notes or _spares(note, key):
             continue
-        if "grain" in note.lower() and _names_model(note, key.model):
+        if _names_model(note, key.model):
             return str(note)
     return None
 

@@ -966,7 +966,7 @@ def _assert_gated():
     def must_not_open():
         raise AssertionError("the engine was opened below the floor")
 
-    verdicts = verify_declared_keys(project, claims, must_not_open)
+    verdicts = verify_declared_keys(claims, must_not_open)
     assert [(v.measured, v.passed) for v in verdicts] == [(False, False)] * 3
 
 
@@ -983,6 +983,7 @@ def test_the_verify_surface_the_executor_reads_is_still_there():
     construction = inspect.signature(engine.DexEngine).parameters
     assert {"connector", "connection", "project_format", "confirmed"} <= set(construction)
     assert callable(engine.DexEngine.from_repo)
+    assert callable(engine.DexEngine.project_format)
     assert {"findings", "suppressed", "warnings", "notes", "pending_confirmation", "pending_offer"} <= set(
         VerifyResult.model_fields
     )
@@ -993,6 +994,7 @@ def test_the_verify_surface_the_executor_reads_is_still_there():
     assert issubclass(engine.BudgetExhaustedError, engine.DexError)
     assert issubclass(engine.QueryRefusedError, engine.DexError)
     assert issubclass(engine.WarehouseQueryError, engine.DexError)
+    assert issubclass(engine.ConnectorError, engine.DexError)
 
 
 def test_verify_plans_every_declared_key_under_the_sources_the_executor_reads():
@@ -1064,8 +1066,11 @@ def test_a_real_finding_reaches_its_key_through_the_executors_reading():
         def verify(self, objects=None):
             return self.result
 
+        def project_format(self):
+            return DexProject(project)
+
     def read(result):
-        verdicts = verify_declared_keys(project, claims, lambda: Engine(result))
+        verdicts = verify_declared_keys(claims, lambda: Engine(result))
         return {
             key.model: (v.measured, v.passed, v.duplicate_count)
             for (_, key), v in zip(claims, verdicts)

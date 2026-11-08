@@ -66,6 +66,7 @@ from test_dex_bridge import (  # noqa: E402 - the fixture's module needs the eng
     VERIFY_SEAM_FROM,
     VIOLATIONS,
     _engine_version,
+    _metadata_asset,
 )
 
 # --- a stand-in for the orchestrator ------------------------------------------
@@ -323,7 +324,7 @@ class TestTheHarnessCatchesAnExecutorThatNeverCallsTheEngine:
     ) -> None:
         root = warehouse(tmp_path, violated=False)
 
-        def never_asks(project: Any, claims: Any, open_engine: Any) -> tuple[Any, ...]:
+        def never_asks(claims: Any, open_engine: Any) -> tuple[Any, ...]:
             return tuple(bridge.KeyVerdict(claim=c, measured=True, passed=True) for c, _ in claims)
 
         monkeypatch.setattr(bridge, "verify_declared_keys", never_asks)
@@ -355,6 +356,9 @@ class TestTheHarnessCatchesAnExecutorThatNeverCallsTheEngine:
 
             def verify(self, objects: Any = None) -> Any:
                 return VerifyResult()
+
+            def project_format(self) -> Any:
+                return bridge.DexProject(project)
 
         checks = build_declaration_checks(project, asset_keys(PLACED_ASSETS), open_engine=Unasked)
         results, _ = run(checks)
@@ -504,7 +508,9 @@ class TestUnmeasuredNeverPasses:
         reason = unmeasured(results_by_name["declared_key__order_ref"])
         order_id = results_by_name["declared_key__order_id"]
         if "WarehouseQueryError" in reason:
-            assert "order_ref" in reason
+            # The warehouse's message named the column, and it is cut: it
+            # is the same message that can quote a row value.
+            assert "not carried" in reason
             assert "WarehouseQueryError" in unmeasured(order_id)
         else:
             assert "order_ref" in reason and "fact_orders" in reason
@@ -515,12 +521,17 @@ class TestUnmeasuredNeverPasses:
 
 
 class StandInEngine:
-    """An engine whose ``verify`` raises, or returns, what it is given."""
+    """An engine whose ``verify`` raises, or returns, what it is given, and
+    whose project format reads ``project`` (#179's placed graph unless said)."""
 
     opened = 0
 
-    def __init__(self, outcome: Any) -> None:
+    def __init__(self, outcome: Any, project: Any = None) -> None:
         self.outcome = outcome
+        self.project = project_of(PLACED_ASSETS) if project is None else project
+
+    def project_format(self) -> Any:
+        return bridge.DexProject(self.project)
 
     def __call__(self) -> StandInEngine:
         StandInEngine.opened += 1
@@ -581,7 +592,11 @@ class TestNeverAutoConfirm:
 
         for result in results.values():
             reason = unmeasured(result)
-            assert type(error).__name__ in reason and str(error) in reason
+            assert type(error).__name__ in reason
+            if "the warehouse refused a statement dex built:" in str(error):
+                assert "not carried" in reason and "refused it" not in reason
+            else:
+                assert str(error) in reason
 
     @pytest.mark.parametrize("field", ["pending_confirmation", "pending_offer"])
     def test_a_probe_returned_for_confirmation_leaves_every_key_not_measured(self, field: str) -> None:
@@ -754,8 +769,14 @@ class TestTheBuilder:
 
     @pytest.mark.parametrize(
         "options",
-        [{"repo_root": "."}, {"connector": "duckdb"}, {"connection": object()}, {"confirm_spend": True}],
-        ids=["repo_root", "connector", "connection", "confirm_spend"],
+        [
+            {"repo_root": "."},
+            {"connector": "duckdb"},
+            {"connection": object()},
+            {"connection": 0},
+            {"confirm_spend": True},
+        ],
+        ids=["repo_root", "connector", "connection", "connection-equal-to-false", "confirm_spend"],
     )
     def test_open_engine_beside_an_engine_option_is_refused(self, options: dict[str, Any]) -> None:
         with pytest.raises(ValueError, match="cannot be combined with: " + next(iter(options))):
@@ -766,3 +787,177 @@ class TestTheBuilder:
     def test_a_connector_beside_a_repo_root_is_refused(self, tmp_path: Any) -> None:
         with pytest.raises(ValueError, match="pass connector or repo_root, not both"):
             bridge.open_verify_engine(project_of(PLACED_ASSETS), repo_root=tmp_path, connector="duckdb")
+
+
+# --- routes the cold review of the executor's pull request found ------------
+
+
+def a_warehouse(tmp_path: Any, statements: list[str]) -> Any:
+    """`warehouse`, over statements of a test's own rather than #179's."""
+
+    if _engine_version() < VERIFY_SEAM_FROM:
+        pytest.skip("this engine predates maintain verify judging this format")
+    import duckdb
+
+    path = tmp_path / "warehouse.duckdb"
+    connection = duckdb.connect(str(path))
+    try:
+        for statement in statements:
+            connection.execute(statement)
+    finally:
+        connection.close()
+    (tmp_path / ".dex").mkdir()
+    config = {"connector": "duckdb", "duckdb": {"path": str(path)}}
+    (tmp_path / ".dex" / "config.yml").write_text(yaml.safe_dump(config), encoding="utf-8")
+    return tmp_path
+
+
+def unique_on(column: str, *models: str) -> dict[str, str]:
+    """One declaration file per model, each declaring ``column`` unique."""
+
+    return {
+        f"{model}.yml": (
+            f"models:\n  - name: {model}\n    columns:\n"
+            f"      - name: {column}\n        tests: [unique]\n"
+        )
+        for model in models
+    }
+
+
+class TestTheEngineJudgesWhatItRead:
+    def test_an_engine_reading_another_project_does_not_pass_what_it_could_not_place(
+        self, tmp_path: Any
+    ) -> None:
+        """`open_engine`'s engine reads the misplaced graph, where `fact_orders`
+        has no relation, while the checks come from the placed one. Verify
+        judged nothing for `fact_orders`, whose key is broken in this
+        warehouse; read against the checks' project it passed."""
+
+        from exmergo_dex_core import DexEngine
+
+        root = warehouse(tmp_path, violated=True)
+        other = bridge.DexProject(project_of(MISPLACED_ASSETS))
+        checks = build_declaration_checks(
+            project_of(PLACED_ASSETS),
+            asset_keys(PLACED_ASSETS),
+            open_engine=lambda: DexEngine.from_repo(str(root), project_format=other),
+        )
+
+        results, _ = run(checks)
+
+        assert "absent from model_relations" in unmeasured(results["fact_orders"])
+        assert state(results["dim_date"]) == (True, True)
+
+    def test_two_models_keyed_on_one_column_keep_their_own_verdicts(self, tmp_path: Any) -> None:
+        """The model half of the attribution: `id` repeats in `orders_a` only."""
+
+        root = a_warehouse(tmp_path, [
+            "CREATE SCHEMA analytics",
+            "CREATE TABLE analytics.orders_a AS SELECT i AS id FROM range(1, 11) t(i)",
+            "INSERT INTO analytics.orders_a VALUES (3), (4)",
+            "CREATE TABLE analytics.orders_b AS SELECT i AS id FROM range(1, 11) t(i)",
+        ])
+        assets = [
+            _metadata_asset("orders_a", table="analytics.orders_a"),
+            _metadata_asset("orders_b", table="analytics.orders_b"),
+        ]
+        checks = build_declaration_checks(
+            project_of(assets, unique_on("id", "orders_a", "orders_b")), asset_keys(assets), repo_root=root
+        )
+
+        results, _ = run(checks)
+
+        assert state(results["orders_a"]) == (True, False)
+        assert results["orders_a"].metadata[DUPLICATE_COUNT] == 2
+        assert state(results["orders_b"]) == (True, True)
+
+    def test_a_relation_two_schemas_hold_is_not_measured(self, tmp_path: Any) -> None:
+        """Verify's note that no single relation matched, reached on a real
+        engine: `fact_orders` names its table with no schema, and two hold one."""
+
+        root = a_warehouse(tmp_path, [
+            "CREATE SCHEMA analytics",
+            "CREATE SCHEMA staging",
+            "CREATE TABLE analytics.fact_orders AS SELECT i AS order_id FROM range(1, 11) t(i)",
+            "CREATE TABLE staging.fact_orders AS SELECT i AS order_id FROM range(1, 11) t(i)",
+        ])
+        assets = [_metadata_asset("fact_orders", table="fact_orders")]
+        checks = build_declaration_checks(
+            project_of(assets, unique_on("order_id", "fact_orders")), asset_keys(assets), repo_root=root
+        )
+
+        results, _ = run(checks)
+
+        assert "fact_orders" in unmeasured(results["fact_orders"])
+
+
+#: The value a failing cast is made to quote. It must not reach any result.
+ROW_VALUE = "row_value_never_carried"
+
+
+class TestNoRowValueIsCarried:
+    def test_a_warehouse_message_quoting_a_row_value_is_cut_from_the_reason(self, tmp_path: Any) -> None:
+        """`fact_orders` is a view whose cast fails on a row, so the warehouse
+        refuses verify's statement and its message quotes the value. 1.17.4
+        notes the refusal, 1.12.5 raises it; either way the reason stops where
+        dex starts quoting the warehouse."""
+
+        from exmergo_dex_core import DexEngine, WarehouseQueryError
+
+        root = a_warehouse(tmp_path, [
+            "CREATE SCHEMA analytics",
+            f"CREATE TABLE analytics.raw AS SELECT * FROM (VALUES ('7'), ('{ROW_VALUE}')) t(x)",
+            "CREATE VIEW analytics.fact_orders AS SELECT CAST(x AS INTEGER) AS order_id FROM analytics.raw",
+        ])
+        assets = [_metadata_asset("fact_orders", table="analytics.fact_orders")]
+        project = project_of(assets, unique_on("order_id", "fact_orders"))
+
+        # The positive control: dex-core's own text does quote the value, so
+        # its absence below is the cut and not a warehouse that said nothing.
+        try:
+            with DexEngine.from_repo(str(root), project_format=bridge.DexProject(project)) as engine:
+                raw = " ".join(engine.verify(["fact_orders"]).warnings)
+        except WarehouseQueryError as exc:
+            raw = str(exc)
+        assert ROW_VALUE in raw
+
+        results, _ = run(build_declaration_checks(project, asset_keys(assets), repo_root=root))
+
+        reason = unmeasured(results["fact_orders"])
+        assert "the warehouse refused" in reason and "not carried" in reason
+        assert ROW_VALUE not in f"{reason} {results['fact_orders'].metadata}"
+
+
+@pytest.mark.usefixtures("engine_judges")
+class TestEveryEngineErrorIsAResult:
+    def test_an_engine_error_outside_the_cost_gate_is_not_measured_rather_than_no_result(self) -> None:
+        import exmergo_dex_core
+
+        checks = build_declaration_checks(
+            project_of(PLACED_ASSETS),
+            asset_keys(PLACED_ASSETS),
+            open_engine=StandInEngine(exmergo_dex_core.ConnectorError("the connection dropped")),
+        )
+
+        results, _ = run(checks)
+
+        assert len(results) == 3
+        assert all("ConnectorError" in unmeasured(result) for result in results.values())
+
+    def test_an_error_that_is_not_the_engines_still_raises(self) -> None:
+        """The quiet arm: a defect is not dressed up as a reason."""
+
+        checks = build_declaration_checks(
+            project_of(PLACED_ASSETS), asset_keys(PLACED_ASSETS), open_engine=StandInEngine(KeyError("a bug"))
+        )
+
+        with pytest.raises(KeyError):
+            run(checks)
+
+    def test_no_claims_asks_nothing(self) -> None:
+        """An empty `objects` is every model to verify, so nothing is asked."""
+
+        StandInEngine.opened = 0
+
+        assert bridge.verify_declared_keys([], StandInEngine(None)) == ()
+        assert StandInEngine.opened == 0

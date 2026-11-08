@@ -19,7 +19,8 @@ on #180 (comment 6715768229), each held by ``tests/test_executor.py``:
   gate refuses, or wants confirmed, leaves its checks not measured. Spending
   is an opt-in on the builder, and dex's ceilings bind either way.
 - **WARN and non-blocking.** Blocking is an opt-in per claim id.
-- **Metadata carries counts only**, never a row value.
+- **Metadata carries counts only**, never a row value. A reason is dex's
+  text, cut where dex starts quoting the warehouse, whose message can quote one.
 - **Run on a schedule, not on materialization.** The checks carry no
   automation condition; a job selecting them is the caller's to schedule.
 
@@ -445,7 +446,7 @@ def build_declaration_checks(
         selected = [specs[_check_id(key)] for key in context.selected_asset_check_keys]
         selected.sort(key=_check_id)
         claims = [(spec.metadata[CLAIM_ID], keys[spec.metadata[CLAIM_ID]]) for spec in selected]
-        verdicts = dex.verify_declared_keys(project, claims, opener)
+        verdicts = dex.verify_declared_keys(claims, opener)
         for spec, verdict in zip(selected, verdicts, strict=True):
             yield _result(spec, verdict, release)
 
@@ -478,7 +479,11 @@ def _opener(
 
     if open_engine is None:
         return functools.partial(dex.open_verify_engine, project, **engine_options)
-    given = sorted(option for option, value in engine_options.items() if value not in (None, False))
+    given = sorted(
+        option
+        for option, value in engine_options.items()
+        if value is not None and value is not False
+    )
     if given:
         raise ValueError(
             "open_engine replaces how the engine is opened, so it cannot be "
