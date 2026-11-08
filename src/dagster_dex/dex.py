@@ -436,8 +436,11 @@ def to_project_definitions(declarations: ProjectDeclarations) -> Any:
     ``str``: nothing on the far side can say "no relation" except by omission.
 
     ``built_relation_names`` stays the model names. Upstream's own conformance
-    contract holds it to the transform layer's model list, which a relation's
-    table name can differ from.
+    contract requires it to contain every model the transform layer lists, so
+    replacing a name with a relation's table, which can differ from it, would
+    fail that contract. Adding the tables beside the names would pass it, and
+    is not done because explore's orphan down-ranking reads this field and
+    #179 did not rule on it.
     """
 
     try:

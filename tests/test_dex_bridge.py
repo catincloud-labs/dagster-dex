@@ -2338,9 +2338,9 @@ class TestEachModelNamesItsRelation:
         assert _unplaced_notes(to_project_definitions(_placed().declarations())) == []
 
     def test_built_relation_names_stay_the_model_names(self):
-        """Upstream's contract holds `built_relation_names` to the transform
-        layer's models, so a table name that differs from its model's name
-        must not replace it there."""
+        """Upstream's contract requires `built_relation_names` to contain the
+        transform layer's models, so a table name that differs from its
+        model's name must not replace it there."""
 
         project = _placed(("fact_orders", "analytics.orders_v2"))
         definitions = to_project_definitions(project.declarations())
@@ -2399,6 +2399,19 @@ class TestTheRelationsOption:
             "fact_orders": "analytics.fact_orders",
         }
         assert _unplaced_notes(definitions) == []
+
+    def test_the_option_reaches_dex_as_written(self):
+        """Asserted on the map dex reads, not on the model that feeds it
+        (#182's cold review): a fold on the way into `model_relations` would
+        leave every model-level test green."""
+
+        definitions = project_from_context(
+            _context(
+                assets=f"{__name__}:PLACED_ASSETS",
+                relations={"dim_date": "ANALYTICS.Dim_Date"},
+            )
+        ).definitions()
+        assert definitions.model_relations["dim_date"] == "ANALYTICS.Dim_Date"
 
     def test_without_the_option_the_unplaced_model_is_named(self):
         definitions = project_from_context(
@@ -2480,7 +2493,8 @@ class TestTheRelationsOption:
             pytest.param("analytics.dim_date", "must map model names", id="a-string"),
             pytest.param(None, "must map model names", id="written-empty"),
             pytest.param({"dim_date": 7}, "written as text; it does not for: dim_date", id="not-text"),
-            pytest.param({"dim_date": ""}, "empty relation", id="empty-text"),
+            pytest.param({"dim_date": ""}, "empty or blank relation", id="empty-text"),
+            pytest.param({"dim_date": "  "}, "empty or blank relation", id="blank-text"),
         ],
     )
     def test_a_value_it_cannot_read_is_refused(self, value, match):
@@ -2627,8 +2641,9 @@ def _verify(tmp_path, *, violated: bool, assets: str, **options):
 
 class TestVerifyJudgesTheDeclaredKeys:
     """#179's *How we would know it worked*, on the reproduction it sets out:
-    local DuckDB, nothing billed. Red at `bc7fa2e`, where every arm here read
-    zero findings or refused the `relations` option."""
+    local DuckDB, nothing billed. Red at `bc7fa2e` on every arm but the clean
+    one, which read zero findings there as it does here; the others read zero
+    findings or refused the `relations` option."""
 
     def test_the_violated_arm_reports_both_broken_keys_and_nothing_else(self, tmp_path):
         findings, _ = _verify(tmp_path, violated=True, assets="PLACED_ASSETS")

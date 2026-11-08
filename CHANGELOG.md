@@ -54,6 +54,14 @@ major if you depend on the contract.
     step of the `tests` job ran the suite without the engine; `tests` has been
     an aggregate with no such step since 2026-08-18, and the control is the
     `python-floor` job and the first test step of `publish.yml`'s `build`.
+- **A `relations:` project option, and a `relations=` keyword on
+  `DagsterProject`, `EditableDagsterProject` and both `from_asset_graph`s**
+  (#179). Each maps a model name to its warehouse relation, written as plain
+  dotted parts, and wins over what the asset's metadata names for that model.
+  The option is admitted beside `assets:` and beside `artifact:`, where it
+  corrects what the artifact carries without writing it again. A name the
+  project does not build is refused, as is an empty or blank relation. The
+  fix it serves is under *Fixed*.
 
 ### Changed
 
@@ -82,11 +90,9 @@ major if you depend on the contract.
   or the older `dagster/relation_identifier`, the way Dagster's
   `TableMetadataSet.extract_normalized_table_name` reads it, and
   `examples/reduce_asset_graph.py` holds the two equal against real Dagster.
-  A new `relations:` project option overrides it per model, beside `assets:`
-  and beside `artifact:`; a name there the project does not build is refused.
-  `DagsterProject` and `EditableDagsterProject` take the same override as a
-  `relations=` keyword. A model with no relation is absent from
-  `model_relations` and named in a note on the definitions.
+  The `relations` override under *Added* corrects it per model. A model with
+  no relation is absent from `model_relations` and named in a note on the
+  definitions.
   - **What it needs from the engine:** `maintain verify` reads this map
     through the project format seam from exmergo-dex-core 1.12.5. Below that,
     in the `~=1.8` range, the map is filled and verify does not judge this

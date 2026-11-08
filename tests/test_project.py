@@ -1462,7 +1462,19 @@ class TestFromAssetGraph:
 
 
 class _MetadataValue:
-    """Dagster's `TextMetadataValue` by shape: what it holds is on `.value`."""
+    """Dagster's `TextMetadataValue` by shape, and by the package its class is
+    defined in, which is how the reduction tells Dagster's value objects from
+    any other object that happens to hold a `.value`."""
+
+    __module__ = "dagster._core.definitions.metadata.metadata_value"
+
+    def __init__(self, value) -> None:
+        self.value = value
+
+
+class _NotDagsters:
+    """The same shape from outside Dagster. Dagster unwraps only its own
+    `MetadataValue`, so to it this holds no table (#182's cold review)."""
 
     def __init__(self, value) -> None:
         self.value = value
@@ -1506,6 +1518,11 @@ TABLE_NAME_CASES = [
     pytest.param({"dagster/table_name": ""}, None, id="empty-text"),
     pytest.param({"dagster/table_name": 7}, None, id="not-text"),
     pytest.param({"dagster/table_name": _MetadataValue(7)}, None, id="a-value-holding-not-text"),
+    pytest.param(
+        {"dagster/table_name": _NotDagsters("analytics.dim_date")},
+        None,
+        id="a-value-object-from-outside-dagster",
+    ),
     pytest.param({"layer": "gold"}, None, id="no-table-key"),
     pytest.param({}, None, id="no-metadata"),
 ]
@@ -1592,9 +1609,13 @@ class TestTheRelationsOverride:
                 [ProjectModel(name="dim_date")], relations={"Dim_Date": "analytics.dim_date"}
             )
 
-    def test_an_empty_relation_is_refused(self):
-        with pytest.raises(ValueError, match="empty relation"):
-            DagsterProject([ProjectModel(name="dim_date")], relations={"dim_date": ""})
+    @pytest.mark.parametrize("relation", ["", "   "], ids=["empty", "blank"])
+    def test_an_empty_or_blank_relation_is_refused(self, relation):
+        """A blank relation names no table, yet would count as placed and
+        drop out of the note naming unplaced models (#182's cold review)."""
+
+        with pytest.raises(ValueError, match="empty or blank relation for: dim_date"):
+            DagsterProject([ProjectModel(name="dim_date")], relations={"dim_date": relation})
 
     def test_the_editable_class_takes_it_too(self, tmp_path):
         from dagster_dex import EditableDagsterProject

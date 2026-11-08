@@ -416,6 +416,11 @@ def _table_name(metadata: Mapping[str, Any]) -> str | None:
     is text, and anything that is not text in the end - a number, a null - is
     no table. Text is lowercased, and an empty string is no table either.
 
+    **Only Dagster's own value objects are unwrapped**, told apart by the
+    package their class is defined in, since the class itself cannot be named
+    here. Dagster unwraps a ``MetadataValue`` and nothing else, so any other
+    object with a ``.value`` is no table to it, and none here (#182 review).
+
     ``None`` is the honest answer for an asset that names no table. A relation
     guessed from the model name would be indistinguishable from a declared one
     at the point it is consumed (``ProjectModel``'s docstring), so the model is
@@ -428,9 +433,10 @@ def _table_name(metadata: Mapping[str, Any]) -> str | None:
         return None
     value = metadata[present[0]]
     if value is not None and not isinstance(value, str):
-        # A `MetadataValue`, named by shape for the reason this module never
-        # imports one. Dagster unwraps one whose inner value is text.
-        value = getattr(value, "value", None)
+        # A `MetadataValue`, named by shape and by package for the reason this
+        # module never imports one. Dagster unwraps one whose inner value is text.
+        from_dagster = type(value).__module__.partition(".")[0] == "dagster"
+        value = getattr(value, "value", None) if from_dagster else None
     return value.lower() if isinstance(value, str) and value else None
 
 
@@ -439,8 +445,10 @@ def _with_relations(
 ) -> list[ProjectModel]:
     """``models``, each relation replaced where ``relations`` names the model.
 
-    Refuses a name the models do not include, and an empty relation. Both would
-    otherwise change nothing while reading as a correction that was applied.
+    Refuses a name the models do not include, and a relation that is empty or
+    blank. Both would otherwise change nothing useful while reading as a
+    correction that was applied: a blank relation names no table, yet would
+    count as placed and so drop out of the note naming unplaced models.
     Names match exactly, as declarations match model names: the reduction
     refuses two names that differ only in case, so a case-blind match would
     be unambiguous, and it would still be a second spelling rule for one name.
@@ -455,9 +463,11 @@ def _with_relations(
             f"override with no model to apply to reads exactly like one that "
             f"was applied. Names are matched exactly as the graph spells them."
         )
-    empty = sorted(name for name, relation in relations.items() if not relation)
-    if empty:
-        raise ValueError(f"relations gives an empty relation for: {', '.join(empty)}")
+    blank = sorted(name for name, relation in relations.items() if not relation.strip())
+    if blank:
+        raise ValueError(
+            f"relations gives an empty or blank relation for: {', '.join(blank)}"
+        )
     return [
         replace(model, relation=relations[model.name]) if model.name in relations else model
         for model in models

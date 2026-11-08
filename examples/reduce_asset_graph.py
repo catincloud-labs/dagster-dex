@@ -66,9 +66,17 @@ def duplicate_dim_date() -> None:
     """
 
 
+class NotDagsters:
+    """An object holding text on `.value` that is not Dagster's. Dagster stores
+    it as metadata and unwraps only its own value objects, so it names no table."""
+
+    value = "Analytics.Held"
+
+
 #: Metadata an asset can carry, one case per entry, chosen so each step of the
 #: rule is reached: the newer key, the older one alone, both, a value object
-#: wrapping text and one wrapping something else, empty text, and no key.
+#: wrapping text and one wrapping something else, an object that only looks
+#: like one, empty text, and no key.
 TABLE_NAME_CASES = {
     "text": {"dagster/table_name": "analytics.dim_date"},
     "mixed case": {"dagster/table_name": "Analytics.Dim_Date"},
@@ -88,6 +96,7 @@ TABLE_NAME_CASES = {
     "an int value": {"dagster/table_name": dg.MetadataValue.int(7)},
     "a json value": {"dagster/table_name": dg.MetadataValue.json({"table": "dim_date"})},
     "a null value": {"dagster/table_name": dg.MetadataValue.null()},
+    "an object outside dagster": {"dagster/table_name": NotDagsters()},
     "no table key": {"layer": "gold"},
 }
 
