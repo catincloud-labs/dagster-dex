@@ -13,7 +13,54 @@ changes explicitly, because that is the reason a consumer opens this file.
 Before 1.0.0 a minor could carry one; from 1.0.0 one waits for 2.0. Pin the
 major if you depend on the contract.
 
-## Unreleased
+## 1.1.0 - 2026-11-08
+
+Two additions, and the fixes they rest on. `dagster_dex.checks` renders each
+declared key as a Dagster asset check spec, and a `relations:` option names a
+model's warehouse table where its asset's metadata does not. The `dagster`
+format now fills `model_relations`, so `maintain verify` can judge its declared
+keys, and a schema edit for an upper-case table lands in its lower-case
+declaration.
+
+**What it costs to move.** A pin on the major, `dagster-dex~=1.0`, admits
+1.1.0, and nothing 1.0.0 offered is withdrawn. A consumer that uses
+`dagster_dex.checks` or `relations` pins `dagster-dex~=1.1`, since `~=1.0` also
+admits 1.0.0, which has neither. Under SECURITY.md's rule that only the latest
+minor receives fixes, 1.0 receives none from this release on. Three things
+move under a consumer who changes nothing:
+
+- **`maintain verify` judges this format from exmergo-dex-core 1.12.5.** The
+  `[dex]` extra's range stays `~=1.8`. Below 1.12.5 `model_relations` is
+  filled and verify does not judge this format, as under 1.0.0. From 1.12.5 verify
+  judges each declared key on a model whose table is named, so a run that
+  reported nothing over a broken key reports it, and a model whose table
+  nothing names is named in a note (#179, under *Fixed*). A step that gates
+  on verify can go red on data that was already broken.
+- **The check specs are the first of #180's three pull requests.** 1.1.0
+  ships the specs and nothing that runs them: a spec loads into Dagster
+  `Definitions` and carries a claim id, and no executor is in this release.
+  Declared joins get no spec.
+- **One layout that `edit_path` placed is now declined** (#141, under
+  *Fixed*): two declaration files the table could name, differing by case or
+  by suffix. Reconcile stores no plan for that table and reports it as
+  having nowhere to land, where 1.0.0 placed the edit in the file spelled
+  exactly as the table, when one of the two was.
+
+**Why this is a minor and not 2.0.** Nothing here breaks the seam.
+`src/dagster_dex/protocol.py` and `src/dagster_dex/model.py` are the blobs
+1.0.0 shipped: `git rev-parse v1.0.0:src/dagster_dex/protocol.py
+v1.1.0:src/dagster_dex/protocol.py` prints one hash twice, and the same holds
+for `model.py`. Every name 1.0.0 exported is still exported, and `relations=`
+is a keyword-only argument with a default. The #141 decline is the one change
+a consumer could read as breaking, and it is read here as a fix: `edit_path`
+returns `None`, a value it already returned, which the engine reads as
+nowhere to land, and it returns it where two files are equally good evidence
+and 1.0.0 picked one by spelling. No call fails and no type changes; a write
+that was a guess becomes a reported refusal. The engine range and the tested
+pin are where 1.0.0 left them: `git grep -h -o 'core==[0-9][0-9.]*' v1.1.0 |
+sort -u` prints the one version it prints at `v1.0.0`. What moved under
+`src/` and in `pyproject.toml` is listed by `git diff --stat v1.0.0..v1.1.0 --
+src/ pyproject.toml`.
 
 ### Added
 
@@ -90,6 +137,16 @@ major if you depend on the contract.
   before*, below. The cold-review bullet now says the findings comment names
   the model effort the review ran at: medium by default, or another effort
   when one is chosen.
+- **README's *Layout* lists every module, and the `[dagster]` extra's comment
+  names both of its callers.** The layout listed six of the package's eight
+  modules: `artifact.py`, in the package since its first commit, `1e414db`,
+  was never in it, and `checks.py`, which this release adds, was not either.
+  Both are listed now, with what each imports. The comment above the extra in
+  `pyproject.toml` said the orchestrator is needed only by
+  `DagsterProject.from_asset_graph()`, which reduces the definitions it is
+  handed without importing it; `dagster_dex.checks` imports it when it builds
+  a spec, and the comment names both. The layout block is quoted under *How
+  this section read before*, below; the comment is rewritten in place.
 
 ### Fixed
 
@@ -162,7 +219,6 @@ major if you depend on the contract.
   on its `ExploreProjectContract`. Comments only: the syntax tree of each file,
   docstrings removed, is unchanged. Both passages are quoted under *How this
   section read before*, below.
-
 - **Each documented suite command has one home, in `AGENTS.md`.**
   `AGENTS.md`'s block of checks that are not pytest listed two of the three
   `examples/` steps the `suite` job runs, leaving out
@@ -1325,6 +1381,23 @@ entered with `aad89a3` (2026-10-12). Its second sentence read:
 ```markdown
 A pull request body may be corrected in place, with a visible
 dated note saying what changed.
+```
+
+### `README.md`, *Layout, and why the dependencies sit where they do*, the module list
+
+Read dead on 2026-11-08, against `src/dagster_dex/` at `156d0ee`, which holds
+eight modules beside `__init__.py`. Two were missing: `artifact.py`, added in
+the first commit, `1e414db` (2026-08-13), and `checks.py`, added by `e538a8c`
+(#181). The list was six rows from that first commit; its `project.py` row was
+rewritten since, and no row was added. Its block read:
+
+```text
+model.py         the neutral model          stdlib only
+protocol.py      the tiered seam            stdlib only
+declarations.py  input parsing              + pyyaml
+project.py       the reduction, the writer  stdlib only
+conformance.py   the importable contract    + pytest
+dex.py           the dex-core boundary      + exmergo-dex-core, lazily
 ```
 
 ## Why this file names no engine version
