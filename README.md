@@ -192,6 +192,8 @@ model.py         the neutral model          stdlib only
 protocol.py      the tiered seam            stdlib only
 declarations.py  input parsing              + pyyaml
 project.py       the reduction, the writer  stdlib only
+artifact.py      the artifact transport     stdlib only
+checks.py        declared keys as checks    + dagster, lazily
 conformance.py   the importable contract    + pytest
 dex.py           the dex-core boundary      + exmergo-dex-core, lazily
 ```
