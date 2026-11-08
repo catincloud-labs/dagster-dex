@@ -33,8 +33,10 @@ README for the command.
 
 from __future__ import annotations
 
+import inspect
 import os
 import pathlib
+import re
 import tempfile
 
 import pytest
@@ -900,3 +902,187 @@ def test_every_contract_upstream_ships_is_mixed_in_or_explicitly_declined():
         "A decline that outlived its contract is an allowance with nothing "
         "behind it; delete the entry."
     )
+
+
+# --- the executor's second coupling: what it reads off maintain verify (#180) --
+#
+# #180 named the cost: `VerifyResult`'s shape joins the project definitions as
+# something an upstream release can break. These read every name the executor
+# in `dagster_dex.dex` reads, at whatever engine this step installs, so a
+# release that moves one goes red here rather than as a key check reading
+# "not measured" for a reason nobody planted.
+#
+# Below the engine that judges this format the executor reads none of it, and
+# that is asserted rather than skipped: a skipped criterion is a failure here.
+
+#: The #179 reproduction's three keys, as this package declares them.
+_VERIFY_DECLARATIONS = {
+    "declarations/dim_date.yml": (
+        "models:\n  - name: dim_date\n    columns:\n"
+        "      - name: date_key\n        tests: [unique]\n"
+    ),
+    "declarations/dim_store.yml": (
+        "models:\n  - name: dim_store\n    tests:\n"
+        "      - unique_combination_of_columns:\n"
+        "          combination_of_columns: [region, store_code]\n"
+    ),
+    "declarations/fact_orders.yml": (
+        "models:\n  - name: fact_orders\n    columns:\n"
+        "      - name: order_id\n        tests: [unique]\n"
+    ),
+}
+
+
+def _verify_project() -> DagsterProject:
+    return DagsterProject(
+        [
+            ProjectModel(name=name, relation=f"analytics.{name}")
+            for name in ("dim_date", "dim_store", "fact_orders")
+        ],
+        name="verify_surface",
+        declaration_sources=_VERIFY_DECLARATIONS,
+    )
+
+
+def _judges() -> bool:
+    from dagster_dex.dex import VERIFY_JUDGES_FROM, engine_release
+
+    release = tuple(int(part) for part in re.findall(r"\d+", engine_release())[:3])
+    return release >= VERIFY_JUDGES_FROM
+
+
+def _assert_gated():
+    """Below the floor: every key unmeasured, and the engine never opened.
+
+    What each test below asserts instead of skipping on such an engine, since
+    the executor then reads none of the surface it would otherwise hold."""
+
+    from dagster_dex.checks import claim_id
+    from dagster_dex.dex import verify_declared_keys
+
+    project = _verify_project()
+    claims = [(claim_id(key), key) for key in project.declarations().declared_keys]
+
+    def must_not_open():
+        raise AssertionError("the engine was opened below the floor")
+
+    verdicts = verify_declared_keys(claims, must_not_open)
+    assert [(v.measured, v.passed) for v in verdicts] == [(False, False)] * 3
+
+
+def test_the_verify_surface_the_executor_reads_is_still_there():
+    if not _judges():
+        _assert_gated()
+        return
+
+    import exmergo_dex_core as engine
+    from exmergo_dex_core.maintain.drift import DriftFinding
+    from exmergo_dex_core.maintain.results import VerifyResult
+
+    assert "objects" in inspect.signature(engine.DexEngine.verify).parameters
+    construction = inspect.signature(engine.DexEngine).parameters
+    assert {"connector", "connection", "project_format", "confirmed"} <= set(construction)
+    assert callable(engine.DexEngine.from_repo)
+    assert callable(engine.DexEngine.project_format)
+    assert {"findings", "suppressed", "warnings", "notes", "pending_confirmation", "pending_offer"} <= set(
+        VerifyResult.model_fields
+    )
+    assert {"code", "identifier", "detail", "data"} <= set(DriftFinding.model_fields)
+    # What the executor catches as "stopped before judging", and that the
+    # cost gate's wanting confirmation is one of them.
+    assert issubclass(engine.ConfirmationRequiredError, engine.CostGuardError)
+    assert issubclass(engine.BudgetExhaustedError, engine.DexError)
+    assert issubclass(engine.QueryRefusedError, engine.DexError)
+    assert issubclass(engine.WarehouseQueryError, engine.DexError)
+    assert issubclass(engine.ConnectorError, engine.DexError)
+
+
+def test_verify_plans_every_declared_key_under_the_sources_the_executor_reads():
+    """`grain_plan` over this format's definitions names each declared key,
+    under the two sources the executor attributes a finding by. A source
+    renamed upstream would leave every key unattributed: never failed, so a
+    broken key would read as not measured."""
+
+    if not _judges():
+        _assert_gated()
+        return
+
+    from exmergo_dex_core.maintain.verify import grain_plan
+
+    from dagster_dex.dex import to_project_definitions
+
+    plan = grain_plan(to_project_definitions(_verify_project().declarations()))
+
+    assert {
+        model: [(sorted(c.columns), c.source) for c in candidates]
+        for model, candidates in plan.items()
+    } == {
+        "dim_date": [(["date_key"], "unique_test")],
+        "dim_store": [(["region", "store_code"], "unique_test_composite")],
+        "fact_orders": [(["order_id"], "unique_test")],
+    }
+
+
+def test_a_real_finding_reaches_its_key_through_the_executors_reading():
+    """The types themselves, built as verify builds them, read through the
+    executor's attribution: one broken key fails with its count, the others
+    pass. Its quiet arm is the same call with no finding."""
+
+    if not _judges():
+        _assert_gated()
+        return
+
+    from exmergo_dex_core.maintain.drift import DriftFinding
+    from exmergo_dex_core.maintain.results import VerifyResult
+
+    from dagster_dex.checks import claim_id
+    from dagster_dex.dex import verify_declared_keys
+
+    project = _verify_project()
+    claims = [(claim_id(key), key) for key in project.declarations().declared_keys]
+    broken = DriftFinding(
+        axis="grain",
+        code="grain_broken",
+        identifier="dim_store",
+        detail="'dim_store' declares the combination of region and store_code jointly unique",
+        data={
+            "model": "dim_store",
+            "columns": ["region", "store_code"],
+            "duplicate_count": 2,
+            "source": "unique_test_composite",
+        },
+    )
+
+    class Engine:
+        def __init__(self, result):
+            self.result = result
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def verify(self, objects=None):
+            return self.result
+
+        def project_format(self):
+            return DexProject(project)
+
+    def read(result):
+        verdicts = verify_declared_keys(claims, lambda: Engine(result))
+        return {
+            key.model: (v.measured, v.passed, v.duplicate_count)
+            for (_, key), v in zip(claims, verdicts)
+        }
+
+    assert read(VerifyResult(findings=[broken])) == {
+        "dim_date": (True, True, None),
+        "dim_store": (True, False, 2),
+        "fact_orders": (True, True, None),
+    }
+    assert read(VerifyResult()) == {
+        "dim_date": (True, True, None),
+        "dim_store": (True, True, None),
+        "fact_orders": (True, True, None),
+    }

@@ -44,6 +44,7 @@ from dagster_dex.checks import (
     COLUMNS,
     MODEL,
     DeclarationCheckSpecs,
+    build_declaration_checks,
     claim_id,
     declaration_check_specs,
 )
@@ -442,6 +443,39 @@ class TestClaimIds:
             assert spec.metadata[CLAIM_ID] == claim_id(key)
 
 
+# --- blocking, opted into per claim ------------------------------------------
+
+
+class TestBlocking:
+    """#180's ruling: WARN and non-blocking, with blocking an opt-in per claim."""
+
+    def test_no_spec_blocks_unless_its_claim_is_named(self):
+        assert [spec.blocking for spec in render(SOURCES).specs] == [False, False, False]
+
+    def test_a_named_claim_blocks_and_no_other_does(self):
+        project = DagsterProject.from_asset_graph(
+            [_Definition([key]) for key in ASSETS], declaration_sources=SOURCES
+        )
+        chosen = claim_id(DeclaredKey("fact_orders", ("order_id",)))
+
+        specs = declaration_check_specs(project.declarations(), ASSETS, blocking=[chosen]).specs
+
+        assert {spec.metadata[MODEL]: spec.blocking for spec in specs} == {
+            "fact_orders": True,
+            "dim_store": False,
+            "dim_date": False,
+        }
+
+    def test_a_claim_no_check_carries_is_refused_by_id(self):
+        project = DagsterProject.from_asset_graph(
+            [_Definition([key]) for key in ASSETS], declaration_sources=SOURCES
+        )
+        stray = claim_id(DeclaredKey("fact_orders", ("order_key",)))
+
+        with pytest.raises(ValueError, match=f"no rendered check carries: {stray}"):
+            declaration_check_specs(project.declarations(), ASSETS, blocking=[stray])
+
+
 # --- check names -------------------------------------------------------------
 
 
@@ -535,6 +569,13 @@ _BLOCKED = textwrap.dedent(
         report["specs"] = "built"
     except ImportError as exc:
         report["specs"] = str(exc)
+
+    from dagster_dex.checks import build_declaration_checks
+    try:
+        build_declaration_checks(dagster_dex.DagsterProject([], name="x"), [])
+        report["checks"] = "built"
+    except ImportError as exc:
+        report["checks"] = str(exc)
     print(json.dumps(report))
     """
 )
@@ -555,3 +596,30 @@ class TestTheImport:
         assert report["loaded"] == []
         assert report["claim_id"] == claim_id(DeclaredKey("m", ("c",)))
         assert "[dagster] extra" in report["specs"]
+        assert "[dagster] extra" in report["checks"]
+
+    def test_the_executor_without_the_engine_names_the_dex_extra(self, monkeypatch):
+        """With Dagster present and dex-core not, building the checks refuses at
+        build time, in the code location's load, rather than at every run.
+
+        The distribution's metadata is what is made absent, because that is
+        what the executor reads first: an import blocker alone would leave an
+        installed engine's metadata readable."""
+
+        import importlib.metadata as metadata
+
+        real = metadata.version
+
+        def version(name: str) -> str:
+            if name == "exmergo-dex-core":
+                raise metadata.PackageNotFoundError(name)
+            return real(name)
+
+        monkeypatch.setattr(metadata, "version", version)
+        setattr(sys.modules["dagster"], "multi_asset_check", lambda **_: None)
+        project = DagsterProject.from_asset_graph(
+            [_Definition([key]) for key in ASSETS], declaration_sources=SOURCES
+        )
+
+        with pytest.raises(ImportError, match=r"\[dex\] extra"):
+            build_declaration_checks(project, ASSETS)

@@ -1,10 +1,28 @@
 # Copyright 2026 David Anaya
 # SPDX-License-Identifier: Apache-2.0
-"""Declared keys, rendered as Dagster asset check specs.
+"""Declared keys, rendered as Dagster asset checks and run through dex-core.
 
-The first of three pieces of #180: the specs alone. Nothing here runs a check.
-The executor that runs them through dex-core, and the documents and example,
-come after it.
+Two of the three pieces of #180. :func:`declaration_check_specs` renders the
+specs, engine-free. :func:`build_declaration_checks` is the executor: one
+``multi_asset_check`` that runs the specs through dex-core's public
+``DexEngine.verify``, so each check keeps one implementation, in dex-core. The
+documents and example come after it.
+
+**The executor never touches the engine here.** Everything that does is in
+:mod:`.dex`, which is the one module allowed to: this module hands it the
+claims and receives one plain verdict per claim back. Defaults the owner ruled
+on #180 (comment 6715768229), each held by ``tests/test_executor.py``:
+
+- **A claim the engine did not measure never reports as passed.** It is a WARN
+  result with ``measured`` False and dex-core's reason in its metadata.
+- **Nothing confirms a priced probe on a run's behalf.** A probe dex's cost
+  gate refuses, or wants confirmed, leaves its checks not measured. Spending
+  is an opt-in on the builder, and dex's ceilings bind either way.
+- **WARN and non-blocking.** Blocking is an opt-in per claim id.
+- **Metadata carries counts only**, never a row value. A reason is dex's
+  text, cut where dex starts quoting the warehouse, whose message can quote one.
+- **Run on a schedule, not on materialization.** The checks carry no
+  automation condition; a job selecting them is the caller's to schedule.
 
 **Keys only.** The owner ruled on #180 that a declared join gets no check while
 dex-core judges no declared join for this project format. A check that could
@@ -37,26 +55,35 @@ under a new prefix, does not make it a different claim.
 
 from __future__ import annotations
 
+import functools
 import json
+import os
 import re
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .declarations import _key_identity
 from .model import DeclaredJoin, DeclaredKey, ProjectDeclarations, definition_hash
+from .protocol import ProjectSource
 
 if TYPE_CHECKING:  # pragma: no cover - type-only imports
-    from dagster import AssetCheckSpec
+    from dagster import AssetCheckSpec, AssetChecksDefinition
 
+    from .dex import KeyVerdict
     from .project import _AssetKey
 
 __all__ = [
     "CLAIM_ID",
     "COLUMNS",
+    "DUPLICATE_COUNT",
+    "ENGINE",
+    "MEASURED",
     "MODEL",
+    "REASON",
     "DeclarationCheckSpecs",
+    "build_declaration_checks",
     "claim_id",
     "declaration_check_specs",
 ]
@@ -69,6 +96,15 @@ CLAIM_ID = "dagster_dex/claim_id"
 MODEL = "dagster_dex/model"
 #: The declared columns, in the order and case the author wrote them.
 COLUMNS = "dagster_dex/columns"
+
+#: On each result: did dex-core judge the claim? False is never a pass.
+MEASURED = "dagster_dex/measured"
+#: On a result that was not measured: why, in dex-core's words where it gave any.
+REASON = "dagster_dex/reason"
+#: On a measured failure: how many rows repeat the key. A count, never a value.
+DUPLICATE_COUNT = "dagster_dex/duplicate_count"
+#: On each result: the engine that answered, as ``exmergo-dex-core <version>``.
+ENGINE = "dagster_dex/engine"
 
 #: Every check name starts with this, so a key check is told apart from a
 #: project's own checks on the same asset, and from a join check if one comes.
@@ -121,6 +157,8 @@ class _Placed:
 def declaration_check_specs(
     declarations: ProjectDeclarations,
     asset_keys: Iterable[_AssetKey],
+    *,
+    blocking: Iterable[str] = (),
 ) -> DeclarationCheckSpecs:
     """One ``AssetCheckSpec`` per declared key, and notes for the rest.
 
@@ -144,6 +182,11 @@ def declaration_check_specs(
 
     A declared key repeating another's claim id is rendered once. Raises
     ``ImportError`` when Dagster is not installed.
+
+    **Every spec is non-blocking unless its claim id is in ``blocking``**, the
+    per-claim opt-in #180's ruling asks for. A claim id there that names no
+    rendered spec is refused with ``ValueError``: an opt-in that silently
+    attached to nothing reads exactly like one that took.
     """
 
     try:
@@ -156,6 +199,13 @@ def declaration_check_specs(
 
     notes: list[str] = []
     placed = _place(declarations.declared_keys, asset_keys, notes)
+    named = _names(placed, notes)
+    blocked = frozenset(blocking)
+    unknown = sorted(blocked - {entry.claim for entry, _ in named})
+    if unknown:
+        raise ValueError(
+            "blocking names claim ids no rendered check carries: " + ", ".join(unknown)
+        )
     specs = tuple(
         AssetCheckSpec(
             name,
@@ -164,13 +214,14 @@ def declaration_check_specs(
                 f"Declared key: {entry.key.model} is unique on "
                 f"({', '.join(entry.key.columns)})."
             ),
+            blocking=entry.claim in blocked,
             metadata={
                 CLAIM_ID: entry.claim,
                 MODEL: entry.key.model,
                 COLUMNS: list(entry.key.columns),
             },
         )
-        for entry, name in _names(placed, notes)
+        for entry, name in named
     )
     notes.extend(_join_notes(declarations.declared_joins))
     return DeclarationCheckSpecs(specs=specs, notes=tuple(notes))
@@ -306,3 +357,164 @@ def _join_notes(joins: Sequence[DeclaredJoin]) -> list[str]:
         "declared joins are not rendered as checks, since dex-core judges no "
         "declared join for this project format yet: " + "; ".join(labels)
     ]
+
+
+# --- the executor ------------------------------------------------------------
+
+
+def build_declaration_checks(
+    project: ProjectSource,
+    asset_keys: Iterable[_AssetKey],
+    *,
+    name: str = "declared_keys",
+    blocking: Iterable[str] = (),
+    repo_root: str | os.PathLike[str] | None = None,
+    connection: Any = None,
+    connector: str | None = None,
+    confirm_spend: bool = False,
+    open_engine: Callable[[], Any] | None = None,
+) -> AssetChecksDefinition:
+    """One ``multi_asset_check`` running every declared key through dex-core.
+
+    The checks are :func:`declaration_check_specs`'s, over
+    ``project.declarations()`` and ``asset_keys``, and the spec layer's notes
+    (each declared join, each key no asset carries) are logged as warnings on
+    every run, so a run's log names what goes unchecked. Each run opens ONE
+    engine, calls ``DexEngine.verify`` once for the models of the selected
+    checks, and yields one result per selected check:
+
+    - **passed** when verify judged the key and found it held;
+    - **failed** when verify found it broken, with :data:`DUPLICATE_COUNT`;
+    - **not measured** otherwise: ``passed`` False, severity WARN,
+      :data:`MEASURED` False and :data:`REASON` set. Never a pass.
+
+    Every result carries :data:`CLAIM_ID`, :data:`MEASURED` and :data:`ENGINE`.
+    Severity is WARN, except a measured failure of a claim in ``blocking``,
+    which is ERROR on a blocking check. An unmeasured blocking claim still
+    warns rather than blocks: a key nobody measured is not evidence it broke.
+
+    The engine is :func:`~.dex.open_verify_engine` over ``project``, with
+    ``repo_root``, ``connection`` (dex-core's ``ConnectionSource``), ``connector``
+    and ``confirm_spend`` passed through; see it for what each binds.
+    ``confirm_spend`` defaults to False, so nothing confirms a priced probe on a
+    scheduled run's behalf. ``open_engine`` replaces the whole of that with a
+    zero-argument callable returning an engine to use as a context manager,
+    and is refused beside any of those four, which it would silently override.
+
+    **Schedule a job selecting these checks**, such as one over
+    ``AssetSelection.checks(...)``. They carry no automation condition, so
+    nothing runs them on materialization unless a run selects them.
+
+    Raises ``ImportError`` without Dagster or without exmergo-dex-core, and
+    ``ValueError`` when no declared key renders to a check.
+    """
+
+    try:
+        from dagster import multi_asset_check  # noqa: PLC0415 - optional dependency
+    except ImportError as exc:
+        raise ImportError(
+            "build_declaration_checks() needs dagster installed; "
+            "install this package with the [dagster] extra"
+        ) from exc
+
+    from . import dex  # noqa: PLC0415 - the engine boundary, imported when used
+
+    release = dex.engine_release()
+    declarations = project.declarations()
+    rendered = declaration_check_specs(declarations, asset_keys, blocking=blocking)
+    if not rendered.specs:
+        raise ValueError(
+            "no declared key renders to a check: " + ("; ".join(rendered.notes) or "none is declared")
+        )
+    opener = _opener(
+        project,
+        open_engine,
+        repo_root=repo_root,
+        connection=connection,
+        connector=connector,
+        confirm_spend=confirm_spend,
+    )
+    keys = {claim_id(key): key for key in declarations.declared_keys}
+    specs = {_check_id(spec): spec for spec in rendered.specs}
+
+    # `context` is unannotated because Dagster refuses every annotation on it
+    # but its own context classes, and refuses those too as the strings this
+    # module's `from __future__ import annotations` makes them.
+    def _declared_keys(context) -> Iterator[Any]:  # type: ignore[no-untyped-def]  # Dagster refuses any annotation on context it cannot match to its own class
+        for note in rendered.notes:
+            context.log.warning(note)
+        selected = [specs[_check_id(key)] for key in context.selected_asset_check_keys]
+        selected.sort(key=_check_id)
+        claims = [(spec.metadata[CLAIM_ID], keys[spec.metadata[CLAIM_ID]]) for spec in selected]
+        verdicts = dex.verify_declared_keys(claims, opener)
+        for spec, verdict in zip(selected, verdicts, strict=True):
+            yield _result(spec, verdict, release)
+
+    # Called rather than applied with `@`: Dagster is an optional import that
+    # the type check cannot see, and a decorator it cannot see would leave the
+    # function untyped.
+    definition: AssetChecksDefinition = multi_asset_check(
+        specs=list(rendered.specs),
+        name=name,
+        can_subset=True,
+        description="Declared keys, judged by dex-core's maintain verify.",
+    )(_declared_keys)
+    return definition
+
+
+def _check_id(check: Any) -> tuple[tuple[str, ...], str]:
+    """A spec or a selected check key, as (asset path, check name)."""
+
+    return tuple(check.asset_key.path), str(check.name)
+
+
+def _opener(
+    project: ProjectSource,
+    open_engine: Callable[[], Any] | None,
+    **engine_options: Any,
+) -> Callable[[], Any]:
+    """``open_engine``, or :func:`~.dex.open_verify_engine` over the options."""
+
+    from . import dex  # noqa: PLC0415 - the engine boundary, imported when used
+
+    if open_engine is None:
+        return functools.partial(dex.open_verify_engine, project, **engine_options)
+    given = sorted(
+        option
+        for option, value in engine_options.items()
+        if value is not None and value is not False
+    )
+    if given:
+        raise ValueError(
+            "open_engine replaces how the engine is opened, so it cannot be "
+            "combined with: " + ", ".join(given)
+        )
+    return open_engine
+
+
+def _result(spec: Any, verdict: KeyVerdict, release: str) -> Any:
+    """One ``AssetCheckResult`` for one verdict. Counts and reasons only."""
+
+    from dagster import (  # noqa: PLC0415 - optional dependency
+        AssetCheckResult,
+        AssetCheckSeverity,
+    )
+
+    metadata: dict[str, Any] = {
+        CLAIM_ID: verdict.claim,
+        MEASURED: verdict.measured,
+        ENGINE: f"exmergo-dex-core {release}",
+    }
+    if not verdict.measured and verdict.reason is not None:
+        metadata[REASON] = verdict.reason
+    if verdict.duplicate_count is not None:
+        metadata[DUPLICATE_COUNT] = verdict.duplicate_count
+    blocks = verdict.measured and not verdict.passed and spec.blocking
+    return AssetCheckResult(
+        asset_key=spec.asset_key,
+        check_name=spec.name,
+        passed=verdict.passed,
+        severity=AssetCheckSeverity.ERROR if blocks else AssetCheckSeverity.WARN,
+        metadata=metadata,
+        description=verdict.reason,
+    )

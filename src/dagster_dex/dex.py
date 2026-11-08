@@ -21,10 +21,13 @@ module scope is not really optional.
 
 from __future__ import annotations
 
+import os
+import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping
 
-from .model import Freshness, ProjectDeclarations
+from .model import DeclaredKey, Freshness, ProjectDeclarations
 from .protocol import ProjectSource, ProposedEdit
 
 if TYPE_CHECKING:  # pragma: no cover - a type-only import
@@ -35,15 +38,20 @@ if TYPE_CHECKING:  # pragma: no cover - a type-only import
     from .project import EditableDagsterProject
 
 __all__ = [
+    "VERIFY_JUDGES_FROM",
     "DexProject",
     "EditableDexProject",
+    "KeyVerdict",
     "ProjectContext",
+    "engine_release",
+    "open_verify_engine",
     "project_from_context",
     "semantic_layer_notes",
     "to_project_definitions",
     "to_semantic_layer",
     "to_transform_layer",
     "transform_layer_notes",
+    "verify_declared_keys",
 ]
 
 #: Every option :func:`project_from_context` understands. Kept as an explicit set
@@ -1345,3 +1353,367 @@ def project_from_context(context: Any) -> DexProject:
         ),
         declarations_prefix=directories["declarations"].name,
     )
+
+
+# --- the executor's engine half: declared keys, judged by maintain verify ----
+#
+# #180's second piece. `checks.build_declaration_checks` owns the Dagster side;
+# everything that touches the engine is here, because this is the one module
+# allowed to. What crosses back is a `KeyVerdict` per claim: plain values, no
+# engine type, so the Dagster side never learns what a `VerifyResult` is.
+
+#: The first engine whose ``maintain verify`` judges a declared key on this
+#: format, measured on #179's DuckDB reproduction and returned on #180: 1.8.0
+#: to 1.9.1 ship no verify, 1.9.2 to 1.12.4 refuse the format before reading
+#: it, and 1.12.5 judges it. A fact about released versions, so it may be
+#: written down. Below it every key is reported not measured, and the engine is
+#: not opened, since there is nothing it could answer.
+VERIFY_JUDGES_FROM = (1, 12, 5)
+
+#: The grain sources a declared key reaches verify as. `to_project_definitions`
+#: sends one column as dex-core's ``DeclaredKey`` and several as its
+#: ``DeclaredCompositeKey``, and verify's ``grain_plan`` labels them so. The
+#: other sources (a declared grain, a primary entity, the naming heuristic)
+#: are claims this package never makes, so a finding under one of them is not
+#: about a declared key.
+_KEY_SOURCES = frozenset({"unique_test", "unique_test_composite"})
+
+#: What a word boundary is in a model name, for reading verify's notes.
+_NAME_CHARACTER = "A-Za-z0-9_"
+#: The one grain note of verify's that is about columns rather than a model
+#: (``grain_findings``, read in exmergo-dex-core 1.12.5 and 1.17.4).
+_MISSING_COLUMNS = "names a column the relation does not have"
+#: Where dex starts quoting the warehouse: "the warehouse refused <what>",
+#: then the warehouse's message after a colon or an opening parenthesis (read
+#: in `WarehouseQueryError` and `grain_findings`, 1.12.5 and 1.17.4).
+_WAREHOUSE_SAYS = re.compile(r"(the warehouse refused [^(:]*)[(:].*", re.DOTALL)
+#: What `_unplaced_notes` says, found again among the definitions' notes.
+_UNPLACED = "absent from model_relations"
+
+
+@dataclass(frozen=True)
+class KeyVerdict:
+    """What one run of ``maintain verify`` says about one declared key.
+
+    ``measured`` is False when verify did not judge the key, and ``reason``
+    then says why, in dex-core's own words wherever it gave any. **``passed``
+    is never True on an unmeasured verdict**: #180's ruling, so a check verify
+    did not run cannot read as one that held. On a measured failure ``reason``
+    is verify's description of it and ``duplicate_count`` its count.
+    """
+
+    claim: str
+    measured: bool
+    passed: bool
+    reason: str | None = None
+    duplicate_count: int | None = None
+
+
+def _unmeasured(claim: str, reason: str) -> KeyVerdict:
+    return KeyVerdict(claim=claim, measured=False, passed=False, reason=_carried(reason))
+
+
+def _carried(reason: str) -> str:
+    """``reason`` up to where the warehouse's own words would begin.
+
+    dex introduces a warehouse's message as "the warehouse refused ..." and
+    then quotes it, after a colon or in parentheses. That message can quote a
+    row value, which no result may carry, so it is cut there.
+    """
+
+    found = _WAREHOUSE_SAYS.search(reason)
+    if found is None:
+        return reason
+    return (
+        reason[: found.start()]
+        + found.group(1).rstrip()
+        + "; the warehouse's own message is not carried, since it can quote a row value"
+    )
+
+
+def engine_release() -> str:
+    """The installed exmergo-dex-core's version, or ``ImportError`` without it.
+
+    Read from the distribution's metadata rather than from a module attribute,
+    because the version decides whether verify is called at all, and the
+    distribution is what a resolver installed.
+    """
+
+    import importlib.metadata as metadata  # noqa: PLC0415 - read only when asked
+
+    try:
+        return metadata.version("exmergo-dex-core")
+    except metadata.PackageNotFoundError as exc:
+        raise ImportError(
+            "the declared-key checks need exmergo-dex-core installed; "
+            "install this package with the [dex] extra"
+        ) from exc
+
+
+def _release_tuple(release: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", release)[:3])
+
+
+def open_verify_engine(
+    project: ProjectSource,
+    *,
+    repo_root: str | os.PathLike[str] | None = None,
+    connection: Any = None,
+    connector: str | None = None,
+    confirm_spend: bool = False,
+) -> Any:
+    """One ``DexEngine`` for one check run, reading ``project`` through this format.
+
+    ``connection`` is dex-core's ``ConnectionSource``: the project's own
+    connection, so the host owns identity. **The cost ceilings stay dex's.**
+    dex builds its cost gate from its own store whoever supplies the
+    connection, so the per-command ceiling and the session ceiling bind as
+    they do on a connection dex discovers itself (the ``DexEngine`` docstring).
+
+    ``repo_root`` reads ``.dex/config.yml`` there, which is where a project
+    states its connector, budget and ceilings, and keeps dex's store there, so
+    a session ceiling accrues across runs. Without it the engine is configured
+    by ``connector`` alone, with a store that lives as long as the engine.
+    Passing both is refused: with a ``repo_root`` the connector is the one the
+    configuration names, and a second answer would be silently overruled by
+    one of them.
+
+    ``confirm_spend`` is passed as ``confirmed``, and is False unless the
+    caller opts in. **Nothing confirms a priced probe on a run's behalf**
+    (#180's ruling on unattended runs): without the opt-in, a probe the cost
+    gate wants confirmed is refused, and its keys report not measured.
+    """
+
+    from exmergo_dex_core import DexEngine  # noqa: PLC0415 - optional dependency
+
+    project_format = DexProject(project)
+    if repo_root is None:
+        return DexEngine(
+            connector=connector,
+            connection=connection,
+            project_format=project_format,
+            confirmed=confirm_spend,
+        )
+    if connector is not None:
+        raise ValueError(
+            "pass connector or repo_root, not both: with repo_root the connector "
+            "is the one .dex/config.yml names"
+        )
+    return DexEngine.from_repo(
+        os.fspath(repo_root),
+        connection=connection,
+        project_format=project_format,
+        confirmed=confirm_spend,
+    )
+
+
+def verify_declared_keys(
+    claims: Sequence[tuple[str, DeclaredKey]],
+    open_engine: Callable[[], Any],
+) -> tuple[KeyVerdict, ...]:
+    """One verdict per ``(claim id, key)``, in order, from ONE call of
+    ``DexEngine.verify`` over the claims' models.
+
+    ``open_engine`` is called once and its engine used as a context manager,
+    so it is closed when verify returns. :func:`open_verify_engine` is the
+    usual one. **The verdicts are read against the definitions that engine's
+    own project format gives**, not against ``project``: an engine reading a
+    different instance of this format (another ``relations:`` option, another
+    artifact) judged what it read, so a model it could not place is reported
+    not measured rather than read as clean.
+
+    **A pass needs every route to "not judged" ruled out**, because verify
+    reports a broken key and stays silent on a clean one: its result has no
+    record of a key that held. So a key is reported passed only when its
+    model's grain check ran (not in ``suppressed``), its model is placed (in
+    ``model_relations``, and no ``no_relation`` finding), verify's own
+    ``grain_plan`` includes this key (a composite on a model that also declares
+    a single-column key is not checked), no note of verify's names the model
+    (its note on columns the relation lacks counts only for a key using one),
+    and no ``grain_broken`` finding matches it. Anything else is not measured,
+    with the reason. Any ``DexError`` from verify (its cost gate, its query
+    firewall, the warehouse, a dropped connection) or a probe returned for
+    confirmation leaves every key not measured, with dex's message as the
+    reason.
+
+    **What this reads off verify's notes fails open in one way, stated so it
+    is not assumed:** a note that stopped naming the model would no longer
+    mark it unjudged. A note reworded any other way costs a pass, never grants
+    one; the real-engine tests reach every such note there is a fixture for.
+
+    **A reason never carries the warehouse's own words.** A warehouse error
+    can quote a row value (a cast that failed on it, say), so where dex marks
+    text as the warehouse's ("the warehouse refused ..."), the reason stops
+    there and says the rest is not carried.
+    """
+
+    if not claims:
+        # An empty `objects` is every model to verify, so ask nothing at all.
+        return ()
+    release = engine_release()
+    if _release_tuple(release) < VERIFY_JUDGES_FROM:
+        floor = ".".join(str(part) for part in VERIFY_JUDGES_FROM)
+        reason = (
+            f"exmergo-dex-core {release} predates maintain verify judging this "
+            f"project format, which it does from {floor}"
+        )
+        return tuple(_unmeasured(claim, reason) for claim, _ in claims)
+
+    from exmergo_dex_core import DexError  # noqa: PLC0415 - optional dependency
+    from exmergo_dex_core.maintain.verify import (  # noqa: PLC0415 - optional dependency
+        grain_plan,
+    )
+
+    # Every engine error, not only the cost gate's: the ruling chose a result
+    # carrying its reason over no result, and a check with no result carries
+    # no metadata. It covers the cost gate (a refusal, or a wish for
+    # confirmation nobody is there to give), the spent budget, the query
+    # firewall, a connection lost mid-run, and the warehouse refusing a
+    # statement dex built - which is how 1.12.5 reports a declared key on a
+    # column the relation lacks, ending verify for every key in the call.
+    models = sorted({key.model for _, key in claims})
+    try:
+        with open_engine() as engine:
+            result = engine.verify(models)
+            definitions = engine.project_format().definitions()
+    except DexError as exc:
+        reason = (
+            f"maintain verify was stopped before it judged this key "
+            f"({type(exc).__name__}): {exc}"
+        )
+        return tuple(_unmeasured(claim, reason) for claim, _ in claims)
+    if result.pending_confirmation is not None or result.pending_offer is not None:
+        # Nothing on this format is offered today: verify prices only scans
+        # that read dbt artifacts. Were a key's count ever moved into one, the
+        # key would be judged by the offer, so an untaken offer leaves it unjudged.
+        reason = (
+            "maintain verify returned a priced probe to confirm rather than "
+            "running it, and no probe is confirmed on a run's behalf"
+        )
+        return tuple(_unmeasured(claim, reason) for claim, _ in claims)
+
+    plan = grain_plan(definitions, scope={model.lower() for model in models})
+    unplaced = " ".join(note for note in definitions.notes if _UNPLACED in note)
+    return tuple(
+        _judge(claim, key, result, definitions, plan, unplaced)
+        for claim, key in claims
+    )
+
+
+def _same_columns(found: Any, declared: Sequence[str]) -> bool:
+    """One column set, read the way the claim id reads it: case and order aside."""
+
+    if not isinstance(found, (list, tuple)):
+        return False
+    return sorted(str(c).lower() for c in found) == sorted(c.lower() for c in declared)
+
+
+def _about(finding: Any, model: str) -> bool:
+    return str(getattr(finding, "identifier", None) or "").lower() == model.lower()
+
+
+def _names_model(text: str, model: str) -> bool:
+    """Does one of verify's notes name ``model`` as a whole word?
+
+    A schema-qualified relation (``analytics.fact_orders``) counts as naming
+    it. The match can only err towards "named", which costs a pass, never
+    towards a pass that should not be.
+    """
+
+    pattern = rf"(?<![{_NAME_CHARACTER}]){re.escape(model)}(?![{_NAME_CHARACTER}])"
+    return re.search(pattern, text, flags=re.IGNORECASE) is not None
+
+
+def _judge(
+    claim: str,
+    key: DeclaredKey,
+    result: Any,
+    definitions: Any,
+    plan: Mapping[str, Any],
+    unplaced: str,
+) -> KeyVerdict:
+    suppressed = result.suppressed.get("grain")
+    if suppressed:
+        return _unmeasured(claim, f"maintain verify suppressed its grain check: {suppressed}")
+    if key.model not in definitions.model_relations:
+        return _unmeasured(claim, unplaced or f"{key.model} is absent from model_relations")
+    broken = _broken(key, result)
+    if broken is not None:
+        count = broken.data.get("duplicate_count")
+        return KeyVerdict(
+            claim=claim,
+            measured=True,
+            passed=False,
+            reason=_carried(str(broken.detail)),
+            duplicate_count=count if isinstance(count, int) else None,
+        )
+    skipped = _skip_reason(key, result, plan, frozenset(definitions.notes))
+    if skipped is not None:
+        return _unmeasured(claim, skipped)
+    return KeyVerdict(claim=claim, measured=True, passed=True)
+
+
+def _broken(key: DeclaredKey, result: Any) -> Any:
+    """The ``grain_broken`` finding about this key, or ``None``."""
+
+    for finding in result.findings:
+        data = finding.data or {}
+        if (
+            finding.code == "grain_broken"
+            and _about(finding, key.model)
+            and data.get("source") in _KEY_SOURCES
+            and _same_columns(data.get("columns"), key.columns)
+        ):
+            return finding
+    return None
+
+
+def _skip_reason(
+    key: DeclaredKey, result: Any, plan: Mapping[str, Any], own_notes: frozenset[str]
+) -> str | None:
+    """Why verify did not judge a key it reported nothing about, or ``None``.
+
+    ``own_notes`` are this format's own, which verify copies into its
+    warnings. They are about the declarations, not about what verify ran, so
+    one mentioning a model's grain says nothing about whether it was judged.
+    """
+
+    candidates = plan.get(key.model, [])
+    if not any(
+        c.source in _KEY_SOURCES and _same_columns(c.columns, key.columns)
+        for c in candidates
+    ):
+        judged = "; ".join(f"({', '.join(c.columns)})" for c in candidates) or "nothing"
+        return (
+            f"maintain verify does not judge this key: its grain plan for "
+            f"{key.model} holds {judged}. It checks a declared composite key "
+            f"only when the model declares no single-column unique key"
+        )
+    for finding in result.findings:
+        if finding.code == "no_relation" and _about(finding, key.model):
+            return str(finding.detail)
+    # Any note of verify's naming the model, not only one saying "grain": a
+    # note reworded upstream then still costs the pass, unless it stops
+    # naming the model.
+    for note in [*result.warnings, *result.notes]:
+        if note in own_notes or _spares(note, key):
+            continue
+        if _names_model(note, key.model):
+            return str(note)
+    return None
+
+
+def _spares(note: str, key: DeclaredKey) -> bool:
+    """Is ``note`` verify's missing-column note, naming none of ``key``'s columns?
+
+    That one note is about columns, not the model: verify skips each declared
+    column the relation lacks and still judges the model's other keys. Every
+    other grain note is about the whole model. Read narrowly on purpose: a
+    note this does not recognise spares nothing, so a rewording upstream costs
+    a pass rather than granting one.
+    """
+
+    if _MISSING_COLUMNS not in note:
+        return False
+    named = {column.strip().lower() for column in note.rsplit(":", 1)[-1].split(",")}
+    return not named & {column.lower() for column in key.columns}
