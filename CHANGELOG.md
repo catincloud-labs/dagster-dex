@@ -17,6 +17,19 @@ major if you depend on the contract.
 
 ### Added
 
+- **Declared keys rendered as Dagster asset check specs**
+  (`dagster_dex.checks`, #180, the first of its three pull requests).
+  `declaration_check_specs(declarations, asset_keys)` returns one
+  `AssetCheckSpec` per declared key, attached to the asset whose key ends in
+  the declared model, carrying a claim id in its metadata: a hash of the
+  key's kind, model and columns, equal across reductions and changed when a
+  declared column is. Declared joins get no spec while dex-core judges none
+  for this format; each one is named in the result's notes, as is a declared
+  key with no asset or several to attach to. Nothing here runs a check yet.
+  Dagster is imported only when a spec is built, so `import dagster_dex`
+  still needs neither it nor dex-core. `examples/reduce_asset_graph.py` now
+  loads the rendered specs into real Dagster `Definitions`, which is where
+  they meet Dagster in CI.
 - **A design document on the translation from Dagster to dex**
   (`docs/design/dagster-to-dex.md`). It describes the three steps from an
   asset graph to dex-core's project types, what each channel loses and which
