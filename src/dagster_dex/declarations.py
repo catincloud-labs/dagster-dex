@@ -264,17 +264,34 @@ def _once(keys: list[DeclaredKey]) -> list[DeclaredKey]:
     composite key written twice. exmergo-dex-core's schema-YAML reader keeps
     one key per model and column, compared as written, and one composite per
     model and set of columns, compared without order or case, across every
-    file it reads, keeping the first. This compares the same way. A key on one
-    column cannot match a composite, which has two or more.
+    file it reads, keeping the first. This compares the same way, by
+    :func:`_key_identity`. A key on one column cannot match a composite, which
+    has two or more.
     """
 
     found: dict[tuple[str, tuple[str, ...]], DeclaredKey] = {}
     for key in keys:
-        columns: tuple[str, ...] = key.columns
-        if len(columns) > 1:
-            columns = tuple(sorted(c.lower() for c in columns))
-        found.setdefault((key.model, columns), key)
+        found.setdefault(_key_identity(key), key)
     return list(found.values())
+
+
+def _key_identity(key: DeclaredKey) -> tuple[str, tuple[str, ...]]:
+    """What makes two declared keys one claim: the model, and the columns
+    compared as :func:`_once` compares them.
+
+    A single column is compared as written. A composite is compared without
+    order or case, so its columns are sorted and lowercased here.
+
+    **One function, because two readers need the same answer.** :func:`_once`
+    reads it to keep one key per claim, and ``dagster_dex.checks`` hashes it
+    into a claim id. Two copies of the rule could disagree, and then two
+    declarations read here as one claim would carry two claim ids there.
+    """
+
+    columns: tuple[str, ...] = key.columns
+    if len(columns) > 1:
+        columns = tuple(sorted(c.lower() for c in columns))
+    return key.model, columns
 
 
 #: The test that declares a model-level composite grain.
