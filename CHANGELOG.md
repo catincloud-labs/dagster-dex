@@ -15,27 +15,36 @@ major if you depend on the contract.
 
 ## 1.1.0 - 2026-11-08
 
-Two additions, and the fixes they rest on. `dagster_dex.checks` renders each
-declared key as a Dagster asset check spec, and a `relations:` option names a
-model's warehouse table where its asset's metadata does not. The `dagster`
-format now fills `model_relations`, so `maintain verify` can judge its declared
-keys, and a schema edit for an upper-case table lands in its lower-case
-declaration.
+Two additions to the package, and the fixes they rest on.
+`dagster_dex.checks` renders each declared key as a Dagster asset check spec,
+and a `relations:` option names a model's warehouse table where its asset's
+metadata does not, or names the wrong one. The `dagster` format now fills
+`model_relations`, so `maintain verify` can judge its declared keys, and a
+schema edit for an upper-case table lands in its lower-case declaration (what
+reaches a plan still depends on the engine; see *Fixed*).
 
 **What it costs to move.** A pin on the major, `dagster-dex~=1.0`, admits
 1.1.0, and nothing 1.0.0 offered is withdrawn. A consumer that uses
 `dagster_dex.checks` or `relations` pins `dagster-dex~=1.1`, since `~=1.0` also
 admits 1.0.0, which has neither. Under SECURITY.md's rule that only the latest
-minor receives fixes, 1.0 receives none from this release on. Three things
+minor receives fixes, 1.0 receives none from this release on. Four things
 move under a consumer who changes nothing:
 
+- **Each model carries its table.** The reduction reads it from the asset's
+  `dagster/table_name` metadata, or the older `dagster/relation_identifier`,
+  lowercased, where 1.0.0 left `ProjectModel.relation` as `None` (#179, under
+  *Fixed*). So where an asset names its table, an artifact regenerated from
+  an unchanged graph differs once from the one 1.0.0 wrote, and the
+  definitions this format hands dex carry a note naming each model with no
+  table, at every engine version.
+  `fingerprint()` does not read the relation, so a drift baseline does not
+  move.
 - **`maintain verify` judges this format from exmergo-dex-core 1.12.5.** The
   `[dex]` extra's range stays `~=1.8`. Below 1.12.5 `model_relations` is
-  filled and verify does not judge this format, as under 1.0.0. From 1.12.5 verify
-  judges each declared key on a model whose table is named, so a run that
-  reported nothing over a broken key reports it, and a model whose table
-  nothing names is named in a note (#179, under *Fixed*). A step that gates
-  on verify can go red on data that was already broken.
+  filled but verify does not judge this format, as it did not under 1.0.0.
+  From 1.12.5 verify judges each declared key on a model whose table is
+  named, so a run that reported nothing over a broken key reports it. A step
+  that gates on verify can go red on data that was already broken.
 - **The check specs are the first of #180's three pull requests.** 1.1.0
   ships the specs and nothing that runs them: a spec loads into Dagster
   `Definitions` and carries a claim id, and no executor is in this release.
@@ -43,8 +52,8 @@ move under a consumer who changes nothing:
 - **One layout that `edit_path` placed is now declined** (#141, under
   *Fixed*): two declaration files the table could name, differing by case or
   by suffix. Reconcile stores no plan for that table and reports it as
-  having nowhere to land, where 1.0.0 placed the edit in the file spelled
-  exactly as the table, when one of the two was.
+  having nowhere to land, where 1.0.0 placed the edit in `<table>.yml` when
+  that file was one of the two.
 
 **Why this is a minor and not 2.0.** Nothing here breaks the seam.
 `src/dagster_dex/protocol.py` and `src/dagster_dex/model.py` are the blobs
@@ -145,8 +154,8 @@ src/ pyproject.toml`.
   `pyproject.toml` said the orchestrator is needed only by
   `DagsterProject.from_asset_graph()`, which reduces the definitions it is
   handed without importing it; `dagster_dex.checks` imports it when it builds
-  a spec, and the comment names both. The layout block is quoted under *How
-  this section read before*, below; the comment is rewritten in place.
+  a spec, and the comment names both. The layout block and the comment are
+  quoted under *How this section read before*, below.
 
 ### Fixed
 
@@ -1398,6 +1407,17 @@ declarations.py  input parsing              + pyyaml
 project.py       the reduction, the writer  stdlib only
 conformance.py   the importable contract    + pytest
 dex.py           the dex-core boundary      + exmergo-dex-core, lazily
+```
+
+### `pyproject.toml`, the comment above the `[dagster]` extra
+
+Read dead on 2026-11-08, against `src/dagster_dex/checks.py` at `156d0ee`,
+which imports the orchestrator when it builds a spec; `e538a8c` (#181) added
+it. `DagsterProject.from_asset_graph()` reduces the definitions it is handed
+without importing it, so the extra serves two callers. It read:
+
+```toml
+# The orchestrator, needed only by DagsterProject.from_asset_graph().
 ```
 
 ## Why this file names no engine version
