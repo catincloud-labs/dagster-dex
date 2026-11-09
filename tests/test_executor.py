@@ -935,8 +935,11 @@ class TestNoRowValueIsCarried:
     def test_an_engine_text_quoting_a_row_value_is_cut_from_the_reason(self, outcome: Any) -> None:
         given = outcome()
 
-        # The positive control: the value is in what the engine says, at every
-        # version, so its absence below is the cut and nothing upstream of it.
+        # The positive control: the value is in what the stand-in engine hands
+        # the executor, unmasked, so it is there for the cut to remove. For the
+        # error this reads dex-core's own `str`, which would show a constructor
+        # that began masking. That the cut is what removes it is shown by
+        # mutating the cut, which turns both arms red (#189's pull request).
         said = str(given) if isinstance(given, BaseException) else " ".join(given.warnings)
         assert ROW_VALUE in said and VALUE_WITHHELD not in said
 
