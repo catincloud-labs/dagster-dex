@@ -195,6 +195,7 @@ project.py       the reduction, the writer  stdlib only
 artifact.py      the artifact transport     stdlib only
 checks.py        declared keys as checks    + dagster, lazily
 conformance.py   the importable contract    + pytest
+planted.py       formats built to fail it   + pyyaml
 dex.py           the dex-core boundary      + exmergo-dex-core, lazily
 ```
 
@@ -279,6 +280,12 @@ on an absent, empty, or malformed project. That is the property a second
 implementation is most likely to get wrong, and a suite checking only shapes
 will pass it.
 
+To watch the contract refuse before trusting its green, wire one of the two
+formats in `dagster_dex.planted` the same way. Each is `DagsterProject` with
+one defect, and fails exactly the tests its docstring names. The design guide's
+[*Watching it refuse*](https://github.com/catincloud-labs/dagster-dex/blob/main/docs/design/implementing-a-format.md#watching-it-refuse)
+lists them.
+
 `make_project` took two arguments before external sources landed. The third
 was a **breaking change to this contract**, taken deliberately before the first
 release, while the suite had no outside implementers, rather than carried
@@ -319,6 +326,7 @@ that way is in the changelog.
 | The built wheel imports, declares its entry point, ships `py.typed` | release workflow |
 | A reconcile proposal becomes a plan, is written through this format, and changes what the project declares | release workflow |
 | A second plan is refused over a human's edit rather than written | release workflow |
+| The shipped contract, run from the built wheel, fails each planted format on exactly its own tests and passes this one | release workflow |
 
 Every row runs from a clean checkout with no access to anything private:
 [AGENTS.md, *Running the suite*](https://github.com/catincloud-labs/dagster-dex/blob/main/AGENTS.md#running-the-suite)

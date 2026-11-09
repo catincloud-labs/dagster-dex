@@ -35,6 +35,26 @@ that only checks shapes will pass it. Hence ``test_*_never_raises``.
 Once this is depended on, the builder names and the assertions are public
 surface: a format pins against them, and renaming one is a breaking change.
 That is worth accepting deliberately rather than discovering later.
+
+**The formats built to make it fail ship beside it,** in
+:mod:`dagster_dex.planted`, so the contract can be watched refusing on the
+same install that runs it against your format.
+
+**What it measures, one line per statement.** Each tier's contract measures
+that tier's protocol in ``protocol.py``, and each line covers what its
+protocol names: the ``ProjectDeclarations`` that ``declarations()`` returns,
+with its ``Freshness``, and the ``EditOutcome`` that ``propose_edits()``
+returns. ``tier_of`` reads the protocols and states nothing of its own, so it
+has no line. The tier-2 contract also calls
+``changed_layers`` on the fingerprint, which the model's ``Fingerprint``
+declares and ``ProjectFingerprint`` does not. The tier-3 contract also calls
+``editing_surface()``, which no protocol in this package declares (dex-core's
+``PlacingProject`` does, in another distribution), so it has no line here.
+
+Measures: src/dagster_dex/protocol.py, ProjectSource
+Measures: src/dagster_dex/protocol.py, FingerprintedProject
+Measures: src/dagster_dex/protocol.py, EditableProject
+Measures: src/dagster_dex/model.py, Fingerprint.changed_layers
 """
 
 from __future__ import annotations

@@ -13,6 +13,48 @@ changes explicitly, because that is the reason a consumer opens this file.
 Before 1.0.0 a minor could carry one; from 1.0.0 one waits for 2.0. Pin the
 major if you depend on the contract.
 
+## Unreleased
+
+### Added
+
+- **`dagster_dex.planted`: two formats built to fail the shipped contract**
+  (`src/dagster_dex/planted.py`, part of #185). `SourceBlindProject`
+  fingerprints the models alone, so a new warehouse dependency is no drift,
+  and `RaisingProject` parses its declarations with no guard, so bad YAML is
+  an exception. Each is `DagsterProject` with that one defect and takes its
+  constructor, and each fails exactly two tests of the tier-2 contract, named
+  in its docstring, while passing the rest. They ship so that an implementer
+  outside this repository can watch the contract refuse in their own
+  environment before trusting it to pass. The module imports no pytest. Its
+  two class names are new public surface, so the release that carries them is
+  a minor.
+- **The contract's module docstring names the statements it measures**
+  (`src/dagster_dex/conformance.py`, part of #187), one `Measures:` line each:
+  the three tiers in `src/dagster_dex/protocol.py`, and
+  `Fingerprint.changed_layers` in `src/dagster_dex/model.py`, which the tier-2
+  contract asserts beyond the protocol. `planted.py` carries a line for the
+  statement each of its defects breaks. A docstring changes nothing at
+  runtime.
+- **`publish.yml`'s `build` job runs the shipped contract from the built
+  wheel** (part of #186). A test module kept outside `tests/`,
+  `scripts/a_format_outside_the_tree.py`, wires the contracts the way the
+  design guide says to, and runs from an empty directory against the wheel,
+  with no engine installed. `scripts/run_the_shipped_contract_from_the_wheel.py`
+  reads each test's outcome: each planted format has to fail exactly its own
+  tests, read first, and `DagsterProject` has to pass the tier-2 and tier-3
+  contracts.
+
+### Changed
+
+- **The contract's calibrations run the shipped formats.** They were two
+  private formats built on the toy `CatalogProject` in
+  `tests/test_a_second_format.py`, each checked against one contract test.
+  They are now in `tests/test_conformance.py`, run every tier-2 contract test
+  against each planted format, and require the failing set to be exactly the
+  one it is built for. The toy format stays, as the design guide's worked
+  example. The paragraphs the move made false are quoted under *How this
+  section read before*, below.
+
 ## 1.1.0 - 2026-11-08
 
 Two additions to the package, and the fixes they rest on.
@@ -1418,6 +1460,34 @@ without importing it, so the extra serves two callers. It read:
 
 ```toml
 # The orchestrator, needed only by DagsterProject.from_asset_graph().
+```
+
+### `docs/design/implementing-a-format.md`, *A worked example*, the paragraph on the calibrations
+
+Read dead on 2026-11-09, against `src/dagster_dex/planted.py` in the change
+that adds it (part of #185), at base `bc003c9`. The two planted formats left
+`tests/test_a_second_format.py` for the package, and the page describes them
+under *Watching it refuse*. It read:
+
+```markdown
+The file ends with two calibrations, because a contract observed only to pass
+has not been shown to be one
+([AGENTS.md, *Verification method*](../../AGENTS.md#verification-method)). One
+plants a fingerprint blind to sources and asserts that the drift assertion
+fails on it; the other plants a format that parses without a guard and asserts
+that the never-raises assertion fails on it. Each runs the same assertion on
+the honest format first.
+```
+
+### `tests/test_a_second_format.py`, its module docstring, the paragraph on the calibrations
+
+Read dead on 2026-11-09, for the same reason and in the same change. It read:
+
+```text
+**The two calibrations at the end are the contract going red.** A contract
+observed only to pass has not been shown to be one, so each plants a defect a
+second format is likely to ship and asserts that the named contract test fails
+on it.
 ```
 
 ## Why this file names no engine version

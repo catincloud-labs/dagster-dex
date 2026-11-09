@@ -2,9 +2,10 @@
 
 - **Status:** living
 - **Describes:** `src/dagster_dex/protocol.py`, `src/dagster_dex/model.py`,
-  `src/dagster_dex/conformance.py`, `src/dagster_dex/dex.py`,
-  `tests/test_a_second_format.py`
-- **Reviewed:** 2026-10-30 at `ec96fe4`; re-read 2026-10-30 at `429d8bb`
+  `src/dagster_dex/conformance.py`, `src/dagster_dex/planted.py`,
+  `src/dagster_dex/dex.py`, `tests/test_a_second_format.py`,
+  `tests/test_conformance.py`, `scripts/a_format_outside_the_tree.py`
+- **Reviewed:** 2026-11-09 at `bb30439`
 
 This page is for someone writing a project format of their own: a reader of
 some other source of project truth that wants to be held to the same seam as
@@ -255,6 +256,8 @@ still raise on an absent project. In groups:
 
 The builder names and the assertions are public surface: a format pins
 against them, and renaming one is a breaking change (the module docstring).
+So are the two formats `dagster_dex.planted` ships, and the tests each one
+fails (the `src/dagster_dex/planted.py` module docstring).
 One builder default is held for the same reason: `a_join_declaration` keeps
 both sides named alike so an outside implementer's suite does not change
 meaning underneath them, and the differently-named case is a separate
@@ -290,14 +293,6 @@ class TestCatalogProjectConformance(FingerprintedProjectContract):
         )
 ```
 
-The file ends with two calibrations, because a contract observed only to pass
-has not been shown to be one
-([AGENTS.md, *Verification method*](../../AGENTS.md#verification-method)). One
-plants a fingerprint blind to sources and asserts that the drift assertion
-fails on it; the other plants a format that parses without a guard and asserts
-that the never-raises assertion fails on it. Each runs the same assertion on
-the honest format first.
-
 It sits in `tests/`, so the engine-free control step runs it. To run it alone,
 from the root of a clone:
 
@@ -305,6 +300,32 @@ from the root of a clone:
 uv run --no-project --with-editable . --with pytest==8.4.1 \
   python -m pytest tests/test_a_second_format.py
 ```
+
+### Watching it refuse
+
+A contract observed only to pass has not been shown to be one
+([AGENTS.md, *Verification method*](../../AGENTS.md#verification-method)), so
+the package ships two formats built wrong on purpose beside it, in
+`src/dagster_dex/planted.py`. Each is `dagster_dex.project.DagsterProject`
+with one defect a second format is likely to ship, and takes its constructor:
+
+| Format | Its defect | The contract tests it fails |
+| --- | --- | --- |
+| `dagster_dex.planted.SourceBlindProject` | fingerprints the models alone, so a new warehouse dependency is no drift | `test_gaining_an_external_source_is_visible_as_drift`, `test_repointing_a_source_to_another_schema_is_drift` |
+| `dagster_dex.planted.RaisingProject` | parses its declarations with no guard, so bad YAML is an exception | `test_malformed_input_never_raises`, `test_malformed_input_is_explained_rather_than_silent` |
+
+Wire one to `dagster_dex.conformance.FingerprintedProjectContract` the way you
+wire your own format, in the same environment, and run it: the tests in its
+row fail and every other assertion passes. Both are tier 2, so they reach the
+tier-1 and tier-2 contracts only, and no planted defect for the write tier
+ships. The module imports no pytest, so it imports wherever the package does.
+
+`tests/test_conformance.py` holds each one to exactly its row on every run.
+`publish.yml`'s `build` job does the same from the built wheel on every pull
+request, through `scripts/a_format_outside_the_tree.py`, a test module kept
+outside `tests/` that wires the contracts the way this page does. Where that
+check is shown to go red is in
+[verification.md, *Where each guard's red arm lives*](verification.md#where-each-guards-red-arm-lives).
 
 ## What the contracts do not prove
 

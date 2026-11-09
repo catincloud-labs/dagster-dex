@@ -25,18 +25,15 @@ could land, so it has no `propose_edits`, and a test asserts the decline with
 note exists where a loss is likely, so a note a format adds for its own reasons
 is the format's to test: loud when the loss happens, quiet when it does not.
 
-**The two calibrations at the end are the contract going red.** A contract
-observed only to pass has not been shown to be one, so each plants a defect a
-second format is likely to ship and asserts that the named contract test fails
-on it.
+**The contract going red is not here.** The two formats built wrong on
+purpose ship in the package, in `dagster_dex.planted`, so an implementer can
+run them from an install; `tests/test_conformance.py` holds each one to the
+tests it is built to fail.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-
-import pytest
-import yaml
 
 from dagster_dex.conformance import (
     FingerprintedProjectContract,
@@ -193,57 +190,3 @@ def test_the_catalog_format_declines_the_write_tier():
     assert tier_of(project) == 2
     assert not isinstance(project, EditableProject)
 
-
-# --- calibration: the contract going red on a planted defect -----------------
-
-
-class _SourceBlindCatalog(CatalogProject):
-    """Fingerprints the catalog alone, so a new warehouse dependency is no drift."""
-
-    def fingerprint(self) -> Fingerprint:
-        full = super().fingerprint()
-        return Fingerprint(
-            layers={"catalog": full.layers["catalog"]}, models=full.models
-        )
-
-
-class _RaisingCatalog(CatalogProject):
-    """Parses its declarations with no guard, so bad YAML is an exception."""
-
-    def declarations(self) -> ProjectDeclarations:
-        for text in self._declaration_sources.values():
-            yaml.safe_load(text)
-        return super().declarations()
-
-
-def test_the_contract_reports_a_fingerprint_blind_to_sources():
-    class Blind(TestCatalogProjectConformance):
-        def make_project(self, declarations, semantics, sources):
-            return _SourceBlindCatalog(
-                CATALOG,
-                name="toy",
-                declaration_sources=declarations,
-                semantic_sources=semantics,
-                source_declarations=sources,
-            )
-
-    # The clean arm first: the same assertion passes on the honest format.
-    TestCatalogProjectConformance().test_gaining_an_external_source_is_visible_as_drift()
-    with pytest.raises(AssertionError):
-        Blind().test_gaining_an_external_source_is_visible_as_drift()
-
-
-def test_the_contract_reports_a_format_that_raises_on_malformed_input():
-    class Raising(TestCatalogProjectConformance):
-        def make_project(self, declarations, semantics, sources):
-            return _RaisingCatalog(
-                CATALOG,
-                name="toy",
-                declaration_sources=declarations,
-                semantic_sources=semantics,
-                source_declarations=sources,
-            )
-
-    TestCatalogProjectConformance().test_malformed_input_never_raises()
-    with pytest.raises(yaml.YAMLError):
-        Raising().test_malformed_input_never_raises()
