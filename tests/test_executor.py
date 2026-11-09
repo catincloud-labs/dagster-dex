@@ -893,14 +893,70 @@ class TestTheEngineJudgesWhatItRead:
 
 #: The value a failing cast is made to quote. It must not reach any result.
 ROW_VALUE = "row_value_never_carried"
+#: The first engine whose warehouse adapters mask a value a refusal quotes,
+#: and what they put in its place (read in exmergo-dex-core 1.17.5, #189).
+VALUE_MASKED_FROM = (1, 17, 5)
+VALUE_WITHHELD = "<value withheld>"
+#: DuckDB's refusal of a failed cast, in the words 1.17.4's verify passes on.
+DUCKDB_REFUSAL = (
+    f"Conversion Error: Could not convert string '{ROW_VALUE}' to INT32 "
+    "when casting from source column x"
+)
+
+
+def _quoting_warning() -> Any:
+    from exmergo_dex_core.maintain.results import VerifyResult
+
+    return VerifyResult(warnings=[
+        "the grain could not be measured for fact_orders: the warehouse "
+        f"refused the distinct-count statement ({DUCKDB_REFUSAL})"
+    ])
+
+
+def _quoting_error() -> Any:
+    from exmergo_dex_core import WarehouseQueryError
+
+    return WarehouseQueryError(DUCKDB_REFUSAL)
 
 
 class TestNoRowValueIsCarried:
+    """No result carries a value the warehouse's message quotes.
+
+    From 1.17.5 dex-core masks that value itself, before any text reaches this
+    package, so a real warehouse no longer shows the cut in `dex.py` doing
+    anything. The stand-in case is what does: its engine quotes the value at
+    every version, so only the cut keeps it out of the result. The warehouse
+    case is kept for what only it reads, dex-core's real wording reaching the
+    cut, with a control that knows which of the two texts to expect.
+    """
+
+    @pytest.mark.usefixtures("engine_judges")
+    @pytest.mark.parametrize("outcome", [_quoting_warning, _quoting_error], ids=["warning", "error"])
+    def test_an_engine_text_quoting_a_row_value_is_cut_from_the_reason(self, outcome: Any) -> None:
+        given = outcome()
+
+        # The positive control: the value is in what the engine says, at every
+        # version, so its absence below is the cut and nothing upstream of it.
+        said = str(given) if isinstance(given, BaseException) else " ".join(given.warnings)
+        assert ROW_VALUE in said and VALUE_WITHHELD not in said
+
+        checks = build_declaration_checks(
+            project_of(PLACED_ASSETS), asset_keys(PLACED_ASSETS), open_engine=StandInEngine(given)
+        )
+        results, _ = run(checks)
+
+        reason = unmeasured(results["fact_orders"])
+        assert "the warehouse refused" in reason and "not carried" in reason
+        for result in results.values():
+            assert ROW_VALUE not in f"{result.description} {result.metadata}"
+
     def test_a_warehouse_message_quoting_a_row_value_is_cut_from_the_reason(self, tmp_path: Any) -> None:
         """`fact_orders` is a view whose cast fails on a row, so the warehouse
-        refuses verify's statement and its message quotes the value. 1.17.4
-        notes the refusal, 1.12.5 raises it; either way the reason stops where
-        dex starts quoting the warehouse."""
+        refuses verify's statement and its message quotes the value. 1.12.5
+        raises the refusal and 1.17.4 notes it; either way the reason stops
+        where dex starts quoting the warehouse. From 1.17.5 dex-core masks the
+        value before it is noted, so here the cut has nothing left to remove,
+        and the stand-in case above is what shows it removes it."""
 
         from exmergo_dex_core import DexEngine, WarehouseQueryError
 
@@ -912,14 +968,19 @@ class TestNoRowValueIsCarried:
         assets = [_metadata_asset("fact_orders", table="analytics.fact_orders")]
         project = project_of(assets, unique_on("order_id", "fact_orders"))
 
-        # The positive control: dex-core's own text does quote the value, so
-        # its absence below is the cut and not a warehouse that said nothing.
+        # The positive control: dex-core's own text says the warehouse refused
+        # and gives its words, the value or (from 1.17.5) its mask, so what is
+        # absent below is not a warehouse that said nothing.
         try:
             with DexEngine.from_repo(str(root), project_format=bridge.DexProject(project)) as engine:
                 raw = " ".join(engine.verify(["fact_orders"]).warnings)
         except WarehouseQueryError as exc:
             raw = str(exc)
-        assert ROW_VALUE in raw
+        assert "the warehouse refused" in raw and "Could not convert string" in raw
+        if _engine_version() < VALUE_MASKED_FROM:
+            assert ROW_VALUE in raw
+        else:
+            assert VALUE_WITHHELD in raw and ROW_VALUE not in raw
 
         results, _ = run(build_declaration_checks(project, asset_keys(assets), repo_root=root))
 
