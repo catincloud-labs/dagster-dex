@@ -12,8 +12,11 @@
   `scripts/file_upstream_red.py`, `scripts/check_readme_excerpt.py`,
   `scripts/drive_dex_against_the_wheel.py`,
   `scripts/drive_the_write_path_against_the_wheel.py`,
+  `scripts/run_the_shipped_contract_from_the_wheel.py`,
+  `scripts/a_format_outside_the_tree.py`, `src/dagster_dex/planted.py`,
   `examples/walk_the_whole_loop.py`
-- **Reviewed:** 2026-10-30 at `19a4088`
+- **Reviewed:** 2026-10-30 at `19a4088`; the sections the shipped planted
+  formats touch re-read 2026-11-09 at `bc003c9`
 
 This page describes how the package's claims are checked today: which job
 holds which claim, what each check can and cannot see, and where each one has
@@ -45,7 +48,7 @@ flowchart LR
     end
 
     subgraph publish["publish.yml"]
-        BUILD["build: control, boundary, wheel, both drivers"]
+        BUILD["build: control, boundary, wheel, both drivers, the shipped contract"]
         REL["publish: only after the tag gate and a reviewer"]
         REH["rehearse: TestPyPI"]
     end
@@ -89,7 +92,7 @@ on a dispatch, though both follow `build`.
 | `engine range`, then `dex-core <version>` | `checks.yml` | The boundary and dex-core's own contract pass at both ends of the published `[dex]` range |
 | `suite` | `checks.yml` | The demonstrated pin; the `py.typed` claim, type-checked against the 3.10 floor; the reduction and the scheduled-artifact sketch against real Dagster objects; the whole loop against a real warehouse; the README's quote of that run |
 | `tests` | `checks.yml` | Every job above it succeeded, read explicitly |
-| `build` | `publish.yml` | The distribution builds, and dex reads and writes a project through the built wheel |
+| `build` | `publish.yml` | The distribution builds, dex reads and writes a project through the built wheel, and the contract the wheel ships refuses the formats built to fail it and passes this one |
 | `dex-core main` | `upstream-main.yml` | The two contract files still pass against the unreleased head of dex-core; says nothing when they do |
 | `pr-hygiene` | `pr-hygiene.yml` | The pull request says how it was verified and carries one `deploy:` label |
 
@@ -292,7 +295,8 @@ assertion from inside a contract this format mixes in.
 
 Two conformance suites judge this format. `tests/test_conformance.py` runs this
 package's own contract, `dagster_dex.conformance`, which checks that the
-neutral model says what was meant. `tests/test_upstream_contract.py` runs
+neutral model says what was meant, and holds the formats `dagster_dex.planted`
+ships to the tests each is built to fail. `tests/test_upstream_contract.py` runs
 dex-core's, which checks that dex-core can safely read and write through it.
 A format can satisfy either alone.
 
@@ -433,6 +437,34 @@ The rule that neither driver is dropped, and the command that runs the
 write-path one, are in
 [AGENTS.md, *The two drivers*](../../AGENTS.md#the-two-drivers-and-why-passing-the-contracts-is-not-enough).
 
+### This package's contract, from the wheel
+
+`tests/test_conformance.py` runs `dagster_dex.conformance` from the working
+tree. An implementer runs it from an install, with a test module of their own,
+so `build` does that too, after both drivers and with no engine installed.
+`scripts/run_the_shipped_contract_from_the_wheel.py` copies
+`scripts/a_format_outside_the_tree.py` into an empty directory, checks that
+the package, the contract and `dagster_dex.planted` import from the install
+rather than the tree, runs pytest there, and reads each test's outcome out of
+a JUnit report.
+
+- **The refusing arm is read first.** Each format `dagster_dex.planted` ships
+  has to fail exactly the tests it is built to fail, with the error it is built
+  to raise, and pass every other test of the tier-2 contract; the three tier-2
+  classes have to run the same tests. Only then is the passing arm read:
+  `DagsterProject` through the tier-2 contract and `EditableDagsterProject`
+  through the tier-3 one, every test green.
+- **What it does not reach.** Both planted formats are tier 2, so the tier-3
+  contract has a passing arm here and no refusing one.
+- **Its red arms.** Measured on 2026-11-09, each against a wheel built from a
+  mutated copy of the tree: correcting `SourceBlindProject`'s fingerprint
+  turned the refusing arm red on its two tests, with `RaisingProject` still
+  red as built; a wheel without `planted.py`, and one without
+  `conformance.py`, were red at the import check, before pytest ran. The same
+  corrected defect turned
+  `tests/test_conformance.py::test_each_planted_defect_fails_exactly_the_tests_it_is_built_to_fail`
+  red for `SourceBlindProject` alone.
+
 ## Claims in prose, held to runs
 
 A document that quotes output, names a command or names a version is making a
@@ -567,6 +599,8 @@ and its red arms are not read here.
 | dex-core's write contracts | The seven mutations above, at both ends of the range | recorded, here |
 | Read-path driver | None found | none |
 | Write-path driver | Pre-write-tier tree and four mutations | recorded, #25; re-run here |
+| `dagster_dex.conformance`, in `tests/test_conformance.py` | The two formats `dagster_dex.planted` ships, each held to the tests it fails; a corrected defect (2026-11-09) | standing, and recorded, here |
+| The shipped contract from the wheel | The same two formats, read per test; a corrected defect and a wheel missing either module (2026-11-09) | standing, and recorded, here |
 | `scripts/check_readme_excerpt.py` | `tests/test_readme_excerpt.py` | standing |
 | The whole loop's impact assertion | The `deps=` edge removed | recorded, `checks.yml` |
 | The other two real-Dagster example steps | None found | none |

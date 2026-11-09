@@ -195,6 +195,7 @@ project.py       the reduction, the writer  stdlib only
 artifact.py      the artifact transport     stdlib only
 checks.py        declared keys as checks    + dagster, lazily
 conformance.py   the importable contract    + pytest
+planted.py       formats built to fail it   + pyyaml
 dex.py           the dex-core boundary      + exmergo-dex-core, lazily
 ```
 
@@ -278,6 +279,12 @@ The assertions that matter most are behavioural: `declarations()` must not raise
 on an absent, empty, or malformed project. That is the property a second
 implementation is most likely to get wrong, and a suite checking only shapes
 will pass it.
+
+To watch the contract refuse before trusting its green, wire one of the two
+formats in `dagster_dex.planted` the same way. Each is `DagsterProject` with
+one defect, and fails exactly the tests its docstring names. The design guide's
+[*Watching it refuse*](https://github.com/catincloud-labs/dagster-dex/blob/main/docs/design/implementing-a-format.md#watching-it-refuse)
+lists them.
 
 `make_project` took two arguments before external sources landed. The third
 was a **breaking change to this contract**, taken deliberately before the first
