@@ -41,7 +41,11 @@ That is worth accepting deliberately rather than discovering later.
 same install that runs it against your format.
 
 **What it measures, one line per statement.** Each tier's contract measures
-that tier's protocol in ``protocol.py``. The tier-2 contract also calls
+that tier's protocol in ``protocol.py``, and each line covers what its
+protocol names: the ``ProjectDeclarations`` that ``declarations()`` returns,
+with its ``Freshness``, and the ``EditOutcome`` that ``propose_edits()``
+returns. ``tier_of`` reads the protocols and states nothing of its own, so it
+has no line. The tier-2 contract also calls
 ``changed_layers`` on the fingerprint, which the model's ``Fingerprint``
 declares and ``ProjectFingerprint`` does not. The tier-3 contract also calls
 ``editing_surface()``, which no protocol in this package declares (dex-core's

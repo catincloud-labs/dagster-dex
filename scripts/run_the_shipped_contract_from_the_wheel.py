@@ -9,9 +9,17 @@ is an install, and the test module is theirs. So this copies
 it there with the interpreter it was started with, and reads each test's
 outcome out of a JUnit report rather than trusting the exit code.
 
+**Isolation is measured in the run it vouches for.** A probe and the pytest
+run both start as `python -I` from the same empty directory, so neither sees
+the current directory, user site or a PYTHON* variable. The probe reports
+where the package, the contract and `dagster_dex.planted` import from, which
+distribution file was installed, and the test names each installed contract
+defines; a module imported from the source tree is red.
+
 **The refusing arm is read first, and a passing arm is not reported until it
-holds.** Each planted defect has to fail exactly the tests it is built to fail,
-with the kind of error it is built to raise, and pass every other one. A
+holds.** Every class has to run exactly the tests its installed contract
+defines. Each planted defect has to fail exactly the tests it is built to
+fail, with the kind of error it is built to raise, and pass every other one. A
 defect that stops failing, or starts failing elsewhere, is red; so is a
 module that fails to import, which is how a wheel missing `conformance.py` or
 `planted.py` shows. Then the passing arm: every test of this package's own
@@ -20,12 +28,13 @@ format passes.
 Run it from the repository root after `uv build`, with no engine installed.
 In Git Bash, as `publish.yml` runs it:
 
-    uv run --no-project --with "./$(ls dist/*.whl)" --with pytest==8.4.1 \
+    uv run --no-project --with "./$(ls dist/*.whl)" --with pytest==8.4.1 \\
       python scripts/run_the_shipped_contract_from_the_wheel.py
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -33,16 +42,20 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
 MODULE = REPO / "scripts" / "a_format_outside_the_tree.py"
 
-#: The tier-2 contract's classes, which must all run the same tests.
+#: The classes wired to the tier-2 contract, and the one wired to tier 3.
 TIER_TWO = ("TestDagsterProject", "TestSourceBlindProject", "TestRaisingProject")
-PASSING = ("TestDagsterProject", "TestEditableDagsterProject")
+TIER_THREE = "TestEditableDagsterProject"
+PASSING = ("TestDagsterProject", TIER_THREE)
 
-#: What each planted defect fails, and a fragment of the failure's message
-#: that names the kind of error. Everything else in its class must pass.
+#: What each planted defect fails, and how the failure's message begins, which
+#: names the kind of error. Everything else in its class must pass. These are
+#: the sets `PLANTED` in `tests/test_conformance.py` holds against the working
+#: tree; both go red if a defect's behaviour moves.
 REFUSING = {
     "TestSourceBlindProject": {
         "test_gaining_an_external_source_is_visible_as_drift": "AssertionError",
@@ -54,6 +67,20 @@ REFUSING = {
     },
 }
 
+#: Run with the same interpreter, flags and directory as the pytest run.
+PROBE = """
+import importlib.metadata as md, json
+import dagster_dex, dagster_dex.conformance as c, dagster_dex.planted
+dist = md.distribution("dagster-dex")
+print(json.dumps({
+    "files": [m.__file__ for m in (dagster_dex, c, dagster_dex.planted)],
+    "version": dist.version,
+    "direct_url": json.loads(dist.read_text("direct_url.json") or "{}").get("url"),
+    "tier_two": sorted(n for n in dir(c.FingerprintedProjectContract) if n.startswith("test_")),
+    "tier_three": sorted(n for n in dir(c.EditableProjectContract) if n.startswith("test_")),
+}))
+"""
+
 Outcome = tuple[str, str]  # (passed | failed | error | skipped, message)
 
 
@@ -63,29 +90,31 @@ def _isolated_env() -> dict[str, str]:
     return env
 
 
-def _where_the_package_resolves(cwd: Path) -> list[str]:
-    """Where `dagster_dex` and its two shipped test modules import from."""
+def _isolated(*args: str) -> list[str]:
+    """``python -I``: no current directory, user site or PYTHON* variables."""
 
-    probe = (
-        "import dagster_dex, dagster_dex.conformance, dagster_dex.planted\n"
-        "for m in (dagster_dex, dagster_dex.conformance, dagster_dex.planted):\n"
-        "    print(m.__file__)\n"
-    )
+    return [sys.executable, "-I", *args]
+
+
+def _probe(cwd: Path) -> dict[str, Any]:
+    """Where the package imports from, what was installed, and the contract's tests."""
+
     done = subprocess.run(
-        [sys.executable, "-I", "-c", probe], cwd=cwd, env=_isolated_env(),
+        _isolated("-c", PROBE), cwd=cwd, env=_isolated_env(),
         capture_output=True, text=True, timeout=120,
     )
     if done.returncode != 0:
         raise SystemExit(f"FAIL: the installed package does not import:\n{done.stderr}")
-    return done.stdout.split()
+    found: dict[str, Any] = json.loads(done.stdout)
+    return found
 
 
 def _run_pytest(cwd: Path, report: Path) -> int:
     # Flushed first, so this script's lines and pytest's stay in order in a log.
     sys.stdout.flush()
     done = subprocess.run(
-        [sys.executable, "-m", "pytest", MODULE.name, "-p", "no:cacheprovider",
-         "-q", "-rfE", "--tb=line", f"--junitxml={report}", f"--rootdir={cwd}"],
+        _isolated("-m", "pytest", MODULE.name, "-p", "no:cacheprovider", "-q", "-rfE",
+                  "--tb=line", f"--junitxml={report}", f"--rootdir={cwd}"),
         cwd=cwd, env=_isolated_env(), timeout=600,
     )
     return done.returncode
@@ -112,15 +141,17 @@ def _outcomes(report: Path) -> dict[str, dict[str, Outcome]]:
     return by_class
 
 
-def _check_shape(by_class: dict[str, dict[str, Outcome]]) -> list[str]:
+def _check_shape(by_class: dict[str, dict[str, Outcome]], probe: dict[str, Any]) -> list[str]:
+    """Every class ran exactly the tests its installed contract defines."""
+
     problems = [f"collected outside any class: {by_class['']}"] if "" in by_class else []
-    for name in (*TIER_TWO, "TestEditableDagsterProject"):
-        if not by_class.get(name):
-            problems.append(f"{name} collected no tests")
-    names = {cls: set(by_class.get(cls, {})) for cls in TIER_TWO}
-    for cls in TIER_TWO[1:]:
-        if names[cls] != names[TIER_TWO[0]]:
-            problems.append(f"{cls} ran other tests than {TIER_TWO[0]}")
+    contracts = {cls: probe["tier_two"] for cls in TIER_TWO}
+    contracts[TIER_THREE] = probe["tier_three"]
+    for cls, wanted in contracts.items():
+        ran = set(by_class.get(cls, {}))
+        if not wanted or ran != set(wanted):
+            problems.append(f"{cls}: ran {len(ran)} of the contract's {len(wanted)} "
+                            f"tests, differing on {sorted(ran ^ set(wanted))}")
     return problems
 
 
@@ -129,7 +160,7 @@ def _check_refusing(by_class: dict[str, dict[str, Outcome]]) -> list[str]:
     for cls, expected in REFUSING.items():
         for test, (outcome, message) in sorted(by_class.get(cls, {}).items()):
             if test in expected:
-                if outcome != "failed" or expected[test] not in message:
+                if outcome != "failed" or not message.startswith(expected[test]):
                     problems.append(f"{cls}.{test}: expected to fail with "
                                     f"{expected[test]!r}, was {outcome}: {message[:200]}")
                 else:
@@ -163,12 +194,13 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as scratch:
         cwd = Path(scratch)
         shutil.copy(MODULE, cwd / MODULE.name)
-        resolved = _where_the_package_resolves(cwd)
-        inside = [f for f in resolved if Path(f).resolve().is_relative_to(REPO)]
+        probe = _probe(cwd)
+        inside = [f for f in probe["files"] if Path(f).resolve().is_relative_to(REPO)]
         if inside:
             _fail("isolation", [f"imported from the source tree: {f}" for f in inside])
+        print(f"dagster-dex {probe['version']}, installed from {probe['direct_url']}")
         print("the package resolves from the install:")
-        for f in resolved:
+        for f in probe["files"]:
             print(f"  {f}")
 
         report = cwd / "report.xml"
@@ -178,9 +210,9 @@ def main() -> None:
         by_class = _outcomes(report)
 
     print("\nshape:")
-    if problems := _check_shape(by_class):
+    if problems := _check_shape(by_class, probe):
         _fail("shape", problems)
-    print(f"  {len(by_class)} classes, the tier-2 three running the same tests")
+    print(f"  {len(by_class)} classes, each running every test of its installed contract")
 
     print("\nrefusing arm, read first:")
     if problems := _check_refusing(by_class):

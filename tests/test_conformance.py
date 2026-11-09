@@ -107,7 +107,9 @@ CONTRACT_TESTS = tuple(
 )
 
 #: What each planted defect is built to fail, and how. Every other contract
-#: test has to pass on it.
+#: test has to pass on it. `REFUSING` in
+#: `scripts/run_the_shipped_contract_from_the_wheel.py` holds the same sets
+#: against the built wheel.
 PLANTED = {
     SourceBlindProject: {
         "test_gaining_an_external_source_is_visible_as_drift": AssertionError,

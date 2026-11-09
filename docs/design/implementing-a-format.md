@@ -5,8 +5,7 @@
   `src/dagster_dex/conformance.py`, `src/dagster_dex/planted.py`,
   `src/dagster_dex/dex.py`, `tests/test_a_second_format.py`,
   `tests/test_conformance.py`, `scripts/a_format_outside_the_tree.py`
-- **Reviewed:** 2026-11-09 at `bc003c9`, with the change that ships
-  `src/dagster_dex/planted.py`
+- **Reviewed:** 2026-11-09 at `bb30439`
 
 This page is for someone writing a project format of their own: a reader of
 some other source of project truth that wants to be held to the same seam as

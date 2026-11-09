@@ -16,7 +16,7 @@
   `scripts/a_format_outside_the_tree.py`, `src/dagster_dex/planted.py`,
   `examples/walk_the_whole_loop.py`
 - **Reviewed:** 2026-10-30 at `19a4088`; the sections the shipped planted
-  formats touch re-read 2026-11-09 at `bc003c9`
+  formats touch re-read 2026-11-09 at `bb30439`
 
 This page describes how the package's claims are checked today: which job
 holds which claim, what each check can and cannot see, and where each one has
@@ -443,10 +443,13 @@ write-path one, are in
 tree. An implementer runs it from an install, with a test module of their own,
 so `build` does that too, after both drivers and with no engine installed.
 `scripts/run_the_shipped_contract_from_the_wheel.py` copies
-`scripts/a_format_outside_the_tree.py` into an empty directory, checks that
-the package, the contract and `dagster_dex.planted` import from the install
-rather than the tree, runs pytest there, and reads each test's outcome out of
-a JUnit report.
+`scripts/a_format_outside_the_tree.py` into an empty directory, runs pytest
+there, and reads each test's outcome out of a JUnit report. A probe started
+with the same `python -I` from the same directory first checks that the
+package, the contract and `dagster_dex.planted` import from the install
+rather than the tree, names the distribution file installed, and reads the
+test names each installed contract defines; every class has to run exactly
+those.
 
 - **The refusing arm is read first.** Each format `dagster_dex.planted` ships
   has to fail exactly the tests it is built to fail, with the error it is built
@@ -457,11 +460,18 @@ a JUnit report.
 - **What it does not reach.** Both planted formats are tier 2, so the tier-3
   contract has a passing arm here and no refusing one.
 - **Its red arms.** Measured on 2026-11-09, each against a wheel built from a
-  mutated copy of the tree: correcting `SourceBlindProject`'s fingerprint
-  turned the refusing arm red on its two tests, with `RaisingProject` still
-  red as built; a wheel without `planted.py`, and one without
-  `conformance.py`, were red at the import check, before pytest ran. The same
-  corrected defect turned
+  mutated copy of the tree unless named otherwise:
+  - correcting `SourceBlindProject`'s fingerprint turned the refusing arm red
+    on its two tests, with `RaisingProject` still red as built, and
+    correcting `RaisingProject`'s parse did the same the other way round;
+  - a wheel without `planted.py`, and one without `conformance.py`, were red
+    at the import check, before pytest ran;
+  - a test module whose `TestRaisingProject` drops one contract test was red
+    on shape, naming the test;
+  - the runner under an editable install of the tree, instead of the wheel,
+    was red on isolation, naming the three modules.
+
+  The corrected `SourceBlindProject` also turned
   `tests/test_conformance.py::test_each_planted_defect_fails_exactly_the_tests_it_is_built_to_fail`
   red for `SourceBlindProject` alone.
 
@@ -600,7 +610,7 @@ and its red arms are not read here.
 | Read-path driver | None found | none |
 | Write-path driver | Pre-write-tier tree and four mutations | recorded, #25; re-run here |
 | `dagster_dex.conformance`, in `tests/test_conformance.py` | The two formats `dagster_dex.planted` ships, each held to the tests it fails; a corrected defect (2026-11-09) | standing, and recorded, here |
-| The shipped contract from the wheel | The same two formats, read per test; a corrected defect and a wheel missing either module (2026-11-09) | standing, and recorded, here |
+| The shipped contract from the wheel | The same two formats, read per test; each defect corrected, a wheel missing either module, a dropped test, an editable install (2026-11-09) | standing, and recorded, here |
 | `scripts/check_readme_excerpt.py` | `tests/test_readme_excerpt.py` | standing |
 | The whole loop's impact assertion | The `deps=` edge removed | recorded, `checks.yml` |
 | The other two real-Dagster example steps | None found | none |

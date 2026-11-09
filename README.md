@@ -326,6 +326,7 @@ that way is in the changelog.
 | The built wheel imports, declares its entry point, ships `py.typed` | release workflow |
 | A reconcile proposal becomes a plan, is written through this format, and changes what the project declares | release workflow |
 | A second plan is refused over a human's edit rather than written | release workflow |
+| The shipped contract, run from the built wheel, fails each planted format on exactly its own tests and passes this one | release workflow |
 
 Every row runs from a clean checkout with no access to anything private:
 [AGENTS.md, *Running the suite*](https://github.com/catincloud-labs/dagster-dex/blob/main/AGENTS.md#running-the-suite)
