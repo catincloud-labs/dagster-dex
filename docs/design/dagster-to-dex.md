@@ -383,9 +383,12 @@ What crosses back from `dex.py` is a `dagster_dex.dex.KeyVerdict` per claim
 nothing about one that held, so a key is reported passed only once every
 route to "not judged" is ruled out (`_judge`, line 1627; `_skip_reason`, line
 1671). The routes, and the one way the note-reading fails open, are in the
-`dagster_dex.dex.verify_declared_keys` docstring. The upstream field that
-would replace that reading is asked for in
-[exmergo/dex#1223](https://github.com/exmergo/dex/issues/1223).
+`dagster_dex.dex.verify_declared_keys` docstring. The field that would
+replace that reading, `VerifyResult.grain_coverage` (one record per declared
+key, asked for in [exmergo/dex#1223](https://github.com/exmergo/dex/issues/1223)),
+ships from exmergo-dex-core 1.17.5. This package does not read it yet: the
+`[dex]` range admits engines without it, so a pass is still read out of
+silence on every engine.
 
 ### The defaults
 
@@ -396,7 +399,7 @@ and held by `tests/test_executor.py`:
 | Default | How it reads in a result | Where |
 | --- | --- | --- |
 | A claim the engine did not measure never reports as passed | `passed` false, severity WARN, `dagster_dex/measured` false, and the reason under `dagster_dex/reason` and as the description | `KeyVerdict` and `_unmeasured`, `dex.py` lines 1395 to 1413 |
-| Nothing confirms a priced probe on a run's behalf | a probe the cost gate refuses or wants confirmed leaves every key in the call not measured, with dex's message; spending is the builder's `confirm_spend` opt-in, and dex's ceilings bind either way | `dex.py` lines 1576 to 1593 |
+| Nothing confirms a priced probe on a run's behalf | a probe the cost gate refuses or wants confirmed leaves every key in the call not measured, with the reason: dex's message for a refusal, and this package's own text for a probe returned to confirm; spending is the builder's `confirm_spend` opt-in, and dex's ceilings bind either way | `dex.py` lines 1576 to 1593 |
 | WARN by default; blocking is an opt-in per claim | ERROR only for a measured failure of a claim in `blocking`; an unmeasured blocking claim still warns, since a key nobody measured is not evidence it broke | `checks.py` line 512 |
 | Run on a schedule, not on materialization | the checks carry no automation condition; a job selecting them is the caller's to schedule | the `build_declaration_checks` docstring |
 | Metadata carries counts only, never a row value | the claim id, `measured`, the engine's version, a reason when not measured, and a duplicate count on a failure; a reason is cut where dex starts quoting the warehouse | `_result`, `checks.py` lines 495 to 520; `_carried`, `dex.py` line 1416 |
@@ -468,7 +471,7 @@ specs and has Dagster load them, and needs no engine. With the newest engine
 the `[dex]` range admits:
 
 ```bash
-uv run --no-project --with-editable '.[dex]' --with 'dagster>=1.13' \
+uv run --no-project --python 3.13 --with-editable '.[dex]' --with 'dagster>=1.13' \
   --with sqlglot==30.13.0 --with duckdb \
   python examples/run_declared_key_checks.py
 ```

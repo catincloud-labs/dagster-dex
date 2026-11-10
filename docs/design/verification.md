@@ -529,6 +529,8 @@ recorded, measured on 2026-11-10 at `993f479` with the engine at 1.8.0 and at
 as the positive control:
 
 - an unmeasured verdict reporting passed: red at both ends;
+- an unmeasured blocking claim reported as ERROR: red at both, and at 1.8.0
+  Dagster names all five checks as the run's blocking failures;
 - an executor that never calls the engine and passes every key: red at both;
 - the join note not logged: red at both;
 - a blocking claim's failure kept at WARN: red at 1.17.5, and green at 1.8.0,
@@ -640,7 +642,7 @@ and its red arms are not read here.
 | `scripts/check_readme_excerpt.py` | `tests/test_readme_excerpt.py` | standing |
 | The whole loop's impact assertion | The `deps=` edge removed | recorded, `checks.yml` |
 | The other two real-Dagster example steps | None found | none |
-| The declared-key checks example | Four planted executor defects, at both ends of the range (2026-11-10) | recorded, here |
+| The declared-key checks example | Five planted executor defects, at both ends of the range (2026-11-10) | recorded, here |
 | `tests/test_documented_commands.py` | Floor and per-fence check; the fence relabelling | positive controls, and recorded |
 | `tests/test_pin_coherence.py` | The operator alignment; new sites caught on first run | recorded, in its comments |
 | `tests/test_ascii_only.py` | Planted bytes | standing |

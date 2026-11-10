@@ -242,7 +242,7 @@ uv run --no-project --python 3.10 \
   --with-requirements scripts/power_of_ten_requirements.txt \
   python scripts/check_power_of_ten.py --tree . --class-a src
 
-# the reduction against REAL dagster objects -- no other step installs it
+# the reduction against REAL dagster objects
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
   python examples/reduce_asset_graph.py
 
@@ -262,7 +262,7 @@ python scripts/check_readme_excerpt.py whole-loop.txt
 # the newest engine the [dex] range admits: the ceiling cell of `engine-ends`.
 # The floor cell is this with the engine `scripts/resolve_engine_range.py`
 # resolves as the floor, which judges no key on this format
-uv run --no-project --with-editable '.[dex]' --with 'dagster>=1.13' \
+uv run --no-project --python 3.13 --with-editable '.[dex]' --with 'dagster>=1.13' \
   --with sqlglot==30.13.0 --with duckdb \
   python examples/run_declared_key_checks.py
 ```

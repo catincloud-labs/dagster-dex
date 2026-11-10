@@ -534,7 +534,7 @@ jobs:
             --with-requirements scripts/power_of_ten_requirements.txt --with types-PyYAML \
             python -m mypy
 
-      # A real Dagster graph, which no other step exercises. Every test above
+      # A real Dagster graph, put through the reduction. Every test above
       # uses fakes -- deliberately, so the suite runs without an orchestrator --
       # but that means nothing else here would notice `from_asset_graph` breaking
       # against the objects Dagster actually hands it. The `[dagster]` extra was
@@ -553,8 +553,8 @@ jobs:
       # is the same shape as an extension point nobody resolves. Being the step is
       # what stops it rotting.
       #
-      # It cannot use pytest: this is the only step that installs `dagster`, and
-      # it installs no test runner. Plain asserts and a nonzero exit, deliberately.
+      # It cannot use pytest: no step that installs `dagster` installs a test
+      # runner. Plain asserts and a nonzero exit, deliberately.
       - name: The reduction works against real Dagster objects
         run: |
           uv run --no-project --with-editable . --with 'dagster>=1.13' \

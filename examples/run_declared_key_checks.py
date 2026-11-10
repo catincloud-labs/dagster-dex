@@ -4,14 +4,14 @@
 
 Run it from the root of a clone:
 
-    uv run --no-project --with-editable '.[dex]' --with 'dagster>=1.13' \\
-        --with sqlglot==30.13.0 --with duckdb \\
+    uv run --no-project --python 3.13 --with-editable '.[dex]' \\
+        --with 'dagster>=1.13' --with sqlglot==30.13.0 --with duckdb \\
         python examples/run_declared_key_checks.py
 
 The `[dex]` extra resolves the newest engine its range admits, which is the
-engine this example needs to show a measured check. CI runs it in
-`engine-ends`, once at each end of that range: what each end must print is
-below.
+engine this example needs to show a measured check, and it needs Python 3.11
+or later. CI runs it in `engine-ends` on 3.13, once at each end of that range:
+what each end must print is below.
 
 **This is the executor's example; `reduce_asset_graph.py` is the spec-only
 one.** That file renders the declared keys with `declaration_check_specs` and
@@ -34,8 +34,11 @@ WHAT IT SHOWS, ON AN ENGINE THAT JUDGES THIS FORMAT (exmergo-dex-core 1.12.5 on)
      FAIL with a duplicate count and WARN severity, and the run still succeeds,
      because nothing blocks unless a claim opts in. The two not measured stay
      not measured: a broken warehouse does not make them judged.
-  3. The same warehouse, with `fact_orders`'s key opted in to blocking. That
-     one failure is ERROR and fails the run; the other stays WARN.
+  3. The same warehouse, with two claims opted in to blocking: `fact_orders`'s
+     key, measured and broken, and `stg_returns`'s, not measured. The measured
+     failure is ERROR and fails the run, and Dagster names that check alone as
+     the cause. The unmeasured blocking claim still warns: a key nobody
+     measured is not evidence it broke. `dim_store`'s failure stays WARN.
 
   The declared join is never a check. It is named in a note the executor
   logs on every run, which this file reads back out of the run's log.
@@ -44,7 +47,9 @@ WHAT IT SHOWS BELOW 1.12.5
 
   Every check is NOT MEASURED, on both warehouses, with the reason that the
   engine predates `maintain verify` judging this format. Nothing passes and
-  nothing fails. That is the floor of the published range today, and it is a
+  nothing fails, and the second run opts every claim in to blocking and still
+  succeeds, since a claim nobody measured blocks nothing. That is the floor of
+  the published range today, and it is a
   supported configuration that judges nothing, stated rather than skipped.
 
 WHY THERE IS NO STAND-IN ENGINE HERE
@@ -197,7 +202,7 @@ DIM_STORE = ("mart/dim_store", "declared_key__region__store_code")
 CUSTOMER_ID = ("dim_customer", "declared_key__customer_id")
 CUSTOMER_PAIR = ("dim_customer", "declared_key__customer_id__region")
 RETURNS = ("stg_returns", "declared_key__return_id")
-NOT_MEASURED = {CUSTOMER_PAIR, RETURNS}
+ALL_CHECKS = (FACT_ORDERS, DIM_STORE, CUSTOMER_ID, CUSTOMER_PAIR, RETURNS)
 
 JOB = "declared_key_checks"
 
@@ -262,15 +267,24 @@ def claim_of(definitions: dg.Definitions, check: tuple[str, str]) -> str:
     raise AssertionError(f"no check {check}")
 
 
-def run(definitions: dg.Definitions, label: str) -> tuple[bool, dict[tuple[str, str], Any], list[str]]:
-    """Run the job in process, as its schedule would. Returns the run's
-    success, each check's evaluation, and the warnings the run logged."""
+#: What a run reports: its success, each check's evaluation, the warnings it
+#: logged, and each failed step's error as (class name, message).
+Outcome = tuple[bool, dict[tuple[str, str], Any], list[str], list[tuple[str, str]]]
+
+
+def run(definitions: dg.Definitions, label: str) -> Outcome:
+    """Run the job in process, as its schedule would."""
 
     instance = dg.DagsterInstance.ephemeral()
     result = definitions.resolve_job_def(JOB).execute_in_process(
         instance=instance, raise_on_error=False
     )
     assert result.get_asset_materialization_events() == [], "a check run materialized an asset"
+    failures = [
+        (event.step_failure_data.error.cls_name, event.step_failure_data.error.message)
+        for event in result.all_events
+        if event.is_step_failure
+    ]
     evaluations = {
         (evaluation.asset_key.to_user_string(), evaluation.check_name): evaluation
         for evaluation in result.get_asset_check_evaluations()
@@ -283,7 +297,7 @@ def run(definitions: dg.Definitions, label: str) -> tuple[bool, dict[tuple[str, 
     print(f"--- {label}: the run {'succeeded' if result.success else 'FAILED'}")
     for check in sorted(evaluations):
         print(f"  {describe(check, evaluations[check])}")
-    return result.success, evaluations, warnings
+    return result.success, evaluations, warnings, failures
 
 
 def value(evaluation: Any, key: str) -> Any:
@@ -345,7 +359,7 @@ def assert_the_join_is_a_note(warnings: list[str]) -> None:
 
 def walk_a_judging_engine(root: Path) -> None:
     # 1. The clean warehouse: three measured passes, two not measured.
-    succeeded, evaluations, warnings = run(definitions_for(root), "clean warehouse")
+    succeeded, evaluations, warnings, _ = run(definitions_for(root), "clean warehouse")
     assert succeeded
     assert states(evaluations) == {
         FACT_ORDERS: (True, True, "WARN"),
@@ -361,7 +375,7 @@ def walk_a_judging_engine(root: Path) -> None:
 
     # 2. Two duplicates, the defaults: both fail, as WARN, and the run succeeds.
     plant_violations(root)
-    succeeded, evaluations, _ = run(definitions_for(root), "two duplicates, the defaults")
+    succeeded, evaluations, _, _ = run(definitions_for(root), "two duplicates, the defaults")
     assert succeeded, "a non-blocking failure failed the run"
     assert states(evaluations) == {
         FACT_ORDERS: (True, False, "WARN"),
@@ -375,26 +389,41 @@ def walk_a_judging_engine(root: Path) -> None:
     assert_never_passes_unmeasured(evaluations)
     assert_counts_only(evaluations)
 
-    # 3. The same warehouse, one claim opted in to blocking.
-    blocked = claim_of(definitions_for(root), FACT_ORDERS)
-    succeeded, evaluations, _ = run(
-        definitions_for(root, blocking=(blocked,)), "two duplicates, fact_orders blocking"
+    # 3. The same warehouse, two claims opted in to blocking: one measured and
+    # broken, one not measured. Only the measured failure blocks.
+    plain = definitions_for(root)
+    blocked = (claim_of(plain, FACT_ORDERS), claim_of(plain, RETURNS))
+    succeeded, evaluations, _, failures = run(
+        definitions_for(root, blocking=blocked),
+        "two duplicates, fact_orders and stg_returns blocking",
     )
     assert not succeeded, "a blocking claim's measured failure did not fail the run"
     print("  (the step failure Dagster logged for this run is that blocking failure)")
     assert state(evaluations[FACT_ORDERS]) == (True, False, "ERROR")
     assert state(evaluations[DIM_STORE]) == (True, False, "WARN")
+    assert state(evaluations[RETURNS]) == (False, False, "WARN"), "an unmeasured claim blocked"
     assert_never_passes_unmeasured(evaluations)
+    # The run failed for that one check, and for nothing else.
+    ((error, message),) = failures
+    assert error == "DagsterAssetCheckFailedError", failures
+    assert "1 blocking asset check failed" in message, message
+    assert "declared_key__order_id" in message and "stg_returns" not in message, message
 
 
 def walk_an_engine_below_the_floor(root: Path) -> None:
     floor = ".".join(str(part) for part in JUDGED_FROM)
-    for label in ("clean warehouse", "two duplicates"):
-        if label == "two duplicates":
+    for label in ("clean warehouse", "two duplicates, every claim blocking"):
+        blocking: tuple[str, ...] = ()
+        if label != "clean warehouse":
             plant_violations(root)
-        succeeded, evaluations, warnings = run(definitions_for(root), label)
-        assert succeeded
-        assert set(evaluations) == {FACT_ORDERS, DIM_STORE, CUSTOMER_ID, CUSTOMER_PAIR, RETURNS}
+            plain = definitions_for(root)
+            blocking = tuple(claim_of(plain, check) for check in ALL_CHECKS)
+        succeeded, evaluations, warnings, failures = run(
+            definitions_for(root, blocking=blocking), label
+        )
+        # Nothing is measured, so nothing blocks, even with every claim opted in.
+        assert succeeded and failures == [], failures
+        assert set(evaluations) == set(ALL_CHECKS)
         for check, evaluation in evaluations.items():
             assert state(evaluation) == (False, False, "WARN"), check
             reason = value(evaluation, REASON)
