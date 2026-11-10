@@ -78,8 +78,9 @@ EXPECTED: dict[str, dict[str, int]] = {
     # Three as of the whole-loop example: the suite step, the upstream-contract
     # step, and the step that runs `examples/walk_the_whole_loop.py`. That last
     # one installs the orchestrator, the engine and DuckDB together, which no
-    # other step does, so it carries its own engine pin rather than inheriting
-    # one.
+    # other `suite` step does, so it carries its own engine pin rather than
+    # inheriting one. (`engine-ends`' declared-key checks step installs all
+    # three too, with the engine as a matrix expression, which is not a pin.)
     ".github/workflows/checks.yml": {"==": 3},
     # Three: the suite step, and the two end-to-end steps that drive dex through
     # the built wheel - one for the read path, one for the write path. Each was

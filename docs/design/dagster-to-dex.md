@@ -3,8 +3,10 @@
 - **Status:** living
 - **Describes:** `src/dagster_dex/project.py`, `src/dagster_dex/declarations.py`,
   `src/dagster_dex/model.py`, `src/dagster_dex/dex.py`,
-  `src/dagster_dex/artifact.py`, `src/dagster_dex/protocol.py`
-- **Reviewed:** 2026-10-30 at `c4e8231`
+  `src/dagster_dex/artifact.py`, `src/dagster_dex/protocol.py`,
+  `src/dagster_dex/checks.py`
+- **Reviewed:** 2026-10-30 at `c4e8231`; the asset-check section written
+  2026-11-10 against `993f479`
 
 This page describes how the translation works today. It decides nothing: each
 decision it touches is linked where it is made, and a change to one is made
@@ -290,6 +292,144 @@ flowchart LR
 When to use which route is in
 [README, *Two ways to name the project*](../../README.md#two-ways-to-name-the-project-and-the-reason-there-are-two).
 
+## Declared keys as Dagster asset checks
+
+The declared keys of step 2 can also run inside Dagster, as asset checks that
+dex-core judges (#180). `src/dagster_dex/checks.py` holds two layers: a spec
+layer that needs neither Dagster nor the engine to import, and an executor
+behind the `[dex]` extra. Neither generates SQL. Each check has one
+implementation, dex-core's `maintain verify`, and everything that touches the
+engine stays in `src/dagster_dex/dex.py`. Line numbers below are at `993f479`.
+
+```mermaid
+flowchart LR
+    D["ProjectDeclarations: declared keys and joins"]
+    K["the asset keys"]
+    S["declaration_check_specs: one AssetCheckSpec per key, notes for the rest"]
+    B["build_declaration_checks: one multi_asset_check"]
+    J["a scheduled job over AssetSelection.checks"]
+    V["dex.verify_declared_keys: one engine, one verify call"]
+    R["one AssetCheckResult per selected check"]
+
+    D --> S
+    K --> S
+    S --> B
+    J -->|"each run"| B
+    B --> V
+    V -->|"a KeyVerdict per claim"| R
+```
+
+### Keys only
+
+Each declared key gets one check. A declared join gets none: dex-core judges
+no declared join for this project format, and a check that could only ever
+report "not measured" was declined. Each join is named instead in
+`dagster_dex.checks.DeclarationCheckSpecs` notes (`_join_notes`, `checks.py`
+line 344), which the executor logs as a warning on every run (line 445), so a
+run's log says what goes unchecked. The ruling is
+[#180, comment 6715768229](https://github.com/catincloud-labs/dagster-dex/issues/180#issuecomment-6715768229);
+the dex-core change join checks would wait on is filed as
+[exmergo/dex#1197](https://github.com/exmergo/dex/issues/1197).
+
+### The spec layer
+
+`dagster_dex.checks.declaration_check_specs` (line 157) takes the
+declarations and the asset keys, and returns one `AssetCheckSpec` per declared
+key plus notes. It imports Dagster when it is called, the way `dex.py` imports
+dex-core, so `import dagster_dex.checks` works with neither installed.
+
+- **It attaches each spec to the one asset key whose last segment is the
+  declared model**, because step 1 keeps only that segment as the model name.
+  A key on a model that no asset key ends in, or that several do, gets a note
+  and no spec, rather than being dropped or attached to a guess.
+- **The claim id is the declaration's content, hashed.**
+  `dagster_dex.checks.claim_id` (lines 122 to 133) is `sha256` over the
+  key's kind, model and columns, read as the parser reads two declarations as
+  one claim: a single column as written, a composite sorted and lowercased. So
+  two reductions of one project give one id per key, and a changed declared
+  column gives a new one. The asset key, the check name and the file a key
+  was written in are not part of it.
+- **Each spec carries the claim id, the model and the columns** in its
+  metadata, under `dagster_dex.checks.CLAIM_ID`, `dagster_dex.checks.MODEL`
+  and `dagster_dex.checks.COLUMNS`. Its name is `declared_key__` and the
+  columns; the docstring gives the suffix rule for a column a Dagster name
+  cannot hold and for two keys that would share a name.
+- **Every spec is non-blocking unless its claim id is in `blocking`** (line
+  217). A claim id there that names no rendered spec is refused (line 204),
+  since an opt-in that attached to nothing would read like one that took.
+
+### The executor
+
+`dagster_dex.checks.build_declaration_checks` (line 365) needs Dagster and
+the `[dex]` extra. It returns one `multi_asset_check` over the spec layer's
+specs (line 456), which a run may subset. Each run:
+
+1. logs the spec layer's notes as warnings;
+2. opens ONE engine, `dagster_dex.dex.open_verify_engine` (`dex.py` line
+   1457) unless the caller passes its own opener. The connection may be the
+   project's own (dex-core's `ConnectionSource`), but the cost ceilings stay
+   dex's, built from its own store;
+3. calls `DexEngine.verify` ONCE, for the models of the selected checks,
+   through `dagster_dex.dex.verify_declared_keys` (line 1510);
+4. maps each result back to its claim by model, columns and source: a
+   `grain_broken` finding under `unique_test` or `unique_test_composite`
+   (`_broken`, line 1656; `_KEY_SOURCES`, line 1379);
+5. yields one result per selected check.
+
+What crosses back from `dex.py` is a `dagster_dex.dex.KeyVerdict` per claim
+(line 1395): plain values, so the Dagster side never handles an engine type.
+
+**A pass is read out of silence.** Verify reports a broken key and says
+nothing about one that held, so a key is reported passed only once every
+route to "not judged" is ruled out (`_judge`, line 1627; `_skip_reason`, line
+1671). The routes, and the one way the note-reading fails open, are in the
+`dagster_dex.dex.verify_declared_keys` docstring. The field that would
+replace that reading, `VerifyResult.grain_coverage` (one record per declared
+key, asked for in [exmergo/dex#1223](https://github.com/exmergo/dex/issues/1223)),
+ships from exmergo-dex-core 1.17.5. This package does not read it yet: the
+`[dex]` range admits engines without it, so a pass is still read out of
+silence on every engine.
+
+### The defaults
+
+Ruled on #180 in
+[comment 6715768229](https://github.com/catincloud-labs/dagster-dex/issues/180#issuecomment-6715768229),
+and held by `tests/test_executor.py`:
+
+| Default | How it reads in a result | Where |
+| --- | --- | --- |
+| A claim the engine did not measure never reports as passed | `passed` false, severity WARN, `dagster_dex/measured` false, and the reason under `dagster_dex/reason` and as the description | `KeyVerdict` and `_unmeasured`, `dex.py` lines 1395 to 1413 |
+| Nothing confirms a priced probe on a run's behalf | a probe the cost gate refuses or wants confirmed leaves every key in the call not measured, with the reason: dex's message for a refusal, and this package's own text for a probe returned to confirm; spending is the builder's `confirm_spend` opt-in, and dex's ceilings bind either way | `dex.py` lines 1576 to 1593 |
+| WARN by default; blocking is an opt-in per claim | ERROR only for a measured failure of a claim in `blocking`; an unmeasured blocking claim still warns, since a key nobody measured is not evidence it broke | `checks.py` line 512 |
+| Run on a schedule, not on materialization | the checks carry no automation condition; a job selecting them is the caller's to schedule | the `build_declaration_checks` docstring |
+| Metadata carries counts only, never a row value | the claim id, `measured`, the engine's version, a reason when not measured, and a duplicate count on a failure; a reason is cut where dex starts quoting the warehouse | `_result`, `checks.py` lines 495 to 520; `_carried`, `dex.py` line 1416 |
+
+The routes that leave a key not measured, each reported with its reason:
+
+- the engine predates verify judging this format (next section);
+- verify suppressed its grain check;
+- the model is absent from `model_relations`, because no asset metadata or
+  `relations:` entry names its table, or verify reports `no_relation` for it;
+- verify's own grain plan leaves the key out: it checks a declared composite
+  key only when the model declares no single-column unique key;
+- one of verify's notes names the model;
+- any `DexError` stops verify (the cost gate, the query firewall, the
+  warehouse refusing a statement, a lost connection), or verify returns a
+  probe to confirm.
+
+### The engine floor
+
+`maintain verify` judges a declared key on this format from exmergo-dex-core
+1.12.5, measured on #179's DuckDB reproduction and returned on #180 in
+[comment 6716240099](https://github.com/catincloud-labs/dagster-dex/issues/180#issuecomment-6716240099):
+no verify before 1.9.2, and a refusal of the format from 1.9.2 to 1.12.4. The
+floor is `dagster_dex.dex.VERIFY_JUDGES_FROM` (line 1371). Below it every
+check reports not measured, with a reason naming the installed engine and the
+floor, and the engine is not opened (line 1554). The `[dex]` range's own floor
+is older than 1.12.5, so an install at that end runs the checks and judges
+none of them; the version pins themselves are in
+[AGENTS.md, *The dependency pin*](../../AGENTS.md#the-dependency-pin-and-why-there-are-two-of-them).
+
 ## What the translation does not do
 
 - **It never edits a model.** `edit_path` returns `None` for `MODEL_SQL`;
@@ -319,3 +459,19 @@ uv run --no-project --with-editable . --with 'dagster>=1.13' \
 
 The README's [*What it finds*](../../README.md#what-it-finds) explains the lines
 it prints.
+
+`examples/run_declared_key_checks.py` runs the asset-check section: it builds
+the checks, schedules a job over `AssetSelection.checks`, and runs the job in
+process under real Dagster against a local DuckDB warehouse. On an engine from
+1.12.5 it shows measured passes, measured failures and two keys a real engine
+leaves not measured; below it, every check not measured with the floor's
+reason. CI runs it at both ends of the published range, in `engine-ends`.
+`examples/reduce_asset_graph.py` is the spec-only example: it renders the
+specs and has Dagster load them, and needs no engine. With the newest engine
+the `[dex]` range admits:
+
+```bash
+uv run --no-project --python 3.13 --with-editable '.[dex]' --with 'dagster>=1.13' \
+  --with sqlglot==30.13.0 --with duckdb \
+  python examples/run_declared_key_checks.py
+```

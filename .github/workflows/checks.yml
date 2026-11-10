@@ -454,6 +454,29 @@ jobs:
             --with duckdb \
             python -m pytest tests --ignore=tests/test_upstream_contract.py
 
+      # The declared-key checks (#180), built by `build_declaration_checks`,
+      # selected by a job over `AssetSelection.checks` and run in process by
+      # real Dagster against a local DuckDB warehouse. The tests above build
+      # the checks from a stand-in Dagster; this is the one step where the
+      # orchestrator runs them.
+      #
+      # It is here rather than in `suite` because of the engine floor, not for
+      # speed. `suite` pins the demonstrated engine, which predates `maintain
+      # verify` judging this format (it does from 1.12.5), so there every
+      # check is not measured and the measured arm would never run. These two
+      # cells are the two arms: the floor of the range, where the example
+      # asserts every check not measured with that reason, and the ceiling,
+      # where it asserts measured passes, measured failures and the
+      # unmeasured routes a real engine reaches. The example branches on the
+      # installed engine and asserts each end's whole outcome.
+      - name: The declared-key checks run under real Dagster
+        run: |
+          uv run --no-project --python 3.13 --with-editable . \
+            --with 'dagster>=1.13' \
+            --with exmergo-dex-core==${{ matrix.version }} --with sqlglot==30.13.0 \
+            --with duckdb \
+            python examples/run_declared_key_checks.py
+
       # Upstream's own contract judges a SHAPE, and since the write tier reached
       # the artifact transport it judges two of them. Running it only at the
       # demonstrated pin left the promised ends unjudged by the one suite whose
@@ -511,7 +534,7 @@ jobs:
             --with-requirements scripts/power_of_ten_requirements.txt --with types-PyYAML \
             python -m mypy
 
-      # A real Dagster graph, which no other step exercises. Every test above
+      # A real Dagster graph, put through the reduction. Every test above
       # uses fakes -- deliberately, so the suite runs without an orchestrator --
       # but that means nothing else here would notice `from_asset_graph` breaking
       # against the objects Dagster actually hands it. The `[dagster]` extra was
@@ -530,8 +553,8 @@ jobs:
       # is the same shape as an extension point nobody resolves. Being the step is
       # what stops it rotting.
       #
-      # It cannot use pytest: this is the only step that installs `dagster`, and
-      # it installs no test runner. Plain asserts and a nonzero exit, deliberately.
+      # It cannot use pytest: no step that installs `dagster` installs a test
+      # runner. Plain asserts and a nonzero exit, deliberately.
       - name: The reduction works against real Dagster objects
         run: |
           uv run --no-project --with-editable . --with 'dagster>=1.13' \
@@ -556,8 +579,9 @@ jobs:
       #
       # It is affordable because dex-core's DuckDB adapter is free and local
       # (`paradigm: free_local`): no credential, no network, no bill, and
-      # deterministic. This is the only step that installs the orchestrator, the
-      # engine and a warehouse together.
+      # deterministic. It is one of two steps that install the orchestrator,
+      # the engine and a warehouse together; the other is `engine-ends`'
+      # declared-key checks step, which runs the checks rather than the loop.
       #
       # Same two constraints as the step above: it IS the example, so it stays
       # readable and runnable by hand, and it cannot use pytest because nothing

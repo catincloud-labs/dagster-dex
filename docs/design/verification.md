@@ -14,9 +14,10 @@
   `scripts/drive_the_write_path_against_the_wheel.py`,
   `scripts/run_the_shipped_contract_from_the_wheel.py`,
   `scripts/a_format_outside_the_tree.py`, `src/dagster_dex/planted.py`,
-  `examples/walk_the_whole_loop.py`
+  `examples/walk_the_whole_loop.py`, `examples/run_declared_key_checks.py`
 - **Reviewed:** 2026-10-30 at `19a4088`; the sections the shipped planted
-  formats touch re-read 2026-11-09 at `bb30439`
+  formats touch re-read 2026-11-09 at `bb30439`; the sections the declared-key
+  checks example touches re-read 2026-11-10 at `993f479`
 
 This page describes how the package's claims are checked today: which job
 holds which claim, what each check can and cannot see, and where each one has
@@ -39,7 +40,7 @@ flowchart LR
 
     subgraph checks["checks.yml"]
         RANGE["engine range: resolve the ends of the published range"]
-        ENDS["dex-core floor and ceiling: boundary plus upstream contract"]
+        ENDS["dex-core floor and ceiling: boundary, upstream contract, the declared-key checks under real Dagster"]
         FLOOR["python 3.10 to 3.13: the suite with no engine (the control)"]
         SUITE["suite: the exact pin, type check, real Dagster, the whole loop"]
         TESTS["tests: refuses unless all four succeeded"]
@@ -89,7 +90,7 @@ on a dispatch, though both follow `build`.
 | Job | Workflow | The claim it holds |
 | --- | --- | --- |
 | `python 3.x (engine-free)` | `checks.yml` | Everything but `src/dagster_dex/dex.py` runs with dex-core absent, on 3.10 to 3.13 |
-| `engine range`, then `dex-core <version>` | `checks.yml` | The boundary and dex-core's own contract pass at both ends of the published `[dex]` range |
+| `engine range`, then `dex-core <version>` | `checks.yml` | The boundary and dex-core's own contract pass at both ends of the published `[dex]` range, and real Dagster runs the declared-key checks at each end |
 | `suite` | `checks.yml` | The demonstrated pin; the `py.typed` claim, type-checked against the 3.10 floor; the reduction and the scheduled-artifact sketch against real Dagster objects; the whole loop against a real warehouse; the README's quote of that run |
 | `tests` | `checks.yml` | Every job above it succeeded, read explicitly |
 | `build` | `publish.yml` | The distribution builds, dex reads and writes a project through the built wheel, and the contract the wheel ships refuses the formats built to fail it and passes this one |
@@ -209,6 +210,17 @@ upstream publishes a release the promise widens and the matrix moves with it.
   1.12.5, which cannot judge this format, so the demonstrated pin never runs
   them and the ceiling does. From 1.12.5 a missing `duckdb` fails them rather
   than skipping, so a cell without the warehouse goes red.
+- **It runs the declared-key checks under real Dagster.** A third step runs
+  `examples/run_declared_key_checks.py` with the orchestrator, the cell's
+  engine and DuckDB. It sits here and not in `suite` because of the engine
+  floor: the demonstrated pin predates `maintain verify` judging this format,
+  so there no check could be measured. The example reads the installed
+  engine's version and asserts that end's whole outcome: at the floor every
+  check not measured with the floor's reason, and at the ceiling measured
+  passes, measured failures, two keys the engine leaves not measured, and a
+  blocking failure failing the run. Its red arm is recorded in
+  [*The README's output excerpt*](#the-readmes-output-excerpt), beside the
+  other real-Dagster steps.
 
 Red arm: no test plants a resolution failure. On record, the ceiling cell went
 red when dex-core 1.11.0 shipped a contract this format had not declined
@@ -501,12 +513,28 @@ reports `fact_sales` among the impacted models, which only the asset graph
 connects. It is recorded in `checks.yml` as failing when the `deps=` edge is
 removed.
 
-Two other `suite` steps run real Dagster objects, and nothing else does: every
-test uses fakes, so the suite runs without an orchestrator.
-`examples/reduce_asset_graph.py` is what would notice `from_asset_graph`
-breaking against what Dagster actually hands it, and
+Two other `suite` steps and one `engine-ends` step run real Dagster objects,
+and nothing else does: every test uses fakes, so the suite runs without an
+orchestrator. `examples/reduce_asset_graph.py` is what would notice
+`from_asset_graph` breaking against what Dagster actually hands it, and
 `examples/write_project_artifact.py` executes the README's scheduled-artifact
 sketch. Red arm: none on record for either.
+
+`examples/run_declared_key_checks.py` is the `engine-ends` step: a job over
+`AssetSelection.checks` runs the declared-key checks in process against a
+DuckDB warehouse, and the example asserts each check's measured, passed and
+severity, the run's success, and that no asset materialized. Its red arm is
+recorded, measured on 2026-11-10 at `993f479` with the engine at 1.8.0 and at
+1.17.5, one planted executor defect at a time, each run once unplanted first
+as the positive control:
+
+- an unmeasured verdict reporting passed: red at both ends;
+- an unmeasured blocking claim reported as ERROR: red at both, and at 1.8.0
+  Dagster names all five checks as the run's blocking failures;
+- an executor that never calls the engine and passes every key: red at both;
+- the join note not logged: red at both;
+- a blocking claim's failure kept at WARN: red at 1.17.5, and green at 1.8.0,
+  where no key is measured, so there is no failure for it to block.
 
 ### Documented commands
 
@@ -614,6 +642,7 @@ and its red arms are not read here.
 | `scripts/check_readme_excerpt.py` | `tests/test_readme_excerpt.py` | standing |
 | The whole loop's impact assertion | The `deps=` edge removed | recorded, `checks.yml` |
 | The other two real-Dagster example steps | None found | none |
+| The declared-key checks example | Five planted executor defects, at both ends of the range (2026-11-10) | recorded, here |
 | `tests/test_documented_commands.py` | Floor and per-fence check; the fence relabelling | positive controls, and recorded |
 | `tests/test_pin_coherence.py` | The operator alignment; new sites caught on first run | recorded, in its comments |
 | `tests/test_ascii_only.py` | Planted bytes | standing |
