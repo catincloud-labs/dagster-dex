@@ -214,13 +214,16 @@ DEX_UPSTREAM_CONTRACT_REQUIRED=1 uv run --no-project --with-editable . \
 ```
 
 Plus the following checks, which are not pytest. They do not share a CI job:
-the type check, the three `examples/` commands and the README excerpt check
-that reads the last one's output run in `suite`, and the two
-power-of-ten commands run in `power of ten` (both are the literal `name:` of a
-job in `checks.yml`). Until 2026-09-07 this line read "Plus two checks that are
-not pytest, and both run in the same CI job", while the block beneath it held
-five commands across two jobs - both halves were false (#83). Until 2026-10-30
-it named two `examples/` commands, while `suite` ran three.
+the type check, the first three `examples/` commands and the README excerpt
+check that reads the third one's output run in `suite`, the fourth `examples/`
+command runs in each cell of `engine-ends`, and the two
+power-of-ten commands run in `power of ten` (`suite` and `power of ten` are
+the literal `name:` of a job in `checks.yml`, and `engine-ends` is the id of
+the job named `dex-core <version>`). Until 2026-09-07 this line read "Plus
+two checks that are not pytest, and both run in the same CI job", while the
+block beneath it held five commands across two jobs - both halves were false
+(#83). Until 2026-10-30 it named two `examples/` commands, while `suite` ran
+three.
 
 ```bash
 # the py.typed claim, actually checked -- at the FLOOR, not the newest interpreter.
@@ -247,13 +250,21 @@ uv run --no-project --with-editable . --with 'dagster>=1.13' \
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
   python examples/write_project_artifact.py
 
-# the WHOLE loop against a real (DuckDB) warehouse -- the only command that
-# installs the orchestrator, the engine and a warehouse at once -- and the
-# README's quote of its output, held to what this run printed
+# the WHOLE loop against a real (DuckDB) warehouse -- the orchestrator, the
+# engine and a warehouse at once -- and the README's quote of its output, held
+# to what this run printed
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
   --with exmergo-dex-core==1.8.0 --with sqlglot==30.13.0 --with duckdb \
   python examples/walk_the_whole_loop.py | tee whole-loop.txt
 python scripts/check_readme_excerpt.py whole-loop.txt
+
+# the declared-key checks run by real Dagster against a DuckDB warehouse, with
+# the newest engine the [dex] range admits: the ceiling cell of `engine-ends`.
+# The floor cell is this with the engine `scripts/resolve_engine_range.py`
+# resolves as the floor, which judges no key on this format
+uv run --no-project --with-editable '.[dex]' --with 'dagster>=1.13' \
+  --with sqlglot==30.13.0 --with duckdb \
+  python examples/run_declared_key_checks.py
 ```
 
 The second line used to end `python -c "..."`, with the ellipsis standing in for
@@ -267,8 +278,9 @@ runnable verbatim now, which was checked by running all of them. What
 [docs/design/verification.md, *Documented commands*](docs/design/verification.md#documented-commands).
 
 **The Dagster step exists because everything else uses fakes.** The suite must
-run without an orchestrator, so the `examples/` steps in `suite` are the only
-checks against real Dagster objects. The `[dagster]` extra was declared and
+run without an orchestrator, so the `examples/` steps in `suite`, and the
+declared-key checks step in `engine-ends`, are the only checks against real
+Dagster objects. The `[dagster]` extra was declared and
 installed by nothing until the first of them, the reduction step, existed.
 
 **The README quotes the whole loop's output, and CI holds the quote to the
@@ -374,7 +386,8 @@ What each job proves, and how it fails:
 - **`python-floor`** runs the engine-free control on 3.10, 3.11, 3.12 and 3.13.
   The list is written out on purpose: `>=3.10` is open-ended, so there is nothing
   to resolve, and adding an interpreter is a decision about what is claimed.
-- **`engine-ends`** runs the boundary suite and the upstream contract at the
+- **`engine-ends`** runs the boundary suite, the upstream contract and the
+  declared-key checks example under real Dagster at the
   floor and the ceiling of the published range, **resolved rather than listed**
   by `scripts/resolve_engine_range.py`. Never replace it with a hand-written
   list: that is a registry making a claim about a moving set, and when upstream

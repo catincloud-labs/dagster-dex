@@ -3,8 +3,9 @@
 """The checker that holds the README's output excerpt to the whole loop (#109).
 
 The check itself runs in the `suite` job, against a real run of
-`examples/walk_the_whole_loop.py`, because that is the only step that installs
-the orchestrator, the engine and a warehouse together. This file runs in the
+`examples/walk_the_whole_loop.py`, because that is the run whose output the
+README quotes, and it needs the orchestrator, the engine and a warehouse
+installed together. This file runs in the
 engine-free control and proves the checker can go red, which a green CI step on
 the real output cannot show:
 
