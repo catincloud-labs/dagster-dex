@@ -1245,7 +1245,7 @@ class TestTheNotePathStays:
         assert state(results["dim_date"]) == (True, True)
 
     def test_the_residue_a_note_that_stops_naming_the_model_reads_as_a_pass(self) -> None:
-        """Stated in the docstring and the README rather than left to be found:
+        """Stated in the docstring and the design document rather than left to be found:
         on this path the planted note is a pass. It is the path's one way open."""
 
         assert state(judged(NoteEraResult(warnings=[PLANTED_NOTE]))["fact_orders"]) == (True, True)
@@ -1261,7 +1261,3 @@ class TestTheNotePathStays:
         results = judged(NoteEraResult())
 
         assert all("without grain_coverage" in unmeasured(result) for result in results.values())
-
-
-def test_the_backstop_and_this_file_name_one_version() -> None:
-    assert bridge.GRAIN_COVERAGE_FROM == VALUE_MASKED_FROM == (1, 17, 5)

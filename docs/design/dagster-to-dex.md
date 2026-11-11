@@ -326,7 +326,7 @@ Each declared key gets one check. A declared join gets none: dex-core judges
 no declared join for this project format, and a check that could only ever
 report "not measured" was declined. Each join is named instead in
 `dagster_dex.checks.DeclarationCheckSpecs` notes (`_join_notes`, `checks.py`
-line 344), which the executor logs as a warning on every run (line 445), so a
+line 344), which the executor logs as a warning on every run (line 448), so a
 run's log says what goes unchecked. The ruling is
 [#180, comment 6715768229](https://github.com/catincloud-labs/dagster-dex/issues/180#issuecomment-6715768229);
 the dex-core change join checks would wait on is filed as
@@ -363,7 +363,7 @@ dex-core, so `import dagster_dex.checks` works with neither installed.
 
 `dagster_dex.checks.build_declaration_checks` (line 365) needs Dagster and
 the `[dex]` extra. It returns one `multi_asset_check` over the spec layer's
-specs (line 456), which a run may subset. Each run:
+specs (line 459), which a run may subset. Each run:
 
 1. logs the spec layer's notes as warnings;
 2. opens ONE engine, `dagster_dex.dex.open_verify_engine` (`dex.py` line
@@ -408,6 +408,15 @@ a pass.** A released engine's notes do not change, so the path opens only on
 such a patch. Both paths, and the routes, are in the
 `dagster_dex.dex.verify_declared_keys` docstring.
 
+**What CI runs of each path.** `engine-ends` runs the record path against
+a real DuckDB warehouse at the ceiling. At the floor verify does not judge
+this format, so neither path runs there. No CI cell installs an engine
+from 1.12.5 to 1.17.4, so the note path runs in CI only against a result
+built without `grain_coverage` (`NoteEraResult` in
+`tests/test_executor.py`), and against a real engine only when someone
+runs the boundary suite with one of those engines at a desk. Whether to
+add a cell pinned to 1.17.4 is the owner's to decide.
+
 ### The defaults
 
 Ruled on #180 in
@@ -418,16 +427,18 @@ and held by `tests/test_executor.py`:
 | --- | --- | --- |
 | A claim the engine did not measure never reports as passed | `passed` false, severity WARN, `dagster_dex/measured` false, and the reason under `dagster_dex/reason` and as the description | `KeyVerdict` and `_unmeasured`, `dex.py` lines 1416 to 1434 |
 | Nothing confirms a priced probe on a run's behalf | a probe the cost gate refuses or wants confirmed leaves every key in the call not measured, with the reason: dex's message for a refusal, and this package's own text for a probe returned to confirm; spending is the builder's `confirm_spend` opt-in, and dex's ceilings bind either way | `dex.py` lines 1614 to 1631 |
-| WARN by default; blocking is an opt-in per claim | ERROR only for a measured failure of a claim in `blocking`; an unmeasured blocking claim still warns, since a key nobody measured is not evidence it broke | `checks.py` line 512 |
+| WARN by default; blocking is an opt-in per claim | ERROR only for a measured failure of a claim in `blocking`; an unmeasured blocking claim still warns, since a key nobody measured is not evidence it broke | `checks.py` line 515 |
 | Run on a schedule, not on materialization | the checks carry no automation condition; a job selecting them is the caller's to schedule | the `build_declaration_checks` docstring |
-| Metadata carries counts only, never a row value | the claim id, `measured`, the engine's version, a reason when not measured, and a duplicate count on a failure; a reason is cut where dex starts quoting the warehouse | `_result`, `checks.py` lines 495 to 520; `_carried`, `dex.py` line 1437 |
+| Metadata carries counts only, never a row value | the claim id, `measured`, the engine's version, a reason when not measured, and a duplicate count on a failure; a reason is cut where dex starts quoting the warehouse | `_result`, `checks.py` lines 498 to 523; `_carried`, `dex.py` line 1437 |
 
 The routes that leave a key not measured, each reported with its reason:
 
 - the engine predates verify judging this format (next section);
 - verify suppressed its grain check;
 - the model is absent from `model_relations`, because no asset metadata or
-  `relations:` entry names its table, or verify reports `no_relation` for it;
+  `relations:` entry names its table, or (below 1.17.5) verify reports
+  `no_relation` for it, which from 1.17.5 reaches the key as an `unchecked`
+  record;
 - verify's own grain plan leaves the key out: it checks a declared composite
   key only when the model declares no single-column unique key (from 1.17.5,
   a `not_planned` record);
