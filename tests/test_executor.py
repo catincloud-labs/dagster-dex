@@ -363,7 +363,10 @@ class TestTheHarnessCatchesAnExecutorThatNeverCallsTheEngine:
         checks = build_declaration_checks(project, asset_keys(PLACED_ASSETS), open_engine=Unasked)
         results, _ = run(checks)
 
-        assert all(state(result) == (True, True) for result in results.values())
+        # From 1.17.5 an empty result carries no record, so nothing passes
+        # (#194); before it, silence read as every key held.
+        empty = (False, False) if carries_grain_coverage() else (True, True)
+        assert all(state(result) == empty for result in results.values())
         with pytest.raises(AssertionError):
             assert_clean_arm(results, spy)
         # And the real executor over the same warehouse passes it.
@@ -680,7 +683,11 @@ class TestBlocking:
             ]
         ]
         fact_orders = claim_id(DeclaredKey("fact_orders", ("order_id",)))
-        checks = self._checks(VerifyResult(findings=broken), [fact_orders])
+        result = VerifyResult(findings=broken)
+        if carries_grain_coverage():
+            result = proven_except([record("fact_orders", "broken", rows=10, distinct=7)], findings=broken)
+            result.grain_coverage[1] = record("dim_store", "broken", rows=10, distinct=7)
+        checks = self._checks(result, [fact_orders])
 
         results, _ = run(checks)
 
@@ -907,10 +914,15 @@ DUCKDB_REFUSAL = (
 def _quoting_warning() -> Any:
     from exmergo_dex_core.maintain.results import VerifyResult
 
-    return VerifyResult(warnings=[
+    warnings = [
         "the grain could not be measured for fact_orders: the warehouse "
         f"refused the distinct-count statement ({DUCKDB_REFUSAL})"
-    ])
+    ]
+    if carries_grain_coverage():
+        # From 1.17.5 the key's record is what leaves it unjudged, and the
+        # note is carried into the reason, where the cut still applies.
+        return proven_except([record("fact_orders", "unchecked", "not_measured")], warnings=warnings)
+    return VerifyResult(warnings=warnings)
 
 
 def _quoting_error() -> Any:
@@ -1025,3 +1037,231 @@ class TestEveryEngineErrorIsAResult:
 
         assert bridge.verify_declared_keys([], StandInEngine(None)) == ()
         assert StandInEngine.opened == 0
+
+
+# --- #194: from 1.17.5, a pass only on a proven grain_coverage record ---------
+
+
+def carries_grain_coverage() -> bool:
+    """Does the installed engine's verify result carry ``grain_coverage``?"""
+
+    from exmergo_dex_core.maintain.results import VerifyResult
+
+    return "grain_coverage" in VerifyResult.model_fields
+
+
+@pytest.fixture
+def records() -> None:
+    """Skip unless the installed engine's verify result carries the records.
+
+    Below 1.12.5 the version gate's tests run instead; the note path, which
+    1.12.5 to 1.17.4 take, is `TestTheNotePathStays`.
+    """
+
+    if _engine_version() < VERIFY_SEAM_FROM or not carries_grain_coverage():
+        pytest.skip("this engine's verify result carries no grain_coverage")
+
+
+#: #179's three keys, by model: (columns, source), as `grain_plan` labels them.
+KEYS = {
+    "dim_date": (["date_key"], "unique_test"),
+    "dim_store": (["region", "store_code"], "unique_test_composite"),
+    "fact_orders": (["order_id"], "unique_test"),
+}
+
+
+def record(model: str, status: str, reason: str | None = None, **counts: int) -> dict[str, Any]:
+    """One `grain_coverage` record, built by dex-core's own `grain_record`."""
+
+    from exmergo_dex_core.maintain.verify import GrainCandidate, grain_record
+
+    columns, source = KEYS[model]
+    candidate = GrainCandidate(columns=columns, source=source)
+    return dict(grain_record(model, candidate, status, reason, **counts))
+
+
+def proven_except(fact_orders: list[dict[str, Any]], **fields: Any) -> Any:
+    """A verify result whose records prove `dim_date` and `dim_store`, with
+    the records given for `fact_orders`."""
+
+    from exmergo_dex_core.maintain.results import VerifyResult
+
+    coverage = [
+        record("dim_date", "proven", rows=10, distinct=10),
+        record("dim_store", "proven", rows=10, distinct=10),
+        *fact_orders,
+    ]
+    return VerifyResult(grain_coverage=coverage, **fields)
+
+
+def judged(result: Any) -> dict[str, Any]:
+    checks = build_declaration_checks(
+        project_of(PLACED_ASSETS), asset_keys(PLACED_ASSETS), open_engine=StandInEngine(result)
+    )
+    results, _ = run(checks)
+    return results
+
+
+#: A note of verify's on the grain of `fact_orders`, reworded so it no longer
+#: names the model: the issue's violating case. The executor before #194 finds
+#: no note naming `fact_orders`, so it reads the key as held.
+PLANTED_NOTE = "the grain could not be measured for one relation: its scan was refused"
+
+
+@pytest.mark.usefixtures("records")
+class TestAPassNeedsAProvenRecord:
+    def test_a_planted_note_that_no_longer_names_the_model_is_not_a_pass(self) -> None:
+        """#194's test. `fact_orders` was not measured, its record says so,
+        and the only note about it has stopped naming it."""
+
+        assert not bridge._names_model(PLANTED_NOTE, "fact_orders")
+        result = proven_except([record("fact_orders", "unchecked", "scan")], warnings=[PLANTED_NOTE])
+
+        results = judged(result)
+
+        assert "unchecked (scan)" in unmeasured(results["fact_orders"])
+        assert state(results["dim_date"]) == (True, True)
+
+    def test_a_proven_record_passes(self) -> None:
+        results = judged(proven_except([record("fact_orders", "proven", rows=10, distinct=10)]))
+
+        assert {model: state(result) for model, result in results.items()} == {
+            "dim_date": (True, True),
+            "dim_store": (True, True),
+            "fact_orders": (True, True),
+        }
+
+    @pytest.mark.parametrize(
+        ("status", "reason"),
+        [
+            ("not_applicable", "empty_relation"),
+            ("unchecked", "not_measured"),
+            ("not_planned", "priority"),
+            ("measured", None),
+        ],
+        ids=["not_applicable", "unchecked", "not_planned", "a-status-not-known-here"],
+    )
+    def test_a_record_in_any_other_state_is_not_a_pass(self, status: str, reason: str | None) -> None:
+        counts = {"rows": 0, "distinct": 0} if status == "not_applicable" else {}
+        results = judged(proven_except([record("fact_orders", status, reason, **counts)]))
+
+        said = unmeasured(results["fact_orders"])
+        assert f"record is {status} ({reason or 'no reason code'})" in said
+        assert "fact_orders (order_id)" in said
+
+    def test_a_broken_record_is_a_measured_failure_with_its_count(self) -> None:
+        broken = record("fact_orders", "broken", rows=10, distinct=8)
+
+        results = judged(proven_except([broken]))
+
+        assert state(results["fact_orders"]) == (True, False)
+        assert results["fact_orders"].metadata[DUPLICATE_COUNT] == 2
+
+    def test_a_broken_record_takes_the_findings_words_where_there_is_one(self) -> None:
+        from exmergo_dex_core.maintain.drift import DriftFinding
+
+        finding = DriftFinding(
+            axis="grain",
+            code="grain_broken",
+            identifier="fact_orders",
+            detail="fact_orders repeats order_id",
+            data={"model": "fact_orders", "columns": ["order_id"], "duplicate_count": 3, "source": "unique_test"},
+        )
+        broken = record("fact_orders", "broken", rows=10, distinct=7)
+
+        results = judged(proven_except([broken], findings=[finding]))
+
+        assert state(results["fact_orders"]) == (True, False)
+        assert results["fact_orders"].description == "fact_orders repeats order_id"
+        assert results["fact_orders"].metadata[DUPLICATE_COUNT] == 3
+
+    @pytest.mark.parametrize(
+        "changed",
+        [None, {"source": "primary_entity"}, {"columns": ["order_ref"]}, {"model": "fact_order"}],
+        ids=["none", "another-source", "other-columns", "another-model"],
+    )
+    def test_a_key_with_no_record_of_its_own_is_not_a_pass(self, changed: dict[str, Any] | None) -> None:
+        others = [] if changed is None else [{**record("fact_orders", "proven", rows=10, distinct=10), **changed}]
+
+        results = judged(proven_except(others))
+
+        assert "holds no record for fact_orders (order_id)" in unmeasured(results["fact_orders"])
+
+    def test_no_grain_coverage_at_all_is_not_a_pass(self) -> None:
+        """`None` is what verify returns when its grain check did not run; an
+        empty result built without records is no evidence any key held."""
+
+        from exmergo_dex_core.maintain.results import VerifyResult
+
+        results = judged(VerifyResult())
+
+        assert all("returned no grain_coverage" in unmeasured(result) for result in results.values())
+
+    def test_one_proven_record_beside_an_unchecked_one_is_not_a_pass(self) -> None:
+        both = [record("fact_orders", "proven", rows=10, distinct=10), record("fact_orders", "unchecked", "scan")]
+
+        assert "unchecked (scan)" in unmeasured(judged(proven_except(both))["fact_orders"])
+
+    def test_a_note_naming_the_model_is_carried_into_the_reason_never_the_decision(self) -> None:
+        note = "the grain could not be measured for fact_orders: two relations matched"
+        proven = proven_except([record("fact_orders", "proven", rows=10, distinct=10)], warnings=[note])
+        unchecked = proven_except([record("fact_orders", "unchecked", "ambiguous")], warnings=[note])
+
+        assert state(judged(proven)["fact_orders"]) == (True, True)
+        assert "two relations matched" in unmeasured(judged(unchecked)["fact_orders"])
+
+
+class NoteEraResult:
+    """A verify result shaped as 1.12.5 to 1.17.4 return it: no `grain_coverage`.
+
+    The ceiling's own `VerifyResult` carries the field, so the note path is
+    reached there only with a result that lacks it.
+    """
+
+    def __init__(self, *, warnings: list[str] | None = None) -> None:
+        self.findings: list[Any] = []
+        self.suppressed: dict[str, str] = {}
+        self.warnings = list(warnings or [])
+        self.notes: list[str] = []
+        self.pending_confirmation = None
+        self.pending_offer = None
+
+
+@pytest.mark.usefixtures("engine_judges")
+class TestTheNotePathStays:
+    """Below 1.17.5 the executor reads verify's notes, as it did before #194."""
+
+    @pytest.fixture(autouse=True)
+    def _a_note_era_engine(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(bridge, "engine_release", lambda: "1.17.4")
+
+    def test_a_clean_result_passes_every_key(self) -> None:
+        assert all(state(result) == (True, True) for result in judged(NoteEraResult()).values())
+
+    def test_a_note_naming_the_model_is_not_measured(self) -> None:
+        results = judged(NoteEraResult(warnings=["the grain could not be measured for fact_orders"]))
+
+        assert "fact_orders" in unmeasured(results["fact_orders"])
+        assert state(results["dim_date"]) == (True, True)
+
+    def test_the_residue_a_note_that_stops_naming_the_model_reads_as_a_pass(self) -> None:
+        """Stated in the docstring and the README rather than left to be found:
+        on this path the planted note is a pass. It is the path's one way open."""
+
+        assert state(judged(NoteEraResult(warnings=[PLANTED_NOTE]))["fact_orders"]) == (True, True)
+
+    def test_from_1_17_5_a_result_without_grain_coverage_passes_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The backstop: a field renamed upstream costs every pass rather than
+        reopening the note path."""
+
+        monkeypatch.setattr(bridge, "engine_release", lambda: "1.17.5")
+
+        results = judged(NoteEraResult())
+
+        assert all("without grain_coverage" in unmeasured(result) for result in results.values())
+
+
+def test_the_backstop_and_this_file_name_one_version() -> None:
+    assert bridge.GRAIN_COVERAGE_FROM == VALUE_MASKED_FROM == (1, 17, 5)
