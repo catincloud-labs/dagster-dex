@@ -383,7 +383,10 @@ def build_declaration_checks(
     engine, calls ``DexEngine.verify`` once for the models of the selected
     checks, and yields one result per selected check:
 
-    - **passed** when verify judged the key and found it held;
+    - **passed** when verify judged the key and found it held: from
+      exmergo-dex-core 1.17.5, only on a ``proven`` ``grain_coverage`` record
+      for it, and below that once every route to "not judged" is ruled out
+      (:func:`~.dex.verify_declared_keys` says how, and what that costs);
     - **failed** when verify found it broken, with :data:`DUPLICATE_COUNT`;
     - **not measured** otherwise: ``passed`` False, severity WARN,
       :data:`MEASURED` False and :data:`REASON` set. Never a pass.

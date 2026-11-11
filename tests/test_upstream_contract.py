@@ -1023,6 +1023,63 @@ def test_verify_plans_every_declared_key_under_the_sources_the_executor_reads():
     }
 
 
+def _coverage(*, broken):
+    """``grain_coverage`` for the three keys, as keyword arguments: every key
+    proven, and every key proven but ``broken``'s. Empty below 1.17.5, whose
+    result has no such field."""
+
+    from exmergo_dex_core.maintain.results import VerifyResult
+
+    if "grain_coverage" not in VerifyResult.model_fields:
+        return {}, {}
+    from exmergo_dex_core.maintain.verify import GrainCandidate, grain_record
+
+    keys = {
+        "dim_date": (["date_key"], "unique_test"),
+        "dim_store": (["region", "store_code"], "unique_test_composite"),
+        "fact_orders": (["order_id"], "unique_test"),
+    }
+
+    def records(broken_model):
+        return [
+            grain_record(
+                model,
+                GrainCandidate(columns=columns, source=source),
+                "broken" if model == broken_model else "proven",
+                rows=10,
+                distinct=8 if model == broken_model else 10,
+            )
+            for model, (columns, source) in keys.items()
+        ]
+
+    return {"grain_coverage": records(None)}, {"grain_coverage": records(broken)}
+
+
+def test_the_grain_coverage_record_the_executor_reads_is_still_there():
+    """From 1.17.5: the field, and a record carrying the four keys the
+    executor matches a declared key by and reads its verdict from (#194)."""
+
+    if not _judges():
+        _assert_gated()
+        return
+
+    from exmergo_dex_core.maintain.results import VerifyResult
+
+    from dagster_dex.dex import GRAIN_COVERAGE_FROM, engine_release
+
+    release = tuple(int(part) for part in re.findall(r"\d+", engine_release())[:3])
+    carries = "grain_coverage" in VerifyResult.model_fields
+    assert carries == (release >= GRAIN_COVERAGE_FROM)
+    if not carries:
+        return
+    from exmergo_dex_core.maintain.verify import GrainCandidate, measured_grain_record
+
+    proven = measured_grain_record("m", GrainCandidate(columns=["k"], source="unique_test"), 3, 3)
+    broken = measured_grain_record("m", GrainCandidate(columns=["k"], source="unique_test"), 3, 2)
+    assert {"model", "columns", "source", "status"} <= set(proven)
+    assert (proven["status"], broken["status"]) == ("proven", "broken")
+
+
 def test_a_real_finding_reaches_its_key_through_the_executors_reading():
     """The types themselves, built as verify builds them, read through the
     executor's attribution: one broken key fails with its count, the others
@@ -1076,12 +1133,15 @@ def test_a_real_finding_reaches_its_key_through_the_executors_reading():
             for (_, key), v in zip(claims, verdicts)
         }
 
-    assert read(VerifyResult(findings=[broken])) == {
+    # From 1.17.5 a pass needs a `proven` record (#194), so the result carries
+    # one per key, built by verify's own `grain_record` as verify builds it.
+    clean, violated = _coverage(broken="dim_store")
+    assert read(VerifyResult(findings=[broken], **violated)) == {
         "dim_date": (True, True, None),
         "dim_store": (True, False, 2),
         "fact_orders": (True, True, None),
     }
-    assert read(VerifyResult()) == {
+    assert read(VerifyResult(**clean)) == {
         "dim_date": (True, True, None),
         "dim_store": (True, True, None),
         "fact_orders": (True, True, None),

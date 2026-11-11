@@ -1370,6 +1370,27 @@ def project_from_context(context: Any) -> DexProject:
 #: not opened, since there is nothing it could answer.
 VERIFY_JUDGES_FROM = (1, 12, 5)
 
+#: The first engine whose verify result carries ``grain_coverage``, a record
+#: per declared key (``VerifyResult.grain_coverage``, absent at 1.17.4 and
+#: present at 1.17.5). Which path the executor takes is read off the result
+#: itself; this version only refuses the note path to an engine at or above
+#: it whose result does not carry the field, so a field renamed upstream
+#: costs every pass rather than reopening the note path (#194).
+GRAIN_COVERAGE_FROM = (1, 17, 5)
+
+#: What each ``grain_coverage`` status other than ``proven`` says about a key,
+#: in dex-core's own terms (``maintain.verify.grain_record``, 1.17.5).
+#: ``broken`` is a measured failure; every other status is not measured.
+_NOT_JUDGED = {
+    "not_applicable": "the relation has no rows, so uniqueness says nothing",
+    "unchecked": "verify planned this key and did not measure it",
+    "not_planned": (
+        "its grain plan leaves this key to a higher-ranked one: verify checks a "
+        "declared composite key only when the model declares no single-column "
+        "unique key"
+    ),
+}
+
 #: The grain sources a declared key reaches verify as. `to_project_definitions`
 #: sends one column as dex-core's ``DeclaredKey`` and several as its
 #: ``DeclaredCompositeKey``, and verify's ``grain_plan`` labels them so. The
@@ -1522,24 +1543,41 @@ def verify_declared_keys(
     artifact) judged what it read, so a model it could not place is reported
     not measured rather than read as clean.
 
-    **A pass needs every route to "not judged" ruled out**, because verify
-    reports a broken key and stays silent on a clean one: its result has no
-    record of a key that held. So a key is reported passed only when its
-    model's grain check ran (not in ``suppressed``), its model is placed (in
+    **Where verify's result carries ``grain_coverage``** (exmergo-dex-core
+    1.17.5 on, #194), **a key is reported passed only on a ``proven`` record
+    for it**: one naming its model, its columns and a declared-key source, and
+    every such record ``proven``. A ``broken`` record is a measured failure,
+    with the ``grain_broken`` finding's description and count where there is
+    one. A record in any other state (``not_applicable``, ``unchecked``,
+    ``not_planned``, or one this package does not know), no record at all,
+    and a ``grain_coverage`` of ``None`` are each not measured, with the state
+    and dex-core's reason code. Before any record is read, a suppressed grain
+    check or a model absent from ``model_relations`` is not measured, as
+    below. No note is read to decide a pass on this path; a note naming the
+    model only adds to the reason of a key that was not judged.
+
+    **Where it does not** (an engine from 1.12.5 to 1.17.4), **a pass needs
+    every route to "not judged" ruled out**, because verify then reports a
+    broken key and stays silent on a clean one: its result has no record of
+    a key that held. So a key is reported passed only when its model's grain
+    check ran (not in ``suppressed``), its model is placed (in
     ``model_relations``, and no ``no_relation`` finding), verify's own
     ``grain_plan`` includes this key (a composite on a model that also declares
     a single-column key is not checked), no note of verify's names the model
     (its note on columns the relation lacks counts only for a key using one),
     and no ``grain_broken`` finding matches it. Anything else is not measured,
-    with the reason. Any ``DexError`` from verify (its cost gate, its query
-    firewall, the warehouse, a dropped connection) or a probe returned for
-    confirmation leaves every key not measured, with dex's message as the
-    reason.
+    with the reason. An engine from 1.17.5 whose result lacks the field gets
+    neither path: every key is not measured. On either path, any ``DexError``
+    from verify (its cost gate, its query firewall, the warehouse, a dropped
+    connection) or a probe returned for confirmation leaves every key not
+    measured, with dex's message as the reason.
 
-    **What this reads off verify's notes fails open in one way, stated so it
-    is not assumed:** a note that stopped naming the model would no longer
-    mark it unjudged. A note reworded any other way costs a pass, never grants
-    one; the real-engine tests reach every such note there is a fixture for.
+    **The note path fails open in one way, stated so it is not assumed:** a
+    note that stopped naming the model would no longer mark it unjudged. A
+    released engine's notes do not change, so the residue is this: on an
+    engine below 1.17.5 the note path remains, and a note reworded in a patch
+    release of such a line would read as a pass. A note reworded any other way
+    costs a pass, never grants one.
 
     **A reason never carries the warehouse's own words.** A warehouse error
     can quote a row value (a cast that failed on it, say), so where dex marks
@@ -1592,8 +1630,23 @@ def verify_declared_keys(
         )
         return tuple(_unmeasured(claim, reason) for claim, _ in claims)
 
-    plan = grain_plan(definitions, scope={model.lower() for model in models})
     unplaced = " ".join(note for note in definitions.notes if _UNPLACED in note)
+    # The capability is read off what the result carries: the field exists on
+    # a 1.17.5 result even where its value is None.
+    if hasattr(result, "grain_coverage"):
+        return tuple(
+            _judge_by_record(claim, key, result, definitions, unplaced)
+            for claim, key in claims
+        )
+    if _release_tuple(release) >= GRAIN_COVERAGE_FROM:
+        floor = ".".join(str(part) for part in GRAIN_COVERAGE_FROM)
+        reason = (
+            f"exmergo-dex-core {release} returned a verify result without "
+            f"grain_coverage, which it carries from {floor}; no key is passed "
+            f"without its record"
+        )
+        return tuple(_unmeasured(claim, reason) for claim, _ in claims)
+    plan = grain_plan(definitions, scope={model.lower() for model in models})
     return tuple(
         _judge(claim, key, result, definitions, plan, unplaced)
         for claim, key in claims
@@ -1651,6 +1704,99 @@ def _judge(
     if skipped is not None:
         return _unmeasured(claim, skipped)
     return KeyVerdict(claim=claim, measured=True, passed=True)
+
+
+def _judge_by_record(
+    claim: str,
+    key: DeclaredKey,
+    result: Any,
+    definitions: Any,
+    unplaced: str,
+) -> KeyVerdict:
+    """One verdict from verify's ``grain_coverage``: a pass only on ``proven``."""
+
+    suppressed = result.suppressed.get("grain")
+    if suppressed:
+        return _unmeasured(claim, f"maintain verify suppressed its grain check: {suppressed}")
+    if key.model not in definitions.model_relations:
+        return _unmeasured(claim, unplaced or f"{key.model} is absent from model_relations")
+    label = f"{key.model} ({', '.join(key.columns)})"
+    if result.grain_coverage is None:
+        return _unmeasured(
+            claim,
+            f"maintain verify returned no grain_coverage for {label}, "
+            f"which it does only when its grain check did not run",
+        )
+    records = [record for record in result.grain_coverage if _record_for(record, key)]
+    if not records:
+        return _unmeasured(
+            claim, f"maintain verify's grain_coverage holds no record for {label}"
+        )
+    statuses = [str(record.get("status")) for record in records]
+    if all(status == "proven" for status in statuses):
+        return KeyVerdict(claim=claim, measured=True, passed=True)
+    if "broken" in statuses:
+        return _broken_by_record(claim, key, result, records[statuses.index("broken")], label)
+    record = next(record for record in records if record.get("status") != "proven")
+    return _unmeasured(claim, _record_reason(key, record, result, definitions, label))
+
+
+def _record_for(record: Any, key: DeclaredKey) -> bool:
+    """Is ``record`` a ``grain_coverage`` record of this declared key?"""
+
+    if not isinstance(record, Mapping):
+        return False
+    return (
+        str(record.get("model") or "").lower() == key.model.lower()
+        and record.get("source") in _KEY_SOURCES
+        and _same_columns(record.get("columns"), key.columns)
+    )
+
+
+def _broken_by_record(
+    claim: str, key: DeclaredKey, result: Any, record: Mapping[str, Any], label: str
+) -> KeyVerdict:
+    """A measured failure, told in the finding's words where verify gave one."""
+
+    finding = _broken(key, result)
+    if finding is not None:
+        count = finding.data.get("duplicate_count")
+        reason = _carried(str(finding.detail))
+    else:
+        measured = record.get("measured") or {}
+        rows, distinct = measured.get("rows"), measured.get("distinct")
+        count = rows - distinct if isinstance(rows, int) and isinstance(distinct, int) else None
+        reason = f"maintain verify's grain_coverage reports {label} broken"
+    return KeyVerdict(
+        claim=claim,
+        measured=True,
+        passed=False,
+        reason=reason,
+        duplicate_count=count if isinstance(count, int) else None,
+    )
+
+
+def _record_reason(
+    key: DeclaredKey, record: Mapping[str, Any], result: Any, definitions: Any, label: str
+) -> str:
+    """Why a record not ``proven`` and not ``broken`` leaves its key unjudged.
+
+    A note of verify's naming the model is added, since it is often the only
+    account of why (a relation that matched twice, a column it lacks). It
+    explains an unjudged key; it never decides one.
+    """
+
+    status = str(record.get("status"))
+    what = _NOT_JUDGED.get(status, "a status this package does not read as a pass")
+    reason = (
+        f"maintain verify did not judge {label}: its grain_coverage record is "
+        f"{status} ({record.get('reason') or 'no reason code'}); {what}"
+    )
+    own = frozenset(definitions.notes)
+    for note in [*result.warnings, *result.notes]:
+        if note not in own and _names_model(note, key.model):
+            return f"{reason}. verify notes: {note}"
+    return reason
 
 
 def _broken(key: DeclaredKey, result: Any) -> Any:

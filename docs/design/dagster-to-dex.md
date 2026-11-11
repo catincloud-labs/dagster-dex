@@ -6,7 +6,8 @@
   `src/dagster_dex/artifact.py`, `src/dagster_dex/protocol.py`,
   `src/dagster_dex/checks.py`
 - **Reviewed:** 2026-10-30 at `c4e8231`; the asset-check section written
-  2026-11-10 against `993f479`
+  2026-11-10 against `993f479`, and its executor half brought to #194 on
+  2026-11-11 against `57a08e2`
 
 This page describes how the translation works today. It decides nothing: each
 decision it touches is linked where it is made, and a change to one is made
@@ -325,7 +326,7 @@ Each declared key gets one check. A declared join gets none: dex-core judges
 no declared join for this project format, and a check that could only ever
 report "not measured" was declined. Each join is named instead in
 `dagster_dex.checks.DeclarationCheckSpecs` notes (`_join_notes`, `checks.py`
-line 344), which the executor logs as a warning on every run (line 445), so a
+line 344), which the executor logs as a warning on every run (line 448), so a
 run's log says what goes unchecked. The ruling is
 [#180, comment 6715768229](https://github.com/catincloud-labs/dagster-dex/issues/180#issuecomment-6715768229);
 the dex-core change join checks would wait on is filed as
@@ -362,33 +363,59 @@ dex-core, so `import dagster_dex.checks` works with neither installed.
 
 `dagster_dex.checks.build_declaration_checks` (line 365) needs Dagster and
 the `[dex]` extra. It returns one `multi_asset_check` over the spec layer's
-specs (line 456), which a run may subset. Each run:
+specs (line 459), which a run may subset. Each run:
 
 1. logs the spec layer's notes as warnings;
 2. opens ONE engine, `dagster_dex.dex.open_verify_engine` (`dex.py` line
-   1457) unless the caller passes its own opener. The connection may be the
+   1478) unless the caller passes its own opener. The connection may be the
    project's own (dex-core's `ConnectionSource`), but the cost ceilings stay
    dex's, built from its own store;
 3. calls `DexEngine.verify` ONCE, for the models of the selected checks,
-   through `dagster_dex.dex.verify_declared_keys` (line 1510);
-4. maps each result back to its claim by model, columns and source: a
-   `grain_broken` finding under `unique_test` or `unique_test_composite`
-   (`_broken`, line 1656; `_KEY_SOURCES`, line 1379);
+   through `dagster_dex.dex.verify_declared_keys` (line 1531);
+4. maps each result back to its claim by model, columns and source, under
+   `unique_test` or `unique_test_composite` (`_KEY_SOURCES`, line 1400): a
+   `grain_coverage` record (`_record_for`, line 1744) where verify's result
+   carries one, and a `grain_broken` finding (`_broken`, line 1802) for a
+   broken key's count and words;
 5. yields one result per selected check.
 
 What crosses back from `dex.py` is a `dagster_dex.dex.KeyVerdict` per claim
-(line 1395): plain values, so the Dagster side never handles an engine type.
+(line 1416): plain values, so the Dagster side never handles an engine type.
 
-**A pass is read out of silence.** Verify reports a broken key and says
-nothing about one that held, so a key is reported passed only once every
-route to "not judged" is ruled out (`_judge`, line 1627; `_skip_reason`, line
-1671). The routes, and the one way the note-reading fails open, are in the
-`dagster_dex.dex.verify_declared_keys` docstring. The field that would
-replace that reading, `VerifyResult.grain_coverage` (one record per declared
-key, asked for in [exmergo/dex#1223](https://github.com/exmergo/dex/issues/1223)),
-ships from exmergo-dex-core 1.17.5. This package does not read it yet: the
-`[dex]` range admits engines without it, so a pass is still read out of
-silence on every engine.
+**From exmergo-dex-core 1.17.5, a pass is read off a record** (#194, option A
+as ruled in
+[comment 6807768619](https://github.com/catincloud-labs/dagster-dex/issues/194#issuecomment-6807768619)).
+Verify's result then carries `VerifyResult.grain_coverage`, one record per
+declared key (asked for in
+[exmergo/dex#1223](https://github.com/exmergo/dex/issues/1223)), and a key is
+reported passed only on a `proven` record for it (`_judge_by_record`, line
+1709). A `broken` record is a measured failure, and every other state, no
+record, and no `grain_coverage` at all are not measured. Which path runs is
+read off the result, by whether it carries the field (line 1636), not off the
+version; `dagster_dex.dex.GRAIN_COVERAGE_FROM` (line 1379) only refuses the
+note path to an engine at or above 1.17.5 whose result lacks the field, so
+that a field renamed upstream costs every pass rather than reopening the note
+path (line 1641).
+
+**Below 1.17.5, a pass is read out of silence.** Verify then reports a broken
+key and says nothing about one that held, so a key is reported passed only
+once every route to "not judged" is ruled out (`_judge`, line 1680;
+`_skip_reason`, line 1817), one of which is a note of verify's naming the
+model. The `[dex]` range admits these engines, and its floor does not move.
+**The residue, stated plainly: on an engine below 1.17.5 the note path
+remains, and a note reworded in a patch release of such a line would read as
+a pass.** A released engine's notes do not change, so the path opens only on
+such a patch. Both paths, and the routes, are in the
+`dagster_dex.dex.verify_declared_keys` docstring.
+
+**What CI runs of each path.** `engine-ends` runs the record path against
+a real DuckDB warehouse at the ceiling. At the floor verify does not judge
+this format, so neither path runs there. No CI cell installs an engine
+from 1.12.5 to 1.17.4, so the note path runs in CI only against a result
+built without `grain_coverage` (`NoteEraResult` in
+`tests/test_executor.py`), and against a real engine only when someone
+runs the boundary suite with one of those engines at a desk. Whether to
+add a cell pinned to 1.17.4 is the owner's to decide.
 
 ### The defaults
 
@@ -398,21 +425,27 @@ and held by `tests/test_executor.py`:
 
 | Default | How it reads in a result | Where |
 | --- | --- | --- |
-| A claim the engine did not measure never reports as passed | `passed` false, severity WARN, `dagster_dex/measured` false, and the reason under `dagster_dex/reason` and as the description | `KeyVerdict` and `_unmeasured`, `dex.py` lines 1395 to 1413 |
-| Nothing confirms a priced probe on a run's behalf | a probe the cost gate refuses or wants confirmed leaves every key in the call not measured, with the reason: dex's message for a refusal, and this package's own text for a probe returned to confirm; spending is the builder's `confirm_spend` opt-in, and dex's ceilings bind either way | `dex.py` lines 1576 to 1593 |
-| WARN by default; blocking is an opt-in per claim | ERROR only for a measured failure of a claim in `blocking`; an unmeasured blocking claim still warns, since a key nobody measured is not evidence it broke | `checks.py` line 512 |
+| A claim the engine did not measure never reports as passed | `passed` false, severity WARN, `dagster_dex/measured` false, and the reason under `dagster_dex/reason` and as the description | `KeyVerdict` and `_unmeasured`, `dex.py` lines 1416 to 1434 |
+| Nothing confirms a priced probe on a run's behalf | a probe the cost gate refuses or wants confirmed leaves every key in the call not measured, with the reason: dex's message for a refusal, and this package's own text for a probe returned to confirm; spending is the builder's `confirm_spend` opt-in, and dex's ceilings bind either way | `dex.py` lines 1614 to 1631 |
+| WARN by default; blocking is an opt-in per claim | ERROR only for a measured failure of a claim in `blocking`; an unmeasured blocking claim still warns, since a key nobody measured is not evidence it broke | `checks.py` line 515 |
 | Run on a schedule, not on materialization | the checks carry no automation condition; a job selecting them is the caller's to schedule | the `build_declaration_checks` docstring |
-| Metadata carries counts only, never a row value | the claim id, `measured`, the engine's version, a reason when not measured, and a duplicate count on a failure; a reason is cut where dex starts quoting the warehouse | `_result`, `checks.py` lines 495 to 520; `_carried`, `dex.py` line 1416 |
+| Metadata carries counts only, never a row value | the claim id, `measured`, the engine's version, a reason when not measured, and a duplicate count on a failure; a reason is cut where dex starts quoting the warehouse | `_result`, `checks.py` lines 498 to 523; `_carried`, `dex.py` line 1437 |
 
 The routes that leave a key not measured, each reported with its reason:
 
 - the engine predates verify judging this format (next section);
 - verify suppressed its grain check;
 - the model is absent from `model_relations`, because no asset metadata or
-  `relations:` entry names its table, or verify reports `no_relation` for it;
+  `relations:` entry names its table, or (below 1.17.5) verify reports
+  `no_relation` for it, which from 1.17.5 reaches the key as an `unchecked`
+  record;
 - verify's own grain plan leaves the key out: it checks a declared composite
-  key only when the model declares no single-column unique key;
-- one of verify's notes names the model;
+  key only when the model declares no single-column unique key (from 1.17.5,
+  a `not_planned` record);
+- from 1.17.5: the key's record is `not_applicable` (an empty relation),
+  `unchecked`, or a state this package does not know; the key has no record;
+  or the result carries no `grain_coverage`;
+- below 1.17.5: one of verify's notes names the model;
 - any `DexError` stops verify (the cost gate, the query firewall, the
   warehouse refusing a statement, a lost connection), or verify returns a
   probe to confirm.
@@ -425,7 +458,7 @@ The routes that leave a key not measured, each reported with its reason:
 no verify before 1.9.2, and a refusal of the format from 1.9.2 to 1.12.4. The
 floor is `dagster_dex.dex.VERIFY_JUDGES_FROM` (line 1371). Below it every
 check reports not measured, with a reason naming the installed engine and the
-floor, and the engine is not opened (line 1554). The `[dex]` range's own floor
+floor, and the engine is not opened (line 1592). The `[dex]` range's own floor
 is older than 1.12.5, so an install at that end runs the checks and judges
 none of them; the version pins themselves are in
 [AGENTS.md, *The dependency pin*](../../AGENTS.md#the-dependency-pin-and-why-there-are-two-of-them).
