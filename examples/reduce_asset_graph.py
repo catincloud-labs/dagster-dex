@@ -8,8 +8,9 @@ Run it:
         python examples/reduce_asset_graph.py
 
 This file checks the reduction against the orchestrator. Other files under
-`examples/` import Dagster too, each to check a different path against it;
-this is the one that checks `from_asset_graph`. Every test in this
+`examples/` import Dagster too, and some of them call `from_asset_graph` on
+the way to what they show; this file asserts on what the reduction makes of a
+real graph, negative checks included. Every test in this
 repository uses fakes, deliberately - the suite has to run without Dagster
 installed, which is what keeps the reduction honest about reading definitions
 STRUCTURALLY rather than importing them. The cost of that choice is that nothing
