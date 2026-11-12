@@ -7,7 +7,9 @@ Run it:
     uv run --no-project --with-editable . --with 'dagster>=1.13' \\
         python examples/reduce_asset_graph.py
 
-This is the only file here that touches the orchestrator. Every test in this
+This file checks the reduction against the orchestrator. Other files under
+`examples/` import Dagster too, each to check a different path against it;
+this is the one that checks `from_asset_graph`. Every test in this
 repository uses fakes, deliberately - the suite has to run without Dagster
 installed, which is what keeps the reduction honest about reading definitions
 STRUCTURALLY rather than importing them. The cost of that choice is that nothing
