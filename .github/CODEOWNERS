@@ -6,18 +6,6 @@
 # no teams, so a `@catincloud-labs/<team>` entry would resolve to nothing
 # silently.
 #
-# An entry here is inert unless the account it names has write access to this
-# repository. When it does not, the entry is reported as "Unknown owner" rather
-# than failing loudly, and `GET /repos/{owner}/{repo}/codeowners/errors` is what
-# says so. That error does not distinguish a misspelled name from a real account
-# that is simply missing the grant, so check both.
-#
-# Two owners on one pattern means a review from EITHER satisfies the
-# code-owner requirement. GitHub forbids approving your own pull request, so
-# a single-owner file leaves the requirement unsatisfiable for that owner --
-# they can only bypass it. The second entry is what makes the requirement
-# satisfiable in both directions, and it is deliberate, not a courtesy.
-#
 # The second owner is named on the SEAM, not on `*`. From 2026-08-23 to
 # 2026-09-04 `*` carried both owners, and every pull request here -- docs,
 # Dependabot bumps, CI plumbing -- requested a review from the upstream
