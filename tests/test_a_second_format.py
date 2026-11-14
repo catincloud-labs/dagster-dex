@@ -25,7 +25,7 @@ could land, so it has no `propose_edits`, and a test asserts the decline with
 note exists where a loss is likely, so a note a format adds for its own reasons
 is the format's to test: loud when the loss happens, quiet when it does not.
 
-**The contract going red is not here.** The two formats built wrong on
+**The contract going red is not here.** The formats built wrong on
 purpose ship in the package, in `dagster_dex.planted`, so an implementer can
 run them from an install; `tests/test_conformance.py` holds each one to the
 tests it is built to fail.

@@ -47,15 +47,16 @@ from typing import Any
 REPO = Path(__file__).resolve().parent.parent
 MODULE = REPO / "scripts" / "a_format_outside_the_tree.py"
 
-#: The classes wired to the tier-2 contract, and the one wired to tier 3.
+#: The classes wired to the tier-2 contract, and those wired to tier 3.
 TIER_TWO = ("TestDagsterProject", "TestSourceBlindProject", "TestRaisingProject")
-TIER_THREE = "TestEditableDagsterProject"
-PASSING = ("TestDagsterProject", TIER_THREE)
+TIER_THREE = ("TestEditableDagsterProject", "TestConfirmBlindProject")
+PASSING = ("TestDagsterProject", "TestEditableDagsterProject")
 
 #: What each planted defect fails, and how the failure's message begins, which
 #: names the kind of error. Everything else in its class must pass. These are
-#: the sets `PLANTED` in `tests/test_conformance.py` holds against the working
-#: tree; both go red if a defect's behaviour moves.
+#: the sets `PLANTED` (tier 2) and `PLANTED_WRITE` (tier 3) in
+#: `tests/test_conformance.py` hold against the working tree; both go red if a
+#: defect's behaviour moves.
 REFUSING = {
     "TestSourceBlindProject": {
         "test_gaining_an_external_source_is_visible_as_drift": "AssertionError",
@@ -64,6 +65,10 @@ REFUSING = {
     "TestRaisingProject": {
         "test_malformed_input_never_raises": "yaml.",
         "test_malformed_input_is_explained_rather_than_silent": "yaml.",
+    },
+    "TestConfirmBlindProject": {
+        "test_an_unconfirmed_write_refuses_a_target_that_moved": "AssertionError",
+        "test_the_outcome_reports_what_happened": "AssertionError",
     },
 }
 
@@ -146,7 +151,7 @@ def _check_shape(by_class: dict[str, dict[str, Outcome]], probe: dict[str, Any])
 
     problems = [f"collected outside any class: {by_class['']}"] if "" in by_class else []
     contracts = {cls: probe["tier_two"] for cls in TIER_TWO}
-    contracts[TIER_THREE] = probe["tier_three"]
+    contracts.update({cls: probe["tier_three"] for cls in TIER_THREE})
     for cls, wanted in contracts.items():
         ran = set(by_class.get(cls, {}))
         if not wanted or ran != set(wanted):

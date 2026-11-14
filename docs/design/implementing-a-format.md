@@ -5,7 +5,8 @@
   `src/dagster_dex/conformance.py`, `src/dagster_dex/planted.py`,
   `src/dagster_dex/dex.py`, `tests/test_a_second_format.py`,
   `tests/test_conformance.py`, `scripts/a_format_outside_the_tree.py`
-- **Reviewed:** 2026-11-09 at `bb30439`
+- **Reviewed:** 2026-11-09 at `bb30439`; *Watching it refuse* and *What is
+  promised to stay put* re-read 2026-11-14 at `f5eeb99`
 
 This page is for someone writing a project format of their own: a reader of
 some other source of project truth that wants to be held to the same seam as
@@ -256,7 +257,7 @@ still raise on an absent project. In groups:
 
 The builder names and the assertions are public surface: a format pins
 against them, and renaming one is a breaking change (the module docstring).
-So are the two formats `dagster_dex.planted` ships, and the tests each one
+So are the three formats `dagster_dex.planted` ships, and the tests each one
 fails (the `src/dagster_dex/planted.py` module docstring).
 One builder default is held for the same reason: `a_join_declaration` keeps
 both sides named alike so an outside implementer's suite does not change
@@ -305,20 +306,25 @@ uv run --no-project --with-editable . --with pytest==8.4.1 \
 
 A contract observed only to pass has not been shown to be one
 ([AGENTS.md, *Verification method*](../../AGENTS.md#verification-method)), so
-the package ships two formats built wrong on purpose beside it, in
-`src/dagster_dex/planted.py`. Each is `dagster_dex.project.DagsterProject`
-with one defect a second format is likely to ship, and takes its constructor:
+the package ships three formats built wrong on purpose beside it, in
+`src/dagster_dex/planted.py`. Each is one of this package's formats with one
+defect a second format is likely to ship, and takes that format's
+constructor:
 
-| Format | Its defect | The contract tests it fails |
-| --- | --- | --- |
-| `dagster_dex.planted.SourceBlindProject` | fingerprints the models alone, so a new warehouse dependency is no drift | `test_gaining_an_external_source_is_visible_as_drift`, `test_repointing_a_source_to_another_schema_is_drift` |
-| `dagster_dex.planted.RaisingProject` | parses its declarations with no guard, so bad YAML is an exception | `test_malformed_input_never_raises`, `test_malformed_input_is_explained_rather_than_silent` |
+| Format | Wraps, and its contract | Its defect | The contract tests it fails |
+| --- | --- | --- | --- |
+| `dagster_dex.planted.SourceBlindProject` | `DagsterProject`, tier 2 | fingerprints the models alone, so a new warehouse dependency is no drift | `test_gaining_an_external_source_is_visible_as_drift`, `test_repointing_a_source_to_another_schema_is_drift` |
+| `dagster_dex.planted.RaisingProject` | `DagsterProject`, tier 2 | parses its declarations with no guard, so bad YAML is an exception | `test_malformed_input_never_raises`, `test_malformed_input_is_explained_rather_than_silent` |
+| `dagster_dex.planted.ConfirmBlindProject` | `EditableDagsterProject`, tier 3 | writes every edit as though confirmed, so a human's edit is overwritten | `test_an_unconfirmed_write_refuses_a_target_that_moved`, `test_the_outcome_reports_what_happened` |
 
-Wire one to `dagster_dex.conformance.FingerprintedProjectContract` the way you
-wire your own format, in the same environment, and run it: the tests in its
-row fail and every other assertion passes. Both are tier 2, so they reach the
-tier-1 and tier-2 contracts only, and no planted defect for the write tier
-ships. The module imports no pytest, so it imports wherever the package does.
+Wire one to its contract the way you wire your own format, in the same
+environment, and run it: the tests in its row fail and every other assertion
+passes. The two tier-2 formats go to
+`dagster_dex.conformance.FingerprintedProjectContract` through `make_project`;
+`ConfirmBlindProject` goes to `dagster_dex.conformance.EditableProjectContract`
+through `an_edit_against_a_changed_target`, which builds the directory it
+writes into. The module imports no pytest, so it imports wherever the package
+does.
 
 `tests/test_conformance.py` holds each one to exactly its row on every run.
 `publish.yml`'s `build` job does the same from the built wheel on every pull

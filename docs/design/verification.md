@@ -17,7 +17,8 @@
   `examples/walk_the_whole_loop.py`, `examples/run_declared_key_checks.py`
 - **Reviewed:** 2026-10-30 at `19a4088`; the sections the shipped planted
   formats touch re-read 2026-11-09 at `bb30439`; the sections the declared-key
-  checks example touches re-read 2026-11-10 at `993f479`
+  checks example touches re-read 2026-11-10 at `993f479`; the sections the
+  tier-3 planted format touches re-read 2026-11-14 at `f5eeb99`
 
 This page describes how the package's claims are checked today: which job
 holds which claim, what each check can and cannot see, and where each one has
@@ -465,12 +466,26 @@ those.
 
 - **The refusing arm is read first.** Each format `dagster_dex.planted` ships
   has to fail exactly the tests it is built to fail, with the error it is built
-  to raise, and pass every other test of the tier-2 contract; the three tier-2
-  classes have to run the same tests. Only then is the passing arm read:
+  to raise, and pass every other test of its tier's contract: the three tier-2
+  classes run the tier-2 contract's tests, and the two tier-3 classes the
+  tier-3 contract's. `SourceBlindProject` and `RaisingProject` are tier 2;
+  `ConfirmBlindProject` is tier 3, and fails
+  `test_an_unconfirmed_write_refuses_a_target_that_moved` and
+  `test_the_outcome_reports_what_happened`. Only then is the passing arm read:
   `DagsterProject` through the tier-2 contract and `EditableDagsterProject`
   through the tier-3 one, every test green.
-- **What it does not reach.** Both planted formats are tier 2, so the tier-3
-  contract has a passing arm here and no refusing one.
+- **What it does not reach.** The tier-3 refusing arm is one planted format,
+  and it reaches only the scenario the contract's hook stages: one edit,
+  pinned to a file that exists, with a key inside the surface. The three
+  write-path defects on record
+  ([*The measurement, and what it was measured against*](#the-measurement-and-what-it-was-measured-against))
+  each pass all five tests of the shipped `EditableProjectContract`, measured
+  on 2026-11-14 at `f5eeb99`
+  ([#191](https://github.com/catincloud-labs/dagster-dex/issues/191)), so none
+  is planted here. `tests/test_write_tier.py` catches each of them, and dex-core's write
+  contracts do too. Whether this package's contract should stage those
+  scenarios is
+  [#200](https://github.com/catincloud-labs/dagster-dex/issues/200).
 - **Its red arms.** Measured on 2026-11-09, each against a wheel built from a
   mutated copy of the tree unless named otherwise:
   - correcting `SourceBlindProject`'s fingerprint turned the refusing arm red
@@ -486,6 +501,12 @@ those.
   The corrected `SourceBlindProject` also turned
   `tests/test_conformance.py::test_each_planted_defect_fails_exactly_the_tests_it_is_built_to_fail`
   red for `SourceBlindProject` alone.
+
+  Measured on 2026-11-14 the same way: correcting `ConfirmBlindProject`, so
+  that it passes `confirmed` through, turned the refusing arm red on its two
+  tests, with the two tier-2 formats still red as built, and turned
+  `tests/test_conformance.py::test_each_planted_write_defect_fails_exactly_the_tests_it_is_built_to_fail`
+  red for it.
 
 ## Claims in prose, held to runs
 
@@ -637,8 +658,8 @@ and its red arms are not read here.
 | dex-core's write contracts | The seven mutations above, at both ends of the range | recorded, here |
 | Read-path driver | None found | none |
 | Write-path driver | Pre-write-tier tree and four mutations | recorded, #25; re-run here |
-| `dagster_dex.conformance`, in `tests/test_conformance.py` | The two formats `dagster_dex.planted` ships, each held to the tests it fails; a corrected defect (2026-11-09) | standing, and recorded, here |
-| The shipped contract from the wheel | The same two formats, read per test; each defect corrected, a wheel missing either module, a dropped test, an editable install (2026-11-09) | standing, and recorded, here |
+| `dagster_dex.conformance`, in `tests/test_conformance.py` | The three formats `dagster_dex.planted` ships, each held to the tests it fails; a corrected defect (2026-11-09, 2026-11-14) | standing, and recorded, here |
+| The shipped contract from the wheel | The same three formats, read per test; each defect corrected, a wheel missing either module, a dropped test, an editable install (2026-11-09, 2026-11-14) | standing, and recorded, here |
 | `scripts/check_readme_excerpt.py` | `tests/test_readme_excerpt.py` | standing |
 | The whole loop's impact assertion | The `deps=` edge removed | recorded, `checks.yml` |
 | The other two real-Dagster example steps | None found | none |

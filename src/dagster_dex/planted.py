@@ -1,15 +1,15 @@
 # Copyright 2026 David Anaya
 # SPDX-License-Identifier: Apache-2.0
-"""Two formats built wrong on purpose, to watch the contract refuse.
+"""Three formats built wrong on purpose, to watch the contract refuse.
 
 A contract observed only to pass has not been shown to be one. These ship
 beside :mod:`dagster_dex.conformance` so that an implementer outside this
 repository can watch it go red in their own environment, on the same install
 that runs it against their format, before trusting its green.
 
-Each is :class:`~dagster_dex.project.DagsterProject` with one defect a second
-format is likely to ship, and each takes ``DagsterProject``'s constructor. Wire
-one to the contract the way you wire your own format::
+Each is one of this package's own formats with one defect a second format is
+likely to ship, and each takes that format's constructor. Wire one to the
+contract the way you wire your own format::
 
     from dagster_dex.conformance import FingerprintedProjectContract
     from dagster_dex.planted import SourceBlindProject
@@ -21,30 +21,40 @@ one to the contract the way you wire your own format::
                                       source_declarations=sources)
 
 Run it, and the tests each class's docstring names fail while every other
-assertion passes, as all of them do on ``DagsterProject``. A defect that stops
+assertion passes, as all of them do on the format it wraps. A defect that stops
 failing those tests, or one that starts failing others, means the contract
 moved underneath you.
 
-**They wrap ``DagsterProject`` rather than a toy format of their own.** A
+**They wrap this package's formats rather than a toy format of their own.** A
 shipped name is public surface, and a toy shipped to carry them would be a
-second format to keep. So both are tier 2, and they reach the tier-1 and tier-2
-contracts only: no planted defect for the write tier ships here.
+second format to keep. :class:`SourceBlindProject` and :class:`RaisingProject`
+wrap :class:`~dagster_dex.project.DagsterProject`, so they are tier 2 and reach
+the tier-1 and tier-2 contracts. :class:`ConfirmBlindProject` wraps
+:class:`~dagster_dex.project.EditableDagsterProject`, so it is tier 3, and is
+wired to ``EditableProjectContract`` through that contract's hook, which
+stages a target a human edited after the edit was proposed and so builds the
+directory the format writes into.
 
 This module does not import pytest, so it imports wherever the package does.
-Like the contract's builders, the two class names are public surface.
+Like the contract's builders, the three class names are public surface.
 
 Measures: src/dagster_dex/protocol.py, ProjectSource
 Measures: src/dagster_dex/protocol.py, FingerprintedProject
+Measures: src/dagster_dex/protocol.py, EditableProject
 """
 
 from __future__ import annotations
 
+import os
+from collections.abc import Sequence
+
 import yaml
 
 from .model import Fingerprint, ProjectDeclarations
-from .project import DagsterProject
+from .project import DagsterProject, EditableDagsterProject
+from .protocol import EditOutcome, ProposedEdit
 
-__all__ = ["RaisingProject", "SourceBlindProject"]
+__all__ = ["ConfirmBlindProject", "RaisingProject", "SourceBlindProject"]
 
 
 class SourceBlindProject(DagsterProject):
@@ -82,3 +92,36 @@ class RaisingProject(DagsterProject):
         for text in self._declaration_sources.values():
             yaml.safe_load(text)
         return super().declarations()
+
+
+class ConfirmBlindProject(EditableDagsterProject):
+    """Writes every edit as though confirmed, so a human's edit is overwritten.
+
+    Breaks the tier-3 statement in ``EditableProject``: a target that moved
+    after the edit was proposed is a conflict, and a write left unconfirmed
+    refuses the whole set. This one still checks every pin and still reports
+    the conflict, then writes anyway, which is the shape of a format whose
+    ``confirmed`` flag is dropped on the way down to the writer. Under
+    ``EditableProjectContract`` it fails exactly
+    ``test_an_unconfirmed_write_refuses_a_target_that_moved`` and
+    ``test_the_outcome_reports_what_happened``, each with an
+    ``AssertionError``. The second is the same defect read from the outcome:
+    the overwritten target is reported in ``written``, so a caller marks the
+    proposal applied. A confirmed write still lands, so the override assertion
+    passes.
+
+    That it still reports the conflict is how it is built, not something the
+    contract holds: the outcome assertion fails on ``written`` before it reads
+    ``conflicts``, so a variant that also dropped the conflict would fail the
+    same two tests.
+    """
+
+    def propose_edits(
+        self,
+        edits: Sequence[ProposedEdit],
+        *,
+        root: str | os.PathLike[str] | None = None,
+        confirmed: bool = False,
+    ) -> EditOutcome:
+        del confirmed  # the planted defect: the caller's answer is never read
+        return super().propose_edits(edits, root=root, confirmed=True)

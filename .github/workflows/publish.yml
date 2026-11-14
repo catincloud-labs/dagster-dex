@@ -282,8 +282,9 @@ jobs:
       # The refusing arm is read first: each format `dagster_dex.planted`
       # ships has to fail exactly the tests it is built to fail and pass the
       # rest, so a defect that stops failing turns this red. Only then is the
-      # passing arm, `DagsterProject` through the tier-2 and tier-3 contracts,
-      # reported green. A wheel missing either shipped module is red at import.
+      # passing arm, `DagsterProject` through the tier-2 contract and
+      # `EditableDagsterProject` through the tier-3 one, reported green. A
+      # wheel missing either shipped module is red at import.
       #
       # No engine here, like the wheel-import step above: the contract ships
       # for formats that need not install dex-core.
