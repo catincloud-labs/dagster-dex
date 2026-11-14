@@ -601,9 +601,12 @@ moves stand behind that rule, each paid for in this organisation:
 - **Never put a `close` / `fix` / `resolve` verb immediately before `#N`** in a
   commit message or PR body unless you mean it - including inside backticks, and
   including in a sentence warning against it. Only *adjacency* fires, so "part of
-  #N" and "refs #N" are safe.
+  #N" and "refs #N" are safe. **In a PR title, never, even when you mean it:** a
+  title becomes the merge commit's message and holds no `Autoclose:` trailer, so
+  a close you mean goes in the body with its trailer.
   - Guarded by `scripts/check_closing_keywords.py`, as a `commit-msg` hook and
-    again in CI. **Enable the hook per clone - it does not install itself -
+    again in CI, where the `closing keywords` job scans the PR body, the PR
+    title and every commit message. **Enable the hook per clone - it does not install itself -
     unless the clone already sets a hooks directory.** If
     `git config --get core.hooksPath` prints a value (it reads every scope, so
     a global setting counts), keep it: that hooks directory is expected to run
