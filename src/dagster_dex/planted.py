@@ -109,6 +109,11 @@ class ConfirmBlindProject(EditableDagsterProject):
     the overwritten target is reported in ``written``, so a caller marks the
     proposal applied. A confirmed write still lands, so the override assertion
     passes.
+
+    That it still reports the conflict is how it is built, not something the
+    contract holds: the outcome assertion fails on ``written`` before it reads
+    ``conflicts``, so a variant that also dropped the conflict would fail the
+    same two tests.
     """
 
     def propose_edits(

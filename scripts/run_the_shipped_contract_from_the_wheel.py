@@ -54,8 +54,9 @@ PASSING = ("TestDagsterProject", "TestEditableDagsterProject")
 
 #: What each planted defect fails, and how the failure's message begins, which
 #: names the kind of error. Everything else in its class must pass. These are
-#: the sets `PLANTED` in `tests/test_conformance.py` holds against the working
-#: tree; both go red if a defect's behaviour moves.
+#: the sets `PLANTED` (tier 2) and `PLANTED_WRITE` (tier 3) in
+#: `tests/test_conformance.py` hold against the working tree; both go red if a
+#: defect's behaviour moves.
 REFUSING = {
     "TestSourceBlindProject": {
         "test_gaining_an_external_source_is_visible_as_drift": "AssertionError",
