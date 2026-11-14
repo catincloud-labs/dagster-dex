@@ -13,9 +13,11 @@ It imports only the installed package. Each class is the subclass
 
 - `TestDagsterProject` and `TestEditableDagsterProject` are the passing arm,
   this package's own format through the tier-2 and tier-3 contracts;
-- `TestSourceBlindProject` and `TestRaisingProject` are the refusing arm, the
-  formats `dagster_dex.planted` ships, and are meant to go red. The runner
-  asserts which of their tests fail, so a defect that stops failing is red.
+- `TestSourceBlindProject`, `TestRaisingProject` and `TestConfirmBlindProject`
+  are the refusing arm, the formats `dagster_dex.planted` ships, the first two
+  through the tier-2 contract and the third through the tier-3 one, and are
+  meant to go red. The runner asserts which of their tests fail, so a defect
+  that stops failing is red.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from dagster_dex.conformance import (
     a_single_key_declaration,
 )
 from dagster_dex.model import definition_hash
-from dagster_dex.planted import RaisingProject, SourceBlindProject
+from dagster_dex.planted import ConfirmBlindProject, RaisingProject, SourceBlindProject
 
 MODELS = (
     ProjectModel(name="dim_date", layer="silver"),
@@ -56,37 +58,42 @@ class TestDagsterProject(FingerprintedProjectContract):
         return _built(DagsterProject, declarations, semantics, sources)
 
 
-class TestEditableDagsterProject(EditableProjectContract):
-    def an_edit_against_a_changed_target(
-        self,
-    ) -> tuple[EditableDagsterProject, Sequence[ProposedEdit], Callable[[], object]]:
-        # A fresh directory per call: one of the write assertions writes.
-        root = Path(tempfile.mkdtemp())
-        directory = root / "declarations"
-        directory.mkdir()
-        target = directory / "dim_date.yml"
-        target.write_text(a_single_key_declaration(), encoding="utf-8", newline="\n")
+Staged = tuple[EditableDagsterProject, Sequence[ProposedEdit], Callable[[], object]]
 
-        project = EditableDagsterProject(
-            MODELS,
-            root=root,
-            surface=("declarations",),
-            declaration_sources={
-                "declarations/dim_date.yml": target.read_text(encoding="utf-8")
-            },
+
+def _staged(cls: type[EditableDagsterProject]) -> Staged:
+    # A fresh directory per call: one of the write assertions writes.
+    root = Path(tempfile.mkdtemp())
+    directory = root / "declarations"
+    directory.mkdir()
+    target = directory / "dim_date.yml"
+    target.write_text(a_single_key_declaration(), encoding="utf-8", newline="\n")
+
+    project = cls(
+        MODELS,
+        root=root,
+        surface=("declarations",),
+        declaration_sources={
+            "declarations/dim_date.yml": target.read_text(encoding="utf-8")
+        },
+    )
+    edits = [
+        ProposedEdit(
+            key="declarations/dim_date.yml",
+            new_content="models: []\n",
+            pinned_hash=definition_hash(target.read_text(encoding="utf-8")),
         )
-        edits = [
-            ProposedEdit(
-                key="declarations/dim_date.yml",
-                new_content="models: []\n",
-                pinned_hash=definition_hash(target.read_text(encoding="utf-8")),
-            )
-        ]
-        # The human, editing the target after the edit was proposed.
-        target.write_text(
-            "models: [{name: edited_by_a_human}]\n", encoding="utf-8", newline="\n"
-        )
-        return project, edits, lambda: target.read_text(encoding="utf-8")
+    ]
+    # The human, editing the target after the edit was proposed.
+    target.write_text(
+        "models: [{name: edited_by_a_human}]\n", encoding="utf-8", newline="\n"
+    )
+    return project, edits, lambda: target.read_text(encoding="utf-8")
+
+
+class TestEditableDagsterProject(EditableProjectContract):
+    def an_edit_against_a_changed_target(self) -> Staged:
+        return _staged(EditableDagsterProject)
 
 
 class TestSourceBlindProject(FingerprintedProjectContract):
@@ -99,3 +106,8 @@ class TestRaisingProject(FingerprintedProjectContract):
     def make_project(self, declarations: dict[str, str], semantics: dict[str, str],
                      sources: dict[str, str]) -> DagsterProject:
         return _built(RaisingProject, declarations, semantics, sources)
+
+
+class TestConfirmBlindProject(EditableProjectContract):
+    def an_edit_against_a_changed_target(self) -> Staged:
+        return _staged(ConfirmBlindProject)

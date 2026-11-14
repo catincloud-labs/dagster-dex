@@ -280,9 +280,11 @@ on an absent, empty, or malformed project. That is the property a second
 implementation is most likely to get wrong, and a suite checking only shapes
 will pass it.
 
-To watch the contract refuse before trusting its green, wire one of the two
-formats in `dagster_dex.planted` the same way. Each is `DagsterProject` with
-one defect, and fails exactly the tests its docstring names. The design guide's
+To watch the contract refuse before trusting its green, wire one of the three
+formats in `dagster_dex.planted` to its contract. Each is one of this
+package's formats with one defect, and fails exactly the tests its docstring
+names: two are `DagsterProject` and go to the tier-2 contract, and one is
+`EditableDagsterProject` and goes to the tier-3 one. The design guide's
 [*Watching it refuse*](https://github.com/catincloud-labs/dagster-dex/blob/main/docs/design/implementing-a-format.md#watching-it-refuse)
 lists them.
 

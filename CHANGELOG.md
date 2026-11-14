@@ -28,6 +28,27 @@ major if you depend on the contract.
   environment before trusting it to pass. The module imports no pytest. Its
   two class names are new public surface, so the release that carries them is
   a minor.
+- **`dagster_dex.planted.ConfirmBlindProject`: a tier-3 format built to fail
+  the write contract** (`src/dagster_dex/planted.py`, #191). It is
+  `EditableDagsterProject` writing every edit as though confirmed, so a target
+  a human edited after the edit was proposed is overwritten. Under
+  `EditableProjectContract` it fails exactly
+  `test_an_unconfirmed_write_refuses_a_target_that_moved` and
+  `test_the_outcome_reports_what_happened`, and passes the other three, so
+  the write contract now has a refusing arm. `tests/test_conformance.py` and
+  the wheel step in `publish.yml`'s `build` hold it to those two tests, as they
+  hold the tier-2 formats to theirs. `planted.py` gains a `Measures:` line for
+  `EditableProject`. The class name is new public surface, which the minor
+  already owed for `dagster_dex.planted` covers.
+  - **Why this defect and not the three on record.** The three write-path
+    defects `docs/design/verification.md` records each pass all five tests of
+    the shipped `EditableProjectContract`, measured on 2026-11-14 at
+    `f5eeb99`, because the contract's hook stages one edit, pinned to a file
+    that exists, with a key inside the surface. Planting a defect that scenario
+    catches was the owner's ruling on #191; whether the contract should stage
+    the other three is #200. No contract test changed.
+  - The paragraphs the change made false are quoted under *How this section
+    read before*, below.
 - **The contract's module docstring names the statements it measures**
   (`src/dagster_dex/conformance.py`, part of #187), one `Measures:` line each:
   the three tiers in `src/dagster_dex/protocol.py`, and
@@ -1488,6 +1509,50 @@ Read dead on 2026-11-09, for the same reason and in the same change. It read:
 observed only to pass has not been shown to be one, so each plants a defect a
 second format is likely to ship and asserts that the named contract test fails
 on it.
+```
+
+### `docs/design/verification.md`, *This package's contract, from the wheel*, the bullet on what it does not reach
+
+Read dead on 2026-11-14, against `src/dagster_dex/planted.py` in the change
+that adds `ConfirmBlindProject` (#191), at base `f5eeb99`. The tier-3
+contract has a refusing arm from the wheel since that change. It read:
+
+```markdown
+- **What it does not reach.** Both planted formats are tier 2, so the tier-3
+  contract has a passing arm here and no refusing one.
+```
+
+### `src/dagster_dex/planted.py`, its module docstring, the paragraph on what the formats wrap
+
+Read dead on 2026-11-14, for the same reason and in the same change. It read:
+
+```text
+**They wrap ``DagsterProject`` rather than a toy format of their own.** A
+shipped name is public surface, and a toy shipped to carry them would be a
+second format to keep. So both are tier 2, and they reach the tier-1 and tier-2
+contracts only: no planted defect for the write tier ships here.
+```
+
+### `docs/design/implementing-a-format.md`, *Watching it refuse*, the paragraph after the table
+
+Read dead on 2026-11-14, for the same reason and in the same change. It read:
+
+```markdown
+Wire one to `dagster_dex.conformance.FingerprintedProjectContract` the way you
+wire your own format, in the same environment, and run it: the tests in its
+row fail and every other assertion passes. Both are tier 2, so they reach the
+tier-1 and tier-2 contracts only, and no planted defect for the write tier
+ships. The module imports no pytest, so it imports wherever the package does.
+```
+
+### `README.md`, *Using the contract on another format*, the paragraph on the planted formats
+
+Read dead on 2026-11-14, for the same reason and in the same change. It read:
+
+```markdown
+To watch the contract refuse before trusting its green, wire one of the two
+formats in `dagster_dex.planted` the same way. Each is `DagsterProject` with
+one defect, and fails exactly the tests its docstring names.
 ```
 
 ## Why this file names no engine version
