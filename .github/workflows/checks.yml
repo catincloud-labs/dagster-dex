@@ -145,11 +145,14 @@ jobs:
       #
       # The title is fetched the way the body is, and goes to the script
       # twice. The first call refuses a close the title does not acknowledge.
-      # A title that is itself a trailer line, such as `Autoclose: #N`, passes
-      # that call by acknowledging its own close, so the second reconciles the
-      # title against an empty answer, and any number a title's trailer names
-      # is then an overclaim. What counts as a line or a trailer stays the
-      # script's alone; this step adds no reader of its own.
+      # A bare trailer title, such as `Autoclose: #N`, is refused there as a
+      # stale trailer. A title that is a trailer line and a close, such as
+      # `Autoclose: #N` followed by a closing verb before the same `#N`,
+      # passes that call by acknowledging its own close, so the second
+      # reconciles the title against an empty answer, and any number a
+      # title's trailer names is then an overclaim. What counts as a line or
+      # a trailer stays the script's alone; this step adds no reader of its
+      # own.
       - name: Scan the pull request title
         run: |
           gh pr view "$PR" --json title -q .title > "$RUNNER_TEMP/pr-title.txt"
@@ -158,7 +161,8 @@ jobs:
           if [ "$status" -eq 0 ]; then
             # Its output speaks of GitHub's answer, which here stands for "a
             # title acknowledges nothing", so it prints only when it refuses.
-            python scripts/check_closing_keywords.py --github-closes ''               "$RUNNER_TEMP/pr-title.txt" > "$RUNNER_TEMP/pr-title-trailer.txt" 2>&1 || status=$?
+            python scripts/check_closing_keywords.py --github-closes '' \
+              "$RUNNER_TEMP/pr-title.txt" > "$RUNNER_TEMP/pr-title-trailer.txt" 2>&1 || status=$?
             if [ "$status" -eq 0 ]; then
               echo "OK - the title names no issue in an Autoclose trailer."
               exit 0
