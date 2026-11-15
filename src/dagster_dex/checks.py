@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Declared keys, rendered as Dagster asset checks and run through dex-core.
 
-Two of the three pieces of #180. :func:`declaration_check_specs` renders the
-specs, engine-free. :func:`build_declaration_checks` is the executor: one
+The two pieces of #180 that are code. :func:`declaration_check_specs` renders
+the specs, engine-free. :func:`build_declaration_checks` is the executor: one
 ``multi_asset_check`` that runs the specs through dex-core's public
 ``DexEngine.verify``, so each check keeps one implementation, in dex-core. The
-documents and example come after it.
+third piece is in the repository rather than the wheel: the section *Declared
+keys as Dagster asset checks* in ``docs/design/dagster-to-dex.md``, and
+``examples/run_declared_key_checks.py``.
 
 **The executor never touches the engine here.** Everything that does is in
 :mod:`.dex`, which is the one module allowed to: this module hands it the
