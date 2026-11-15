@@ -373,7 +373,11 @@ class TestMain:
 
     def test_a_repository_without_area_ci_still_gets_the_issue(self, tmp_path, capsys):
         """A label missing from the repository must not cost the red its issue,
-        and the run log must say the label was left off."""
+        and the run log must say the label was left off.
+
+        The match is exact and case-sensitive on purpose: `AREA:CI` is not
+        taken as present. A wrong miss costs a label and warns; a wrong hit
+        could cost the issue."""
 
         junit = _write(tmp_path, _param_case("b"))
         fake, calls = self._gh([], labels=["upstream:dex", "area:cii", "AREA:CI"])
@@ -391,6 +395,14 @@ class TestMain:
         assert _labels_of(self._create(calls)) == ["upstream:dex"]
         err = capsys.readouterr().err
         assert "::warning::" in err and "area:ci" in err and "HTTP 403" in err
+
+    @pytest.mark.parametrize("answer", ["null", "5", "[1]", "{}", "not json", ""])
+    def test_a_label_answer_that_is_not_a_list_of_labels_still_files(self, answer, capsys):
+        """Found by the cold review of #207: `null` and `5` raised TypeError
+        out of the label read, and the red lost its issue."""
+
+        assert filer.create_labels(lambda argv: answer) == ["upstream:dex"]
+        assert "::warning::" in capsys.readouterr().err
 
     def test_an_empty_label_list_is_not_read_as_present(self, tmp_path, capsys):
         """Empty and blind are the same input: an empty answer leaves the label

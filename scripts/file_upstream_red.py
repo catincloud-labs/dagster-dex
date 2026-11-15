@@ -307,7 +307,10 @@ def create_labels(gh: GhRunner) -> list[str]:
     try:
         names = {str(entry.get("name", "")) for entry in
                  json.loads(gh(["label", "list", "--limit", "1000", "--json", "name"]))}
-    except (SystemExit, ValueError, AttributeError) as exc:
+    except (SystemExit, ValueError, AttributeError, TypeError) as exc:
+        # SystemExit: `_gh` on a failed call. ValueError: not JSON. TypeError
+        # and AttributeError: JSON that is not a list of objects (`null`, `5`,
+        # `[1]`). Each one costs the label, none the issue.
         print(f"::warning::could not read this repository's labels, so the issue is filed "
               f"without {AREA_LABEL}: {exc}", file=sys.stderr)
         return [LABEL]
