@@ -7,7 +7,7 @@ name: upstream main
 # merged, with nothing naming the commit. This job runs the same two files that
 # judge a release against whatever `main` is this morning, and says nothing when
 # they pass. Green is reported nowhere. Red opens ONE issue here, labelled
-# `upstream:dex`, quoting the failing assertion and the upstream commit range
+# `upstream:dex` and `area:ci`, quoting the failing assertion and the upstream commit range
 # since the last green run of THIS workflow.
 #
 # WHY A SEPARATE FILE, AND NOT A JOB IN `checks.yml`. Three reasons, each one a
@@ -74,7 +74,8 @@ on:
 
 permissions:
   contents: read
-  # `gh issue create` and `gh issue list`. Declared in this file only.
+  # `gh issue create`, `gh issue list` and `gh label list`. Declared in this
+  # file only.
   issues: write
   # `gh run list` and `gh run download`, to read the upstream sha the last
   # green run of this workflow recorded. With an explicit `permissions:` block

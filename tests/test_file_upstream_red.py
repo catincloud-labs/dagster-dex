@@ -13,7 +13,10 @@ output is the input, and `gh` is a callable handed in. What is proved:
 - the generated title passes the repository's own title rule, judged by the
   vendored checker rather than by a second copy of its numbers;
 - both arms of the "since last green" line, because a range this job cannot
-  name must say so rather than invent one.
+  name must say so rather than invent one;
+- the issue arrives with `area:ci` beside `upstream:dex` and opens with a
+  `Feeds:` line, while de-duplication reads `upstream:dex` alone, and a
+  repository without `area:ci` still gets its issue (#206).
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType
 
@@ -277,32 +281,138 @@ class TestTheRendering:
         assert "github.com/exmergo/dex/commit/" not in text
 
 
+#: The labels a repository carrying both of the filer's labels answers with.
+#: Written as literals rather than read off the module, so a test naming
+#: `area:ci` is red against a filer that has never heard of it (#206).
+_BOTH_LABELS = ["bug", "upstream:dex", "area:ci", "area:docs"]
+
+
+def _labels_of(argv: Sequence[str]) -> list[str]:
+    """Every value passed to `--label`, in order."""
+
+    return [argv[i + 1] for i, arg in enumerate(argv) if arg == "--label"]
+
+
+class TestTheFeedsLine:
+    """Every issue here opens with a `Feeds:` line (#206)."""
+
+    @pytest.mark.parametrize(
+        "cases",
+        [(_param_case("b"),), (_error_case(),), ()],
+        ids=["failure", "collection-error", "no-results"],
+    )
+    def test_the_body_opens_with_feeds_then_a_blank_line(self, tmp_path, cases):
+        reds = filer.parse_junit(_write(tmp_path, *cases))
+        lines = filer.body(filer.plan(reds, {}), SHA_A, "", "u").splitlines()
+        assert lines[0] == "Feeds: none (chore)"
+        assert lines[1] == ""
+        assert lines[2].startswith("Red-only run of "), "the body as it was follows unchanged"
+
+    def test_the_feeds_line_is_not_read_back_as_a_key(self, tmp_path):
+        reds = filer.parse_junit(_write(tmp_path, _param_case("b")))
+        text = filer.body(filer.plan(reds, {}), SHA_A, "", "u")
+        assert filer.open_issue_keys([{"number": 1, "body": text}]) == {reds[0].key: 1}
+
+
 class TestMain:
     """The thin layer: which `gh` calls happen, with what."""
 
-    def _gh(self, open_issues: list[dict[str, object]]):
+    def _gh(self, open_issues: list[dict[str, object]], labels: list[str] | None = None,
+            label_read_fails: bool = False):
         calls: list[list[str]] = []
+        present = _BOTH_LABELS if labels is None else labels
 
         def fake(argv):
             calls.append(list(argv))
             if argv[:2] == ["issue", "list"]:
                 return json.dumps(open_issues)
+            if argv[:2] == ["label", "list"]:
+                if label_read_fails:
+                    # The shape `_gh` gives every failing call.
+                    raise SystemExit("gh label list failed (1):\nHTTP 403")
+                return json.dumps([{"name": n} for n in present])
             if argv[:2] == ["issue", "create"]:
                 return "https://github.com/o/r/issues/99\n"
             raise AssertionError(f"unexpected gh call: {argv}")
 
         return fake, calls
 
+    def _create(self, calls: list[list[str]]) -> list[str]:
+        create = [c for c in calls if c[:2] == ["issue", "create"]]
+        assert len(create) == 1, calls
+        return create[0]
+
     def test_a_new_red_creates_one_labelled_issue(self, tmp_path):
         junit = _write(tmp_path, _param_case("b"))
         fake, calls = self._gh([])
         rc = filer.main(["--junit", str(junit), "--upstream-sha", SHA_A, "--run-url", "u"], gh=fake)
         assert rc == 0
-        create = [c for c in calls if c[:2] == ["issue", "create"]]
-        assert len(create) == 1
-        assert filer.LABEL in create[0]
-        body_file = Path(create[0][create[0].index("--body-file") + 1])
+        create = self._create(calls)
+        assert filer.LABEL in create
+        body_file = Path(create[create.index("--body-file") + 1])
         assert filer.KEY_MARKER in body_file.read_text(encoding="utf-8")
+
+    def test_the_created_issue_carries_upstream_dex_and_area_ci(self, tmp_path):
+        """#203 arrived with `upstream:dex` alone and had `area:ci` added by hand."""
+
+        junit = _write(tmp_path, _param_case("b"))
+        fake, calls = self._gh([])
+        filer.main(["--junit", str(junit), "--upstream-sha", SHA_A, "--run-url", "u"], gh=fake)
+        assert _labels_of(self._create(calls)) == ["upstream:dex", "area:ci"]
+
+    def test_the_filed_body_opens_with_the_feeds_line(self, tmp_path):
+        """Read off the file `gh` is handed, not off `body()`: the line has to
+        arrive in the issue, not only in the function that writes it."""
+
+        junit = _write(tmp_path, _param_case("b"))
+        fake, calls = self._gh([])
+        filer.main(["--junit", str(junit), "--upstream-sha", SHA_A, "--run-url", "u"], gh=fake)
+        create = self._create(calls)
+        text = Path(create[create.index("--body-file") + 1]).read_text(encoding="utf-8")
+        assert text.startswith("Feeds: none (chore)\n\nRed-only run of ")
+
+    def test_a_repository_without_area_ci_still_gets_the_issue(self, tmp_path, capsys):
+        """A label missing from the repository must not cost the red its issue,
+        and the run log must say the label was left off.
+
+        The match is exact and case-sensitive on purpose: `AREA:CI` is not
+        taken as present. A wrong miss costs a label and warns; a wrong hit
+        could cost the issue."""
+
+        junit = _write(tmp_path, _param_case("b"))
+        fake, calls = self._gh([], labels=["upstream:dex", "area:cii", "AREA:CI"])
+        rc = filer.main(["--junit", str(junit), "--upstream-sha", SHA_A, "--run-url", "u"], gh=fake)
+        assert rc == 0
+        assert _labels_of(self._create(calls)) == ["upstream:dex"]
+        err = capsys.readouterr().err
+        assert "::warning::" in err and "area:ci" in err and "does not exist" in err
+
+    def test_a_failed_label_read_still_files_and_says_so(self, tmp_path, capsys):
+        junit = _write(tmp_path, _param_case("b"))
+        fake, calls = self._gh([], label_read_fails=True)
+        rc = filer.main(["--junit", str(junit), "--upstream-sha", SHA_A, "--run-url", "u"], gh=fake)
+        assert rc == 0
+        assert _labels_of(self._create(calls)) == ["upstream:dex"]
+        err = capsys.readouterr().err
+        assert "::warning::" in err and "area:ci" in err and "HTTP 403" in err
+
+    @pytest.mark.parametrize("answer", ["null", "5", "[1]", "{}", "not json", ""])
+    def test_a_label_answer_that_is_not_a_list_of_labels_still_files(self, answer, capsys):
+        """Found by the cold review of #207: `null` and `5` raised TypeError
+        out of the label read, and the red lost its issue."""
+
+        assert filer.create_labels(lambda argv: answer) == ["upstream:dex"]
+        assert "::warning::" in capsys.readouterr().err
+
+    def test_an_empty_label_list_is_not_read_as_present(self, tmp_path, capsys):
+        """Empty and blind are the same input: an empty answer leaves the label
+        off, which costs a label, rather than passing it and costing the issue."""
+
+        junit = _write(tmp_path, _param_case("b"))
+        fake, calls = self._gh([], labels=[])
+        filer.main(["--junit", str(junit), "--upstream-sha", SHA_A, "--run-url", "u"], gh=fake)
+        assert _labels_of(self._create(calls)) == ["upstream:dex"]
+        assert "::warning::" in capsys.readouterr().err
 
     def test_the_title_names_the_new_red_not_the_tracked_one_listed_first(self, tmp_path):
         """pytest lists the tracked red first here; the issue is about the other."""
@@ -330,7 +440,16 @@ class TestMain:
         filer.main(["--junit", str(junit), "--run-url", "u", "--dry-run"], gh=fake)
         listing = calls[0]
         assert "--state" in listing and listing[listing.index("--state") + 1] == "open"
-        assert listing[listing.index("--label") + 1] == filer.LABEL
+        # `upstream:dex` alone: `gh issue list` ANDs repeated labels, so adding
+        # `area:ci` here would stop a hand-filed `upstream:dex` red counting.
+        assert _labels_of(listing) == ["upstream:dex"]
+
+    def test_the_list_stays_on_upstream_dex_alone_when_filing(self, tmp_path):
+        junit = _write(tmp_path, _param_case("b"))
+        fake, calls = self._gh([])
+        filer.main(["--junit", str(junit), "--upstream-sha", SHA_A, "--run-url", "u"], gh=fake)
+        listing = [c for c in calls if c[:2] == ["issue", "list"]]
+        assert [_labels_of(c) for c in listing] == [["upstream:dex"]]
 
     def test_dry_run_files_nothing(self, tmp_path, capsys):
         junit = _write(tmp_path, _param_case("b"))

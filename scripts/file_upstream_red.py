@@ -28,8 +28,10 @@ failing testcase, is not "nothing to report" - it is the install or the
 collection breaking before pytest could judge anything, and that is the case a
 red-only job most needs to surface. It is filed under its own key.
 
-**What is de-duplicated against.** Every OPEN issue carrying the label, read by
-the marker lines this script writes into each body. A closed issue stops
+**What is de-duplicated against.** Every OPEN issue carrying `upstream:dex`,
+read by the marker lines this script writes into each body. The issue is also
+created with `area:ci`, which is never read back, so a hand-filed red carrying
+`upstream:dex` alone still counts. A closed issue stops
 counting: a red that returns after its issue was closed is news again.
 
 The `gh` calls live in `main` alone; everything above it is a pure function of
@@ -57,6 +59,17 @@ UPSTREAM = "exmergo/dex"
 #: The label every issue this script files carries, and the label it reads back
 #: to find the open ones. Both directions use the same string on purpose.
 LABEL = "upstream:dex"
+
+#: The area label every issue here carries, added when the issue is created
+#: and NEVER read back: de-duplication stays on `LABEL` alone (#206). Optional
+#: where `LABEL` is not: a repository without it gets the issue without it,
+#: and the run log says so, because a missed label must not cost a red its
+#: issue.
+AREA_LABEL = "area:ci"
+
+#: The first line of every body, then a blank line. Every issue here opens
+#: with a `Feeds:` line; a red against upstream feeds no milestone.
+FEEDS_LINE = "Feeds: none (chore)"
 
 #: The marker line that carries a key in an issue body. An HTML comment renders
 #: as nothing, so a reader sees prose and `gh issue list --json body` sees keys.
@@ -224,6 +237,8 @@ def body(the_plan: Plan, upstream_sha: str, last_green_sha: str, run_url: str) -
     """The issue body: what failed, where upstream stands, and the keys."""
 
     lines = [
+        FEEDS_LINE,
+        "",
         "Red-only run of `tests/test_upstream_contract.py` and `tests/test_dex_bridge.py` "
         f"against `{UPSTREAM}` `main`. Filed by `scripts/file_upstream_red.py`; see #74.",
         "",
@@ -277,6 +292,35 @@ def _gh(argv: Sequence[str]) -> str:
     return result.stdout
 
 
+def create_labels(gh: GhRunner) -> list[str]:
+    """The `--label` values for `gh issue create`: `LABEL`, plus `AREA_LABEL`
+    when the repository is read to have it.
+
+    `gh issue create` refuses a label the repository lacks, and refuses the
+    whole issue with it. So the area label is checked first and left off when
+    it is absent, when the read fails, or when the read comes back empty (an
+    empty answer is also what a blind read returns, and leaving the label off
+    costs a label where passing it would cost the issue). Each of those says
+    so as a workflow warning, so the run summary shows what the issue lacks.
+    """
+
+    try:
+        names = {str(entry.get("name", "")) for entry in
+                 json.loads(gh(["label", "list", "--limit", "1000", "--json", "name"]))}
+    except (SystemExit, ValueError, AttributeError, TypeError) as exc:
+        # SystemExit: `_gh` on a failed call. ValueError: not JSON. TypeError
+        # and AttributeError: JSON that is not a list of objects (`null`, `5`,
+        # `[1]`). Each one costs the label, none the issue.
+        print(f"::warning::could not read this repository's labels, so the issue is filed "
+              f"without {AREA_LABEL}: {exc}", file=sys.stderr)
+        return [LABEL]
+    if AREA_LABEL not in names:
+        print(f"::warning::label {AREA_LABEL} does not exist in this repository "
+              f"({len(names)} labels read), so the issue is filed without it", file=sys.stderr)
+        return [LABEL]
+    return [LABEL, AREA_LABEL]
+
+
 def main(argv: Sequence[str] | None = None, gh: GhRunner = _gh) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--junit", required=True, type=Path)
@@ -310,7 +354,8 @@ def main(argv: Sequence[str] | None = None, gh: GhRunner = _gh) -> int:
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as handle:
         handle.write(issue_body)
         body_path = handle.name
-    url = gh(["issue", "create", "--title", issue_title, "--label", LABEL, "--body-file", body_path])
+    label_args = [arg for name in create_labels(gh) for arg in ("--label", name)]
+    url = gh(["issue", "create", "--title", issue_title, *label_args, "--body-file", body_path])
     print(f"filed: {url.strip()}", file=sys.stderr)
     return 0
 
