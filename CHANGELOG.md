@@ -13,10 +13,94 @@ changes explicitly, because that is the reason a consumer opens this file.
 Before 1.0.0 a minor could carry one; from 1.0.0 one waits for 2.0. Pin the
 major if you depend on the contract.
 
-## Unreleased
+## 1.2.0 - 2026-11-15
+
+Two additions to the package. `dagster_dex.checks.build_declaration_checks`
+runs the declared-key check specs 1.1.0 rendered: one Dagster
+`multi_asset_check` that judges each declared key through dex-core's
+`maintain verify`. And `dagster_dex.planted` ships three formats built to fail
+the conformance contract, two at tier 2 and one at tier 3, so an implementer
+can watch the contract refuse before trusting it to pass. The release
+workflow's `build` job now runs that contract from the built wheel.
+
+**What it costs to move.** A pin on the major, `dagster-dex~=1.0`, admits
+1.2.0, and nothing 1.1.0 offered is withdrawn. A consumer that uses
+`build_declaration_checks`, `blocking=` or `dagster_dex.planted` pins
+`dagster-dex~=1.2`, since `~=1.1` also admits 1.1.0, which has none of them.
+Under SECURITY.md's rule that only the latest minor receives fixes, 1.1
+receives none from this release on. Nothing moves under a consumer who
+changes nothing: the one function 1.1.0 shipped whose body changed,
+`declaration_check_specs`, renders every spec non-blocking unless `blocking=`
+is passed, as 1.1.0 rendered them, and the modules beside it changed only by
+addition, apart from one import line in `dex.py` widened to add a name. What
+a consumer adopting the executor should know:
+
+- **It needs the orchestrator and the engine to build.**
+  `build_declaration_checks` needs Dagster and the `[dex]` extra installed
+  when it builds, and raises `ImportError` without either, so a code location
+  that builds the checks without the engine fails when its definitions load.
+  It opens the engine when a check runs. `import dagster_dex.checks` still
+  needs neither.
+- **It judges nothing below exmergo-dex-core 1.12.5.** The `[dex]` extra's
+  range stays `~=1.8`. Below 1.12.5, where verify does not judge this format,
+  the engine is not opened and every check reports not measured: a WARN with
+  `passed` False, never a pass. From 1.17.5 a key passes only on verify's
+  `proven` coverage record for it; between the two, only once every route to
+  "not judged" is ruled out.
+- **Keys only, WARN by default, and nothing spends.** A declared join gets no
+  check and is logged on every run. A measured failure is ERROR only for a
+  claim id in `blocking`. `confirm_spend` defaults to False, so a probe the
+  cost gate prices leaves its checks not measured. The checks carry no
+  automation condition; scheduling a job over them is the caller's.
+
+**Why this is a minor and not 2.0.** Nothing here breaks the seam.
+`src/dagster_dex/protocol.py` and `src/dagster_dex/model.py` are the blobs
+1.1.0 shipped: `git rev-parse v1.1.0:src/dagster_dex/protocol.py
+v1.2.0:src/dagster_dex/protocol.py` prints one hash twice, and the same holds
+for `model.py`. Every name 1.1.0 exported is still exported. The one public
+signature that changed is `declaration_check_specs`, which gained a
+keyword-only `blocking` with a default. `src/dagster_dex/conformance.py`
+changed in its module docstring only, so no contract test changed, and a
+format that passed 1.1.0's contract passes this one. The engine range and the
+tested pin are where 1.1.0 left them: `git grep -h -o 'core==[0-9][0-9.]*'
+v1.2.0 | sort -u` prints the one version it prints at `v1.1.0`. What moved
+under `src/` and in `pyproject.toml` is listed by `git diff --stat
+v1.1.0..v1.2.0 -- src/ pyproject.toml`.
 
 ### Added
 
+- **Declared keys checked through dex-core's verify**
+  (`dagster_dex.checks.build_declaration_checks`, #180, its second and third
+  pull requests, with the fix for #194). `build_declaration_checks(project,
+  asset_keys, ...)` returns one Dagster `multi_asset_check` over the specs
+  `declaration_check_specs` renders. Each run opens one dex-core engine, on
+  the caller's connection or on the connector `.dex/config.yml` names, calls
+  the public `DexEngine.verify` once for the models of the selected checks,
+  and yields one `AssetCheckResult` per check: passed, failed with a duplicate
+  count, or not measured with dex-core's reason. Not measured is a WARN with
+  `passed` False, never a pass. Each result carries its claim id, whether it
+  was measured, and the engine that answered, under the metadata keys
+  `checks.py` now exports (`MEASURED`, `REASON`, `DUPLICATE_COUNT`, `ENGINE`);
+  the metadata never carries a row value, and a reason is dex-core's text,
+  cut before it quotes the warehouse. `declaration_check_specs`
+  gains a keyword-only `blocking=`, the claim ids whose checks block; a claim
+  id that names no rendered spec is refused with `ValueError`.
+  - **The engine coupling is still one file.** Everything that touches
+    dex-core is new in `src/dagster_dex/dex.py` (`open_verify_engine`,
+    `verify_declared_keys`, `KeyVerdict`, `engine_release`,
+    `VERIFY_JUDGES_FROM`), public API only, which the AST walk in
+    `tests/test_dex_bridge.py` reads.
+  - **What a pass rests on.** From exmergo-dex-core 1.17.5 a key passes only
+    on a `proven` `grain_coverage` record for it, and a note no longer
+    decides a pass (#194). Below 1.17.5, a key passes only once every route
+    to "not judged" is ruled out, which `verify_declared_keys`'s docstring
+    lists.
+  - **Where it is described and run.** The section *Declared keys as Dagster
+    asset checks* in `docs/design/dagster-to-dex.md` describes it, and
+    `examples/run_declared_key_checks.py` runs it under real Dagster against
+    a local DuckDB warehouse in both `engine-ends` cells: every check not
+    measured at the floor of the range, and measured passes and failures at
+    the ceiling.
 - **`dagster_dex.planted`: two formats built to fail the shipped contract**
   (`src/dagster_dex/planted.py`, part of #185). `SourceBlindProject`
   fingerprints the models alone, so a new warehouse dependency is no drift,
@@ -75,6 +159,15 @@ major if you depend on the contract.
   one it is built for. The toy format stays, as the design guide's worked
   example. The paragraphs the move made false are quoted under *How this
   section read before*, below.
+- **`checks.py`'s module docstring says where #180's third piece is.** It
+  said the documents and example come after it, which #192 made false, and
+  the docstring ships in the wheel. The paragraph is quoted under *How this
+  section read before*, below. A docstring changes nothing at runtime.
+- **README's *Layout* says the executor needs the engine.** Its `checks.py`
+  row named Dagster only, and the paragraph under the list said everything
+  outside `dex.py` runs with dex-core uninstalled, which #184 made false for
+  `build_declaration_checks`. The README is this release's PyPI description.
+  Both are quoted under *How this section read before*, below.
 
 ## 1.1.0 - 2026-11-08
 
@@ -1624,6 +1717,40 @@ Read dead on 2026-11-14, for the same reason and in the same change. It read:
 To watch the contract refuse before trusting its green, wire one of the two
 formats in `dagster_dex.planted` the same way. Each is `DagsterProject` with
 one defect, and fails exactly the tests its docstring names.
+```
+
+### `src/dagster_dex/checks.py`, its module docstring, the paragraph naming #180's pieces
+
+Read dead on 2026-11-14, against `66b5ef9`, which holds the design section
+and the example `52a6008` (#192) added. It read:
+
+```text
+Two of the three pieces of #180. :func:`declaration_check_specs` renders the
+specs, engine-free. :func:`build_declaration_checks` is the executor: one
+``multi_asset_check`` that runs the specs through dex-core's public
+``DexEngine.verify``, so each check keeps one implementation, in dex-core. The
+documents and example come after it.
+```
+
+### `README.md`, *Layout, and why the dependencies sit where they do*, the `checks.py` row and the paragraph under the list
+
+Read dead on 2026-11-15, against `66b5ef9`: `build_declaration_checks`,
+which `bc003c9` (#184) added to `checks.py`, calls `dex.engine_release()`
+when it builds and raises `ImportError` without exmergo-dex-core, so not
+everything outside `dex.py` runs with the engine uninstalled. Found by this
+release's cold review. The row read:
+
+```text
+checks.py        declared keys as checks    + dagster, lazily
+```
+
+And the paragraph's opening read:
+
+```markdown
+The engine coupling is one file. Everything else, including the conformance
+suite and the whole write path, runs with dex-core uninstalled, which is what
+keeps the design from being shaped by whatever the engine happens to look like
+today.
 ```
 
 ## Why this file names no engine version
