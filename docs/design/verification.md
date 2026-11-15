@@ -248,7 +248,8 @@ pull request.
    against that engine, with `DEX_UPSTREAM_CONTRACT_REQUIRED=1`, writing junit.
 3. It uploads the tested commit as an artifact, green or red.
 4. On failure only, `scripts/file_upstream_red.py` reads the junit and opens
-   one issue labelled `upstream:dex`, quoting the failing assertion and where
+   one issue labelled `upstream:dex` and `area:ci`, its body opening with
+   `Feeds: none (chore)`, quoting the failing assertion and where
    upstream stands against the last green run on `main`: the commit range
    since then, that upstream did not move, or that no green run is on record
    to name a range from.
