@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import pathlib
 import re
+from typing import NamedTuple
 
 import pytest
 
@@ -2563,13 +2564,65 @@ VIOLATIONS = [
     "UPDATE analytics.fact_orders SET ship_date_key = 999 WHERE order_id = 11",
 ]
 
-#: What verify must report on the violated arm, and nothing else. The orphan
-#: on `ship_date_key` is absent on purpose: verify suppresses join checks for
-#: this format, which is dex-core's gap and out of #179's scope.
+#: What verify must report on the violated arm about the declared keys, on
+#: every engine that judges this format. The third violation, the orphan on
+#: `ship_date_key`, is a declared join rather than a key, and whether verify
+#: reports it depends on the engine: see `PLANTED_ORPHAN`.
 BOTH_BROKEN_KEYS = [
     ("grain_broken", "dim_store", ("region", "store_code"), "unique_test_composite"),
     ("grain_broken", "fact_orders", ("order_id",), "unique_test"),
 ]
+
+#: The planted orphan as verify reports it, on an engine that judges a
+#: format's declared foreign keys. Until exmergo/dex@0c13c3f (exmergo/dex
+#: pull request 1217) verify judged a declared join only through dbt's own
+#: `relationships` test results, so on this format it measured no join and
+#: the orphan went unreported: dex-core's gap, outside #179's scope. That
+#: commit measures each declared foreign key against its parent and reports a
+#: child value the parent lacks as `foreign_key_orphans`, recording every key
+#: under the result's `foreign_key_coverage`. Which side an engine is on is
+#: read off that field (`_judges_declared_foreign_keys`), not off a version:
+#: no release carried the commit when this was written (newest `v1.17.9`),
+#: and an install from `main` reports the same development version on both
+#: sides of it.
+PLANTED_ORPHAN = ("foreign_key_orphans", "fact_orders", (), "relationships")
+
+
+def _judges_declared_foreign_keys(result) -> bool:
+    """Whether the installed engine's verify result type carries
+    `foreign_key_coverage`, the record list exmergo/dex@0c13c3f added beside
+    the `foreign_key_orphans` finding.
+
+    Read off the result's model, not its value: the field is declared whether
+    or not the axis ran. Either way a mismatch is red rather than quiet - a
+    field renamed upstream expects no orphan where the engine reports one, and
+    a check dropped upstream expects one where none comes.
+    """
+
+    return "foreign_key_coverage" in type(result).model_fields
+
+
+def _expected_on_the_violated_arm(verified) -> list:
+    if verified.judges_foreign_keys:
+        return sorted([*BOTH_BROKEN_KEYS, PLANTED_ORPHAN])
+    return BOTH_BROKEN_KEYS
+
+
+def _coverage_by_column(verified) -> dict:
+    """`foreign_key_coverage` as {child column: status}, for the two joins."""
+
+    return {
+        record["column"]: record["status"]
+        for record in verified.foreign_key_coverage or ()
+        if record.get("model") == "fact_orders"
+    }
+
+
+class _Verified(NamedTuple):
+    findings: list
+    warnings: list
+    judges_foreign_keys: bool
+    foreign_key_coverage: list | None
 
 
 def _engine_version() -> tuple[int, ...]:
@@ -2579,8 +2632,9 @@ def _engine_version() -> tuple[int, ...]:
 
 
 def _verify(tmp_path, *, violated: bool, assets: str, **options):
-    """`maintain verify` over the issue's reproduction, as (code, model,
-    columns, source) per finding, plus its warnings.
+    """`maintain verify` over the issue's reproduction: (code, model,
+    columns, source) per finding, its warnings, whether the engine judges a
+    format's declared foreign keys, and the records it kept for them.
 
     **The engine's version decides the skip, never a failed import**, the way
     `_declaration_edits` decides its own: below 1.12.5 verify cannot judge this
@@ -2636,7 +2690,9 @@ def _verify(tmp_path, *, violated: bool, assets: str, **options):
         (f.code, f.identifier, tuple(f.data.get("columns") or ()), f.data.get("source"))
         for f in result.findings
     )
-    return findings, list(result.warnings)
+    judges = _judges_declared_foreign_keys(result)
+    coverage = result.foreign_key_coverage if judges else None
+    return _Verified(findings, list(result.warnings), judges, coverage)
 
 
 class TestVerifyJudgesTheDeclaredKeys:
@@ -2646,32 +2702,56 @@ class TestVerifyJudgesTheDeclaredKeys:
     findings or refused the `relations` option."""
 
     def test_the_violated_arm_reports_both_broken_keys_and_nothing_else(self, tmp_path):
-        findings, _ = _verify(tmp_path, violated=True, assets="PLACED_ASSETS")
-        assert findings == BOTH_BROKEN_KEYS
+        """Both broken keys, and the orphan exactly where the engine judges a
+        declared join: two arms by capability, and no skip."""
+
+        verified = _verify(tmp_path, violated=True, assets="PLACED_ASSETS")
+        assert verified.findings == _expected_on_the_violated_arm(verified)
+        if verified.judges_foreign_keys:
+            assert _coverage_by_column(verified) == {
+                "order_date_key": "satisfied",
+                "ship_date_key": "contradicted",
+            }, verified.foreign_key_coverage
 
     def test_the_clean_arm_reports_nothing(self, tmp_path):
         """The quiet arm. Without it the test above is equally consistent with
         verify reporting every declared key whatever the data holds."""
 
-        findings, _ = _verify(tmp_path, violated=False, assets="PLACED_ASSETS")
-        assert findings == []
+        verified = _verify(tmp_path, violated=False, assets="PLACED_ASSETS")
+        assert verified.findings == []
+        if verified.judges_foreign_keys:
+            # Empty is also what an unjudged join returns, so on an engine
+            # that judges joins both are shown measured and held.
+            assert _coverage_by_column(verified) == {
+                "order_date_key": "satisfied",
+                "ship_date_key": "satisfied",
+            }, verified.foreign_key_coverage
 
     def test_the_option_wins_where_it_and_the_metadata_disagree(self, tmp_path):
         """Precedence, end to end: the metadata alone would send verify to a
         table that is not there and leave `fact_orders` unjudged; the option
         corrects both, and verify finds what the placed graph finds."""
 
-        findings, _ = _verify(
+        verified = _verify(
             tmp_path, violated=True, assets="MISPLACED_ASSETS", relations=CORRECTIONS
         )
-        assert findings == BOTH_BROKEN_KEYS
+        assert verified.findings == _expected_on_the_violated_arm(verified)
 
     def test_without_the_option_the_gap_is_loud_rather_than_clean(self, tmp_path):
         """No silent drops. The wrong table is reported as missing, and the
         model with no relation is named in verify's own warnings - so the run
         does not read as two clean models."""
 
-        findings, warnings = _verify(tmp_path, violated=True, assets="MISPLACED_ASSETS")
+        verified = _verify(tmp_path, violated=True, assets="MISPLACED_ASSETS")
+        findings, warnings = verified.findings, verified.warnings
         assert [(code, model) for code, model, _, _ in findings] == [("no_relation", "dim_store")]
         named = [w for w in warnings if "name no warehouse relation" in w]
         assert len(named) == 1 and "fact_orders." in named[0], warnings
+        if verified.judges_foreign_keys:
+            # The same on both sides of exmergo/dex@0c13c3f, by design: the
+            # planted orphan is on `fact_orders`, which this arm places in no
+            # relation, so its joins are unchecked rather than found by name.
+            assert _coverage_by_column(verified) == {
+                "order_date_key": "unchecked",
+                "ship_date_key": "unchecked",
+            }, verified.foreign_key_coverage
