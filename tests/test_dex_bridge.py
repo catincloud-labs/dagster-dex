@@ -2594,9 +2594,13 @@ def _judges_declared_foreign_keys(result) -> bool:
     the `foreign_key_orphans` finding.
 
     Read off the result's model, not its value: the field is declared whether
-    or not the axis ran. Either way a mismatch is red rather than quiet - a
-    field renamed upstream expects no orphan where the engine reports one, and
-    a check dropped upstream expects one where none comes.
+    or not the axis ran. Two mismatches are red rather than quiet - a field
+    renamed upstream expects no orphan where the engine reports one, and a
+    check dropped with the field kept expects one where none comes. A third
+    is not: an engine dropping both, as a revert would, reads the old arm
+    green. Closing it takes a floor that refuses the field's absence at or
+    above the first release carrying it, the way `GRAIN_COVERAGE_FROM` does
+    in `dex.py`, and no such release exists to name yet.
     """
 
     return "foreign_key_coverage" in type(result).model_fields
@@ -2736,6 +2740,12 @@ class TestVerifyJudgesTheDeclaredKeys:
             tmp_path, violated=True, assets="MISPLACED_ASSETS", relations=CORRECTIONS
         )
         assert verified.findings == _expected_on_the_violated_arm(verified)
+        if verified.judges_foreign_keys:
+            # The option places `fact_orders` for the join axis too.
+            assert _coverage_by_column(verified) == {
+                "order_date_key": "satisfied",
+                "ship_date_key": "contradicted",
+            }, verified.foreign_key_coverage
 
     def test_without_the_option_the_gap_is_loud_rather_than_clean(self, tmp_path):
         """No silent drops. The wrong table is reported as missing, and the
