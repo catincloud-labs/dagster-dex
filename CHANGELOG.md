@@ -13,7 +13,7 @@ changes explicitly, because that is the reason a consumer opens this file.
 Before 1.0.0 a minor could carry one; from 1.0.0 one waits for 2.0. Pin the
 major if you depend on the contract.
 
-## 1.2.0 - 2026-11-14
+## 1.2.0 - 2026-11-15
 
 Two additions to the package. `dagster_dex.checks.build_declaration_checks`
 runs the declared-key check specs 1.1.0 rendered: one Dagster
@@ -32,11 +32,15 @@ receives none from this release on. Nothing moves under a consumer who
 changes nothing: the one function 1.1.0 shipped whose body changed,
 `declaration_check_specs`, renders every spec non-blocking unless `blocking=`
 is passed, as 1.1.0 rendered them, and the modules beside it changed only by
-addition. What a consumer adopting the executor should know:
+addition, apart from one import line in `dex.py` widened to add a name. What
+a consumer adopting the executor should know:
 
-- **It needs the orchestrator and the engine.** `build_declaration_checks`
-  imports Dagster when it builds and reaches dex-core through the `[dex]`
-  extra when a check runs. `import dagster_dex.checks` still needs neither.
+- **It needs the orchestrator and the engine to build.**
+  `build_declaration_checks` needs Dagster and the `[dex]` extra installed
+  when it builds, and raises `ImportError` without either, so a code location
+  that builds the checks without the engine fails when its definitions load.
+  It opens the engine when a check runs. `import dagster_dex.checks` still
+  needs neither.
 - **It judges nothing below exmergo-dex-core 1.12.5.** The `[dex]` extra's
   range stays `~=1.8`. Below 1.12.5, where verify does not judge this format,
   the engine is not opened and every check reports not measured: a WARN with
@@ -77,7 +81,8 @@ v1.1.0..v1.2.0 -- src/ pyproject.toml`.
   `passed` False, never a pass. Each result carries its claim id, whether it
   was measured, and the engine that answered, under the metadata keys
   `checks.py` now exports (`MEASURED`, `REASON`, `DUPLICATE_COUNT`, `ENGINE`);
-  the metadata carries counts, never a row value. `declaration_check_specs`
+  the metadata never carries a row value, and a reason is dex-core's text,
+  cut before it quotes the warehouse. `declaration_check_specs`
   gains a keyword-only `blocking=`, the claim ids whose checks block; a claim
   id that names no rendered spec is refused with `ValueError`.
   - **The engine coupling is still one file.** Everything that touches
@@ -158,6 +163,11 @@ v1.1.0..v1.2.0 -- src/ pyproject.toml`.
   said the documents and example come after it, which #192 made false, and
   the docstring ships in the wheel. The paragraph is quoted under *How this
   section read before*, below. A docstring changes nothing at runtime.
+- **README's *Layout* says the executor needs the engine.** Its `checks.py`
+  row named Dagster only, and the paragraph under the list said everything
+  outside `dex.py` runs with dex-core uninstalled, which #184 made false for
+  `build_declaration_checks`. The README is this release's PyPI description.
+  Both are quoted under *How this section read before*, below.
 
 ## 1.1.0 - 2026-11-08
 
@@ -1720,6 +1730,27 @@ specs, engine-free. :func:`build_declaration_checks` is the executor: one
 ``multi_asset_check`` that runs the specs through dex-core's public
 ``DexEngine.verify``, so each check keeps one implementation, in dex-core. The
 documents and example come after it.
+```
+
+### `README.md`, *Layout, and why the dependencies sit where they do*, the `checks.py` row and the paragraph under the list
+
+Read dead on 2026-11-15, against `66b5ef9`: `build_declaration_checks`,
+which `bc003c9` (#184) added to `checks.py`, calls `dex.engine_release()`
+when it builds and raises `ImportError` without exmergo-dex-core, so not
+everything outside `dex.py` runs with the engine uninstalled. Found by this
+release's cold review. The row read:
+
+```text
+checks.py        declared keys as checks    + dagster, lazily
+```
+
+And the paragraph's opening read:
+
+```markdown
+The engine coupling is one file. Everything else, including the conformance
+suite and the whole write path, runs with dex-core uninstalled, which is what
+keeps the design from being shaped by whatever the engine happens to look like
+today.
 ```
 
 ## Why this file names no engine version

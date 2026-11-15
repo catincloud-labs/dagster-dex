@@ -193,7 +193,7 @@ protocol.py      the tiered seam            stdlib only
 declarations.py  input parsing              + pyyaml
 project.py       the reduction, the writer  stdlib only
 artifact.py      the artifact transport     stdlib only
-checks.py        declared keys as checks    + dagster, lazily
+checks.py        declared keys as checks    + dagster, lazily; its executor + [dex]
 conformance.py   the importable contract    + pytest
 planted.py       formats built to fail it   + pyyaml
 dex.py           the dex-core boundary      + exmergo-dex-core, lazily
@@ -202,7 +202,8 @@ dex.py           the dex-core boundary      + exmergo-dex-core, lazily
 The engine coupling is one file. Everything else, including the conformance
 suite and the whole write path, runs with dex-core uninstalled, which is what
 keeps the design from being shaped by whatever the engine happens to look like
-today. `dex.py` imports **public API only**; `tests/test_dex_bridge.py` asserts
+today. The one exception is the declared-key executor in `checks.py`, which
+reaches the engine through `dex.py`; the module imports without it. `dex.py` imports **public API only**; `tests/test_dex_bridge.py` asserts
 that with an AST walk rather than trusting it.
 
 The write path is in `project.py` rather than at the boundary for that reason.
