@@ -30,7 +30,14 @@ from dagster_dex.conformance import (
     a_single_key_declaration,
 )
 from dagster_dex.model import definition_hash
-from dagster_dex.planted import ConfirmBlindProject, RaisingProject, SourceBlindProject
+from dagster_dex.planted import (
+    ConfirmBlindProject,
+    CreateBlindProject,
+    HalfRefusingProject,
+    PrefixMatchingProject,
+    RaisingProject,
+    SourceBlindProject,
+)
 from dagster_dex.project import EditableDagsterProject
 from dagster_dex.protocol import ProposedEdit
 
@@ -136,6 +143,14 @@ PLANTED_WRITE = {
     ConfirmBlindProject: {
         "test_an_unconfirmed_write_refuses_a_target_that_moved": AssertionError,
         "test_the_outcome_reports_what_happened": AssertionError,
+        "test_one_conflict_refuses_the_clean_edit_beside_it": AssertionError,
+        "test_a_create_whose_target_now_exists_is_a_conflict": AssertionError,
+    },
+    # The three write-path defects on record (#200), one test each.
+    HalfRefusingProject: {"test_one_conflict_refuses_the_clean_edit_beside_it": AssertionError},
+    CreateBlindProject: {"test_a_create_whose_target_now_exists_is_a_conflict": AssertionError},
+    PrefixMatchingProject: {
+        "test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused": AssertionError,
     },
 }
 
@@ -189,7 +204,8 @@ def test_the_calibration_reads_a_contract_that_is_not_empty(planted, tests):
     assert planted
     for expected in planted.values():
         assert set(expected) <= set(tests)
-    assert len(tests) > sum(len(expected) for expected in planted.values())
+    # A union, not a sum: two formats failing one test is one test failed.
+    assert len(tests) > len(set().union(*planted.values()))
 
 
 @pytest.mark.parametrize("planted", list(PLANTED), ids=lambda cls: cls.__name__)

@@ -6,7 +6,8 @@
   `src/dagster_dex/dex.py`, `tests/test_a_second_format.py`,
   `tests/test_conformance.py`, `scripts/a_format_outside_the_tree.py`
 - **Reviewed:** 2026-11-09 at `bb30439`; *Watching it refuse* and *What is
-  promised to stay put* re-read 2026-11-14 at `f5eeb99`
+  promised to stay put* re-read 2026-11-14 at `f5eeb99`, and with *The
+  contracts and their hooks* re-read 2026-11-16 at `4576ea4`
 
 This page is for someone writing a project format of their own: a reader of
 some other source of project truth that wants to be held to the same seam as
@@ -206,7 +207,16 @@ edit has somewhere for the edit to land, and a hook shaped for text in memory
 cannot produce one without inventing a place (the
 `dagster_dex.conformance.EditableProjectContract` docstring). Its hook stages a
 human editing the target after the edit was proposed, and must stage a fresh
-scenario on every call, because one of the assertions writes.
+scenario on every call, because some of the assertions write. Three of them
+derive more from what it returns: a clean create beside the staged edit, the
+staged edit re-pinned to absence, and a key that only shares a prefix with
+the declared surface. So the format has to accept a create at a sibling of
+the key its hook stages, the staged target has to exist after the human's
+change, and some declared prefix needs a sibling no declared prefix admits,
+which a whole-project surface, `"."`, does not have. The contract's
+docstring states each assumption, and the test that rests on it fails,
+rather than skips, where it does not hold. The derived tests leave a probe
+file beside the staged target, so stage in a scratch directory.
 `tests/test_conformance.py` wires both contracts to this package's formats and
 is the worked example for tier 3.
 
@@ -257,7 +267,7 @@ still raise on an absent project. In groups:
 
 The builder names and the assertions are public surface: a format pins
 against them, and renaming one is a breaking change (the module docstring).
-So are the three formats `dagster_dex.planted` ships, and the tests each one
+So are the six formats `dagster_dex.planted` ships, and the tests each one
 fails (the `src/dagster_dex/planted.py` module docstring).
 One builder default is held for the same reason: `a_join_declaration` keeps
 both sides named alike so an outside implementer's suite does not change
@@ -306,7 +316,7 @@ uv run --no-project --with-editable . --with pytest==8.4.1 \
 
 A contract observed only to pass has not been shown to be one
 ([AGENTS.md, *Verification method*](../../AGENTS.md#verification-method)), so
-the package ships three formats built wrong on purpose beside it, in
+the package ships six formats built wrong on purpose beside it, in
 `src/dagster_dex/planted.py`. Each is one of this package's formats with one
 defect a second format is likely to ship, and takes that format's
 constructor:
@@ -315,15 +325,21 @@ constructor:
 | --- | --- | --- | --- |
 | `dagster_dex.planted.SourceBlindProject` | `DagsterProject`, tier 2 | fingerprints the models alone, so a new warehouse dependency is no drift | `test_gaining_an_external_source_is_visible_as_drift`, `test_repointing_a_source_to_another_schema_is_drift` |
 | `dagster_dex.planted.RaisingProject` | `DagsterProject`, tier 2 | parses its declarations with no guard, so bad YAML is an exception | `test_malformed_input_never_raises`, `test_malformed_input_is_explained_rather_than_silent` |
-| `dagster_dex.planted.ConfirmBlindProject` | `EditableDagsterProject`, tier 3 | writes every edit as though confirmed, so a human's edit is overwritten | `test_an_unconfirmed_write_refuses_a_target_that_moved`, `test_the_outcome_reports_what_happened` |
+| `dagster_dex.planted.ConfirmBlindProject` | `EditableDagsterProject`, tier 3 | writes every edit as though confirmed, so a human's edit is overwritten | `test_an_unconfirmed_write_refuses_a_target_that_moved`, `test_the_outcome_reports_what_happened`, `test_one_conflict_refuses_the_clean_edit_beside_it`, `test_a_create_whose_target_now_exists_is_a_conflict` |
+| `dagster_dex.planted.HalfRefusingProject` | `EditableDagsterProject`, tier 3 | writes the clean targets beside a conflict, so a refused set half lands | `test_one_conflict_refuses_the_clean_edit_beside_it` |
+| `dagster_dex.planted.CreateBlindProject` | `EditableDagsterProject`, tier 3 | does not check a create pinned to absence, so a file that appeared is overwritten | `test_a_create_whose_target_now_exists_is_a_conflict` |
+| `dagster_dex.planted.PrefixMatchingProject` | `EditableDagsterProject`, tier 3 | matches its surface by string prefix, so a sibling directory is written | `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused` |
 
 Wire one to its contract the way you wire your own format, in the same
 environment, and run it: the tests in its row fail and every other assertion
 passes. The two tier-2 formats go to
 `dagster_dex.conformance.FingerprintedProjectContract` through `make_project`;
-`ConfirmBlindProject` goes to `dagster_dex.conformance.EditableProjectContract`
-through `an_edit_against_a_changed_target`, which builds the directory it
-writes into. The module imports no pytest, so it imports wherever the package
+the four tier-3 ones go to `dagster_dex.conformance.EditableProjectContract`
+through `an_edit_against_a_changed_target`, which builds the directory they
+write into. The last three rows are the write-path defects this package has
+on record
+([verification.md, *The measurement, and what it was measured against*](verification.md#the-measurement-and-what-it-was-measured-against)).
+The module imports no pytest, so it imports wherever the package
 does.
 
 `tests/test_conformance.py` holds each one to exactly its row on every run.
