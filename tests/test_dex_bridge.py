@@ -2586,9 +2586,9 @@ BOTH_BROKEN_KEYS = [
 PLANTED_ORPHAN = ("foreign_key_orphans", "fact_orders", (), "relationships")
 
 #: The first release whose verify judges a format's declared foreign keys:
-#: `v1.18.0` is the first tag that contains exmergo/dex@0c13c3f (read with
-#: `git tag --contains 0c13c3f` in the upstream repository, which prints
-#: `v1.18.0` alone; `v1.17.9` does not contain it). A fact about upstream's
+#: `v1.18.0` is the earliest tag that contains exmergo/dex@0c13c3f (the
+#: first line of `git tag --contains 0c13c3f --sort=v:refname` in the
+#: upstream repository; `v1.17.9` does not contain it). A fact about upstream's
 #: release history, which is why it may be written down: released versions
 #: do not change. It does not move what the `[dex]` extra admits, only what
 #: this test expects of a release.
@@ -2602,6 +2602,10 @@ def _released(version: str) -> tuple[int, int, int] | None:
     release: before `v1.18.0` was tagged, an install from `main` reported a
     development version on both sides of exmergo/dex@0c13c3f, so the version
     cannot say which side such a build is on.
+
+    Only a bare `X.Y.Z` counts. Any other shape - a pre-release, a
+    post-release, a local build - is read as no release and so is probe-only,
+    which fails open; upstream has published none since its `0.1.0` alphas.
     """
 
     match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version)
@@ -2618,7 +2622,8 @@ def _judges_declared_foreign_keys(result, version: str) -> bool:
     `exmergo-dex-core`.
 
     Read off the result's model, not its value: the field is declared whether
-    or not the axis ran. Three mismatches are red rather than quiet. A field
+    or not the axis ran. On a release, three mismatches are red rather than
+    quiet. A field
     renamed upstream expects no orphan where the engine reports one, and a
     check dropped with the field kept expects one where none comes. An engine
     dropping both, as a revert would, would read the old arm green, so a
@@ -2814,6 +2819,9 @@ class _WithoutTheAxis:
 
 
 class _WithTheAxis:
+    """A verify result type carrying `foreign_key_coverage`, as every release
+    from `FOREIGN_KEY_COVERAGE_FROM` does."""
+
     model_fields: dict = {"findings": None, "warnings": None, "foreign_key_coverage": None}
 
 
