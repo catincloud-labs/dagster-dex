@@ -1892,13 +1892,21 @@ def _as_landed(column, landed):
 
 
 def _normalised(document):
-    """`document` with each entry's `tests` and `data_tests` read as one list,
-    and an empty list dropped.
+    """`document` with each entry's `tests` and `data_tests` read as one list
+    of test names, and an empty list dropped.
 
     dbt and `parse_declarations` read the two keys alike, and an emptied list
     says what a removed one does; the engine removes the key. So the comparison
     is of what a document declares rather than of how it spells it.
+
+    A test is read by name, through the reader `parse_declarations` uses
+    (`_test_names`), so `{not_null: {config: ...}}` reads as `not_null`. dex
+    renders a test it writes with a `config:` since exmergo/dex@48634545
+    (exmergo/dex pull request 1348), and as a bare name before it; the name is
+    what a declaration says, and both sides compare alike (#212).
     """
+
+    from dagster_dex.declarations import _test_names
 
     for model in document.get("models") or []:
         if not isinstance(model, dict):
@@ -1907,8 +1915,9 @@ def _normalised(document):
             if not isinstance(entry, dict):
                 continue
             tests = [*(entry.pop("tests", None) or []), *(entry.pop("data_tests", None) or [])]
-            if tests:
-                entry["tests"] = tests
+            names = [name for name, _payload in _test_names(tests, "the fixture", [])]
+            if names:
+                entry["tests"] = names
     return document
 
 
