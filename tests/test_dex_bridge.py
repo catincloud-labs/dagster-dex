@@ -2581,29 +2581,67 @@ BOTH_BROKEN_KEYS = [
 #: commit measures each declared foreign key against its parent and reports a
 #: child value the parent lacks as `foreign_key_orphans`, recording every key
 #: under the result's `foreign_key_coverage`. Which side an engine is on is
-#: read off that field (`_judges_declared_foreign_keys`), not off a version:
-#: no release carried the commit when this was written (newest `v1.17.9`),
-#: and an install from `main` reports the same development version on both
-#: sides of it.
+#: read off that field (`_judges_declared_foreign_keys`), and a release at or
+#: above `FOREIGN_KEY_COVERAGE_FROM` is refused the old side.
 PLANTED_ORPHAN = ("foreign_key_orphans", "fact_orders", (), "relationships")
 
+#: The first release whose verify judges a format's declared foreign keys:
+#: `v1.18.0` is the first tag that contains exmergo/dex@0c13c3f (read with
+#: `git tag --contains 0c13c3f` in the upstream repository, which prints
+#: `v1.18.0` alone; `v1.17.9` does not contain it). A fact about upstream's
+#: release history, which is why it may be written down: released versions
+#: do not change. It does not move what the `[dex]` extra admits, only what
+#: this test expects of a release.
+FOREIGN_KEY_COVERAGE_FROM = (1, 18, 0)
 
-def _judges_declared_foreign_keys(result) -> bool:
-    """Whether the installed engine's verify result type carries
-    `foreign_key_coverage`, the record list exmergo/dex@0c13c3f added beside
-    the `foreign_key_orphans` finding.
 
-    Read off the result's model, not its value: the field is declared whether
-    or not the axis ran. Two mismatches are red rather than quiet - a field
-    renamed upstream expects no orphan where the engine reports one, and a
-    check dropped with the field kept expects one where none comes. A third
-    is not: an engine dropping both, as a revert would, reads the old arm
-    green. Closing it takes a floor that refuses the field's absence at or
-    above the first release carrying it, the way `GRAIN_COVERAGE_FROM` does
-    in `dex.py`, and no such release exists to name yet.
+def _released(version: str) -> tuple[int, int, int] | None:
+    """The release `version` names, or `None` for any other build.
+
+    A development build of upstream `main` (`1.17.10.dev3+g...`) names no
+    release: before `v1.18.0` was tagged, an install from `main` reported a
+    development version on both sides of exmergo/dex@0c13c3f, so the version
+    cannot say which side such a build is on.
     """
 
-    return "foreign_key_coverage" in type(result).model_fields
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version)
+    if match is None:
+        return None
+    major, minor, patch = (int(part) for part in match.groups())
+    return major, minor, patch
+
+
+def _judges_declared_foreign_keys(result, version: str) -> bool:
+    """Whether the installed engine's verify result type carries
+    `foreign_key_coverage`, the record list exmergo/dex@0c13c3f added beside
+    the `foreign_key_orphans` finding, with `version` the installed
+    `exmergo-dex-core`.
+
+    Read off the result's model, not its value: the field is declared whether
+    or not the axis ran. Three mismatches are red rather than quiet. A field
+    renamed upstream expects no orphan where the engine reports one, and a
+    check dropped with the field kept expects one where none comes. An engine
+    dropping both, as a revert would, would read the old arm green, so a
+    release at or above `FOREIGN_KEY_COVERAGE_FROM` whose result lacks the
+    field fails here instead, the way `GRAIN_COVERAGE_FROM` refuses the note
+    path in `dex.py`.
+
+    Below the floor, and on a build that names no release (`_released`), the
+    field alone decides. So on an install from upstream `main` a revert of
+    both still reads the old arm green; only a release is held to the floor.
+    """
+
+    judges = "foreign_key_coverage" in type(result).model_fields
+    release = _released(version)
+    if not judges and release is not None and release >= FOREIGN_KEY_COVERAGE_FROM:
+        floor = ".".join(str(part) for part in FOREIGN_KEY_COVERAGE_FROM)
+        pytest.fail(
+            f"exmergo-dex-core {version} returned a verify result without "
+            f"foreign_key_coverage, which every release carries from {floor}. "
+            f"Either FOREIGN_KEY_COVERAGE_FROM is stale, or the engine has lost the "
+            f"declared-foreign-key axis and the planted orphan with it."
+        )
+    return judges
 
 
 def _expected_on_the_violated_arm(verified) -> list:
@@ -2694,7 +2732,7 @@ def _verify(tmp_path, *, violated: bool, assets: str, **options):
         (f.code, f.identifier, tuple(f.data.get("columns") or ()), f.data.get("source"))
         for f in result.findings
     )
-    judges = _judges_declared_foreign_keys(result)
+    judges = _judges_declared_foreign_keys(result, md.version("exmergo-dex-core"))
     coverage = result.foreign_key_coverage if judges else None
     return _Verified(findings, list(result.warnings), judges, coverage)
 
@@ -2765,3 +2803,34 @@ class TestVerifyJudgesTheDeclaredKeys:
                 "order_date_key": "unchecked",
                 "ship_date_key": "unchecked",
             }, verified.foreign_key_coverage
+
+
+class _WithoutTheAxis:
+    """A verify result type stripped of `foreign_key_coverage`, as a revert
+    of exmergo/dex@0c13c3f would leave it. Only the model's field names are
+    read, so no engine needs patching."""
+
+    model_fields: dict = {"findings": None, "warnings": None}
+
+
+class _WithTheAxis:
+    model_fields: dict = {"findings": None, "warnings": None, "foreign_key_coverage": None}
+
+
+class TestTheOrphanArmHasAFloor:
+    """The floor, both arms. No installed engine lacks the field at or above
+    it, so without these the refusal is a branch nothing runs."""
+
+    def test_a_release_at_the_floor_without_the_axis_is_refused(self):
+        floor = ".".join(str(part) for part in FOREIGN_KEY_COVERAGE_FROM)
+        for version in (floor, "1.18.3", "1.19.0"):
+            with pytest.raises(pytest.fail.Exception, match="FOREIGN_KEY_COVERAGE_FROM is stale"):
+                _judges_declared_foreign_keys(_WithoutTheAxis(), version)
+
+    def test_below_the_floor_and_on_a_development_build_the_field_decides(self):
+        for version in ("1.17.9", "1.12.5", "1.17.10.dev3+g0c13c3f", "1.18.1.dev5+gf111e1a"):
+            assert _judges_declared_foreign_keys(_WithoutTheAxis(), version) is False
+
+    def test_the_axis_present_is_judged_on_every_build(self):
+        for version in ("1.17.9", "1.18.0", "1.17.10.dev3+g0c13c3f"):
+            assert _judges_declared_foreign_keys(_WithTheAxis(), version) is True
