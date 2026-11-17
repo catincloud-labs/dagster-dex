@@ -28,14 +28,16 @@ new planted formats pins `dagster-dex~=1.3`, since `~=1.2` also admits 1.2.0,
 which has none of them. Under SECURITY.md's rule that only the latest minor
 receives fixes, 1.2 receives none from this release on. A consumer that
 imports neither `dagster_dex.conformance` nor `dagster_dex.planted` moves by
-changing its pin and nothing else: no module it can reach changed. Two kinds
-of consumer see a difference:
+changing its pin and nothing else: no module it can reach changed apart from
+the version string. Two kinds of consumer see a difference:
 
 - **A subclass of `EditableProjectContract` runs eight tests, not five.**
   A format carrying one of the three defects goes red on the test built for
   it, which is the contract refusing what it was always meant to refuse
-  (ruled on #200, below). The three tests leave a probe file beside the
-  staged target, so a hook that stages outside a scratch directory sees it.
+  (ruled on #200, below). The mixed-set test leaves a probe file beside the
+  staged target, and a format that admits the prefix probe writes one in a
+  sibling of its surface, so a hook that stages outside a scratch directory
+  sees them.
 - **A suite that holds `ConfirmBlindProject` to its failing set** sees four
   failing tests where 1.2.0 failed two.
 
@@ -46,9 +48,10 @@ v1.3.0:src/dagster_dex/protocol.py` prints one hash twice, and the same holds
 for `model.py`. Every name 1.2.0 exported is still exported, and no public
 signature changed. The two modules that changed are `conformance.py`, which
 gained three tests, four private helpers, a private constant, one import and
-a paragraph in `EditableProjectContract`'s docstring, and rewrote the hook
+four passages in `EditableProjectContract`'s docstring, and rewrote the hook
 docstring's sentence on a fresh scenario; and `planted.py`, which gained
-three classes and the imports they use, and rewrote its docstrings. The engine range and the tested pin are where 1.2.0 left them:
+three classes and the imports they use, and rewrote its docstrings. The
+engine range and the tested pin are where 1.2.0 left them:
 `git grep -h -o 'core==[0-9][0-9.]*' v1.3.0 | sort -u` prints the one version
 it prints at `v1.2.0`. What moved under `src/` and in `pyproject.toml` is
 listed by `git diff --stat v1.2.0..v1.3.0 -- src/ pyproject.toml`.
@@ -68,8 +71,9 @@ listed by `git diff --stat v1.2.0..v1.3.0 -- src/ pyproject.toml`.
   wrote the clean targets beside a
   conflict, did not check a create pinned to absence, or matched its surface
   by string prefix passed all five tests (measured on #191, comment
-  6885835798). Measured on #200 (comment 6933204593): each now fails the one
-  test built for it.
+  6885835798). Measured on #200 (comment 6933204593, re-measured against the
+  shipped tests in comment 6933668019): each now fails the one test built
+  for it.
   - **An existing subclass carrying one of those defects goes red.** The
     owner ruled on #200 (comment 6932697269) that a new assertion on the
     existing class that turns a format red because it carries one of the
@@ -84,9 +88,11 @@ listed by `git diff --stat v1.2.0..v1.3.0 -- src/ pyproject.toml`.
     fails: with a message naming the assumption where the format answers with
     an outcome, and with the format's own exception where it raises. Nothing
     skips.
-  - **The derived tests leave a probe file** beside the staged target,
-    `<stem>_dagster_dex_contract_probe<suffix>`, so a hook stages in a
-    scratch directory, as the hook's fresh-scenario rule already implies.
+  - **The derived tests leave files where the hook staged.** The mixed-set
+    test writes `<stem>_dagster_dex_contract_probe<suffix>` beside the staged
+    target, and a format that admits the prefix probe writes one in a sibling
+    of its surface, so a hook stages in a scratch directory, as the hook's
+    fresh-scenario rule already implies.
   - **No new contract class.** The ruling was shape (d), the contract
     deriving the scenarios, and shape (e), a new class with mandatory hooks,
     for whatever (d) could not derive. The measurement found (d) reaches all
@@ -108,9 +114,14 @@ listed by `git diff --stat v1.2.0..v1.3.0 -- src/ pyproject.toml`.
 
 - **`ConfirmBlindProject` fails four tests of the write contract, not two.**
   It writes as though confirmed, so the mixed set and the create over an
-  existing file are written through too: it now also fails `test_one_conflict_refuses_the_clean_edit_beside_it` and
-  `test_a_create_whose_target_now_exists_is_a_conflict`. Its docstring, `tests/test_conformance.py` and the wheel runner
+  existing file are written through too: it now also fails
+  `test_one_conflict_refuses_the_clean_edit_beside_it` and
+  `test_a_create_whose_target_now_exists_is_a_conflict`. Its docstring,
+  `tests/test_conformance.py` and the wheel runner
   say so. A consumer that holds it to exactly two failing tests sees four.
+  The docstring's last sentence still said a variant would fail two; the
+  cold review of this cut found it, and the old sentence is quoted under
+  *How this section read before*, below.
 - **The documents say what the contract reaches.** `docs/design/verification.md`'s
   table of the three defects gains this package's contract as a column, and
   its bullets on what the wheel step reaches are rewritten;
@@ -1975,6 +1986,21 @@ formats in `dagster_dex.planted` to its contract. Each is one of this
 package's formats with one defect, and fails exactly the tests its docstring
 names: two are `DagsterProject` and go to the tier-2 contract, and one is
 `EditableDagsterProject` and goes to the tier-3 one.
+```
+
+### `src/dagster_dex/planted.py`, `ConfirmBlindProject`'s docstring, the sentence on a variant that drops the conflict
+
+Read dead on 2026-11-17, by the cold review of the 1.3.0 cut (#211), against
+`src/dagster_dex/conformance.py` at `0631286`: the two derived tests this
+class now fails assert the target unchanged before they read the outcome, so
+a variant that also dropped the conflict fails all four, not two. The
+paragraph read:
+
+```text
+That it still reports the conflict is how it is built, not something the
+contract holds: the outcome assertion fails on ``written`` before it reads
+``conflicts``, so a variant that also dropped the conflict would fail the
+same two tests.
 ```
 
 ## Why this file names no engine version
