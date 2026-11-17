@@ -18,7 +18,8 @@
 - **Reviewed:** 2026-10-30 at `19a4088`; the sections the shipped planted
   formats touch re-read 2026-11-09 at `bb30439`; the sections the declared-key
   checks example touches re-read 2026-11-10 at `993f479`; the sections the
-  tier-3 planted format touches re-read 2026-11-14 at `f5eeb99`
+  tier-3 planted format touches re-read 2026-11-14 at `f5eeb99`; the sections
+  the write contract's derived tests touch re-read 2026-11-16 at `4576ea4`
 
 This page describes how the package's claims are checked today: which job
 holds which claim, what each check can and cannot see, and where each one has
@@ -341,13 +342,21 @@ descriptions, each as one replacement in `src/dagster_dex/project.py`:
 They were calibrated first: at `1c3dfab`, the commit that recorded the
 measurement, against dex-core 1.6.6, each passes both contracts in full, as
 the record says, and fails one test in this package's own suite. Then at
-`ec96fe4` against dex-core 1.8.0:
+`ec96fe4` against dex-core 1.8.0. The column for this package's own shipped
+contract, `dagster_dex.conformance.EditableProjectContract`, was measured
+later and with no engine installed: on 2026-11-14 at `f5eeb99` each defect
+passed all five of its tests
+([#191](https://github.com/catincloud-labs/dagster-dex/issues/191), comment
+6885835798), and on 2026-11-16 at `4576ea4`, with the three tests
+[#200](https://github.com/catincloud-labs/dagster-dex/issues/200) derives
+from the contract's one hook, each fails the one built for it and passes the
+other seven (#200, comment 6933204593):
 
-| Planted in `propose_edits` | Contracts at 1.6.6 | Contracts at 1.8.0 | This package's suite |
-| --- | --- | --- | --- |
-| Writes the clean targets beside a conflict | pass | fail: `test_a_refused_apply_leaves_every_target_alone` | fail: `test_one_conflict_refuses_the_whole_set` |
-| A create pinned to absence is not checked | pass | fail: `test_a_create_pinned_absent_refuses_a_target_that_now_exists` | fail: `test_a_create_whose_file_now_exists_is_a_conflict` |
-| Containment by string prefix | pass | fail: `test_write_edits_refuses_a_path_outside_the_declared_surface` | fail: `test_a_prefix_does_not_admit_a_sibling_that_merely_starts_with_it` |
+| Planted in `propose_edits` | Contracts at 1.6.6 | Contracts at 1.8.0 | This package's contract | This package's suite |
+| --- | --- | --- | --- | --- |
+| Writes the clean targets beside a conflict | pass | fail: `test_a_refused_apply_leaves_every_target_alone` | fail: `test_one_conflict_refuses_the_clean_edit_beside_it` | fail: `test_one_conflict_refuses_the_whole_set` |
+| A create pinned to absence is not checked | pass | fail: `test_a_create_pinned_absent_refuses_a_target_that_now_exists` | fail: `test_a_create_whose_target_now_exists_is_a_conflict` | fail: `test_a_create_whose_file_now_exists_is_a_conflict` |
+| Containment by string prefix | pass | fail: `test_write_edits_refuses_a_path_outside_the_declared_surface` | fail: `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused` | fail: `test_a_prefix_does_not_admit_a_sibling_that_merely_starts_with_it` |
 
 Each 1.8.0 failure is in both write-tier classes, the live-graph one and the
 artifact one. The three assertions arrived in dex-core 1.7.0: listing the test
@@ -378,7 +387,10 @@ them. So, measured on 2026-10-30 at 1.8.0 and at 1.16.6, the seven write-path
 defects on record (the three #25 named as passing, and the driver's four) each
 fail the shipped write contracts, and each also fails this package's own suite.
 That is a reading of seven defects at two engines, not a proof: the contracts
-are behavioural rather than exhaustive, and say so.
+are behavioural rather than exhaustive, and say so. The first three also fail
+this package's own contract since #200, as the table shows. The driver's four
+are in `dex.py`, which this package's contract does not run, so they were not
+measured against it.
 
 **Not every planted defect on record is a write-path one, and the contracts
 do not catch the others.** The notes mutation
@@ -468,25 +480,28 @@ those.
 - **The refusing arm is read first.** Each format `dagster_dex.planted` ships
   has to fail exactly the tests it is built to fail, with the error it is built
   to raise, and pass every other test of its tier's contract: the three tier-2
-  classes run the tier-2 contract's tests, and the two tier-3 classes the
-  tier-3 contract's. `SourceBlindProject` and `RaisingProject` are tier 2;
-  `ConfirmBlindProject` is tier 3, and fails
-  `test_an_unconfirmed_write_refuses_a_target_that_moved` and
-  `test_the_outcome_reports_what_happened`. Only then is the passing arm read:
-  `DagsterProject` through the tier-2 contract and `EditableDagsterProject`
-  through the tier-3 one, every test green.
-- **What it does not reach.** The tier-3 refusing arm is one planted format,
-  and it reaches only the scenario the contract's hook stages: one edit,
-  pinned to a file that exists, with a key inside the surface. The three
-  write-path defects on record
+  classes run the tier-2 contract's tests, and the five tier-3 classes the
+  tier-3 contract's. `SourceBlindProject` and `RaisingProject` are tier 2. The
+  other four are tier 3. `ConfirmBlindProject` fails
+  `test_an_unconfirmed_write_refuses_a_target_that_moved`,
+  `test_the_outcome_reports_what_happened`, `test_one_conflict_refuses_the_clean_edit_beside_it` and `test_a_create_whose_target_now_exists_is_a_conflict`. The
+  three write-path defects on record
   ([*The measurement, and what it was measured against*](#the-measurement-and-what-it-was-measured-against))
-  each pass all five tests of the shipped `EditableProjectContract`, measured
-  on 2026-11-14 at `f5eeb99`
-  ([#191](https://github.com/catincloud-labs/dagster-dex/issues/191)), so none
-  is planted here. `tests/test_write_tier.py` catches each of them, and dex-core's write
-  contracts do too. Whether this package's contract should stage those
-  scenarios is
-  [#200](https://github.com/catincloud-labs/dagster-dex/issues/200).
+  fail one test each: `HalfRefusingProject` fails `test_one_conflict_refuses_the_clean_edit_beside_it`,
+  `CreateBlindProject` fails `test_a_create_whose_target_now_exists_is_a_conflict`, and `PrefixMatchingProject` fails
+  `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused`. Only then is the passing arm read: `DagsterProject` through the
+  tier-2 contract and `EditableDagsterProject` through the tier-3 one, every
+  test green.
+- **What it does not reach.** The tier-3 contract stages one scenario through
+  its hook and derives three more from it
+  ([#200](https://github.com/catincloud-labs/dagster-dex/issues/200)): a clean
+  create beside the staged edit, the same create proposed again over the file
+  it made, and a key in a sibling of the first declared prefix. So it reaches
+  what those four scenarios exercise, and the derivation assumes a format
+  accepts a create at a sibling of the key its hook stages, which the
+  `EditableProjectContract` docstring states. It does not run `dex.py`, so
+  the write-path driver's four `dex.py` defects are outside it, and it is
+  behavioural rather than exhaustive, as dex-core's are.
 - **Its red arms.** Measured on 2026-11-09, each against a wheel built from a
   mutated copy of the tree unless named otherwise:
   - correcting `SourceBlindProject`'s fingerprint turned the refusing arm red
@@ -508,6 +523,13 @@ those.
   tests, with the two tier-2 formats still red as built, and turned
   `tests/test_conformance.py::test_each_planted_write_defect_fails_exactly_the_tests_it_is_built_to_fail`
   red for it.
+
+  Measured on 2026-11-16 the same way, once for each of the three formats
+  #200 added: correcting it, so that its `propose_edits` is the one it wraps,
+  turned the refusing arm red on its one test, reported as expected to fail
+  and passing, and turned
+  `tests/test_conformance.py::test_each_planted_write_defect_fails_exactly_the_tests_it_is_built_to_fail`
+  red for it alone.
 
 ## Claims in prose, held to runs
 
@@ -659,8 +681,8 @@ and its red arms are not read here.
 | dex-core's write contracts | The seven mutations above, at both ends of the range | recorded, here |
 | Read-path driver | None found | none |
 | Write-path driver | Pre-write-tier tree and four mutations | recorded, #25; re-run here |
-| `dagster_dex.conformance`, in `tests/test_conformance.py` | The three formats `dagster_dex.planted` ships, each held to the tests it fails; a corrected defect (2026-11-09, 2026-11-14) | standing, and recorded, here |
-| The shipped contract from the wheel | The same three formats, read per test; each defect corrected, a wheel missing either module, a dropped test, an editable install (2026-11-09, 2026-11-14) | standing, and recorded, here |
+| `dagster_dex.conformance`, in `tests/test_conformance.py` | The six formats `dagster_dex.planted` ships, each held to the tests it fails; a corrected defect (2026-11-09, 2026-11-14, 2026-11-16) | standing, and recorded, here |
+| The shipped contract from the wheel | The same six formats, read per test; each defect corrected, a wheel missing either module, a dropped test, an editable install (2026-11-09, 2026-11-14, 2026-11-16) | standing, and recorded, here |
 | `scripts/check_readme_excerpt.py` | `tests/test_readme_excerpt.py` | standing |
 | The whole loop's impact assertion | The `deps=` edge removed | recorded, `checks.yml` |
 | The other two real-Dagster example steps | None found | none |

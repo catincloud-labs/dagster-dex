@@ -13,10 +13,11 @@ It imports only the installed package. Each class is the subclass
 
 - `TestDagsterProject` and `TestEditableDagsterProject` are the passing arm,
   this package's own format through the tier-2 and tier-3 contracts;
-- `TestSourceBlindProject`, `TestRaisingProject` and `TestConfirmBlindProject`
-  are the refusing arm, the formats `dagster_dex.planted` ships, the first two
-  through the tier-2 contract and the third through the tier-3 one, and are
-  meant to go red. The runner asserts which of their tests fail, so a defect
+- `TestSourceBlindProject`, `TestRaisingProject`, `TestConfirmBlindProject`,
+  `TestHalfRefusingProject`, `TestCreateBlindProject` and
+  `TestPrefixMatchingProject` are the refusing arm, the formats
+  `dagster_dex.planted` ships, the first two through the tier-2 contract and
+  the other four through the tier-3 one, and are meant to go red. The runner asserts which of their tests fail, so a defect
   that stops failing is red.
 """
 
@@ -33,7 +34,14 @@ from dagster_dex.conformance import (
     a_single_key_declaration,
 )
 from dagster_dex.model import definition_hash
-from dagster_dex.planted import ConfirmBlindProject, RaisingProject, SourceBlindProject
+from dagster_dex.planted import (
+    ConfirmBlindProject,
+    CreateBlindProject,
+    HalfRefusingProject,
+    PrefixMatchingProject,
+    RaisingProject,
+    SourceBlindProject,
+)
 
 MODELS = (
     ProjectModel(name="dim_date", layer="silver"),
@@ -111,3 +119,18 @@ class TestRaisingProject(FingerprintedProjectContract):
 class TestConfirmBlindProject(EditableProjectContract):
     def an_edit_against_a_changed_target(self) -> Staged:
         return _staged(ConfirmBlindProject)
+
+
+class TestHalfRefusingProject(EditableProjectContract):
+    def an_edit_against_a_changed_target(self) -> Staged:
+        return _staged(HalfRefusingProject)
+
+
+class TestCreateBlindProject(EditableProjectContract):
+    def an_edit_against_a_changed_target(self) -> Staged:
+        return _staged(CreateBlindProject)
+
+
+class TestPrefixMatchingProject(EditableProjectContract):
+    def an_edit_against_a_changed_target(self) -> Staged:
+        return _staged(PrefixMatchingProject)

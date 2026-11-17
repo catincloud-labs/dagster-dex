@@ -13,6 +13,59 @@ changes explicitly, because that is the reason a consumer opens this file.
 Before 1.0.0 a minor could carry one; from 1.0.0 one waits for 2.0. Pin the
 major if you depend on the contract.
 
+## Unreleased
+
+### Added
+
+- **`EditableProjectContract` refuses the three write-path defects on record**
+  (`src/dagster_dex/conformance.py`, #200). Three tests, each derived from
+  what the contract's one hook, `an_edit_against_a_changed_target`, already
+  returns, so no new hook: `test_one_conflict_refuses_the_clean_edit_beside_it` stages a clean create beside the
+  conflict and checks that the refused set did not write it;
+  `test_a_create_whose_target_now_exists_is_a_conflict` writes a create through the format and proposes it again pinned
+  to absence; and `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused` offers a key in a sibling of the first declared
+  prefix. Before this, a format that wrote the clean targets beside a
+  conflict, did not check a create pinned to absence, or matched its surface
+  by string prefix passed all five tests (measured on #191, comment
+  6885835798). Measured on #200 (comment 6933204593): each now fails the one
+  test built for it.
+  - **An existing subclass carrying one of those defects goes red.** The
+    owner ruled on #200 (comment 6932697269) that a new assertion on the
+    existing class that turns a format red because it carries one of the
+    three defects is not a breaking change: the contract is refusing a defect
+    it was always meant to refuse.
+  - **What the derivation assumes.** The format accepts a create
+    (`pinned_hash=None`) at a sibling of the key its hook stages, carrying
+    that edit's content, and the first prefix `editing_surface()` declares has
+    a sibling no declared prefix admits. Where either is false the test fails
+    with a message naming it; nothing skips.
+  - **No new contract class.** The ruling was shape (d), the contract
+    deriving the scenarios, and shape (e), a new class with mandatory hooks,
+    for whatever (d) could not derive. The measurement found (d) reaches all
+    three, so there is no remainder and tier-3 conformance stays one class.
+- **Three more planted formats in `dagster_dex.planted`**
+  (`src/dagster_dex/planted.py`, #200), each `EditableDagsterProject` with one
+  of the three defects, made as a subclass: `HalfRefusingProject` fails
+  exactly `test_one_conflict_refuses_the_clean_edit_beside_it`, `CreateBlindProject` exactly `test_a_create_whose_target_now_exists_is_a_conflict`, and
+  `PrefixMatchingProject` exactly `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused`. `tests/test_conformance.py` and
+  the wheel step in `publish.yml`'s `build` hold each to its one test. The
+  three class names are new public surface, so the release that carries them
+  is a minor.
+
+### Changed
+
+- **`ConfirmBlindProject` fails four tests of the write contract, not two.**
+  It writes as though confirmed, so the mixed set and the create over an
+  existing file are written through too: it now also fails `test_one_conflict_refuses_the_clean_edit_beside_it` and
+  `test_a_create_whose_target_now_exists_is_a_conflict`. Its docstring, `tests/test_conformance.py` and the wheel runner
+  say so. A consumer that holds it to exactly two failing tests sees four.
+- **The documents say what the contract reaches.** `docs/design/verification.md`'s
+  table of the three defects gains this package's contract as a column, and
+  its bullets on what the wheel step reaches are rewritten;
+  `docs/design/implementing-a-format.md` and the README name six planted
+  formats. The passages the change made false are quoted under *How this
+  section read before*, below.
+
 ## 1.2.0 - 2026-11-15
 
 Two additions to the package. `dagster_dex.checks.build_declaration_checks`
@@ -1751,6 +1804,114 @@ The engine coupling is one file. Everything else, including the conformance
 suite and the whole write path, runs with dex-core uninstalled, which is what
 keeps the design from being shaped by whatever the engine happens to look like
 today.
+```
+
+### `docs/design/verification.md`, *This package's contract, from the wheel*, the bullets on the refusing arm and on what it does not reach, again
+
+Read dead on 2026-11-16, against `src/dagster_dex/conformance.py` and
+`src/dagster_dex/planted.py` in the change that derives three tests from the
+tier-3 hook (#200), at base `4576ea4`. The two bullets read:
+
+```markdown
+- **The refusing arm is read first.** Each format `dagster_dex.planted` ships
+  has to fail exactly the tests it is built to fail, with the error it is built
+  to raise, and pass every other test of its tier's contract: the three tier-2
+  classes run the tier-2 contract's tests, and the two tier-3 classes the
+  tier-3 contract's. `SourceBlindProject` and `RaisingProject` are tier 2;
+  `ConfirmBlindProject` is tier 3, and fails
+  `test_an_unconfirmed_write_refuses_a_target_that_moved` and
+  `test_the_outcome_reports_what_happened`. Only then is the passing arm read:
+  `DagsterProject` through the tier-2 contract and `EditableDagsterProject`
+  through the tier-3 one, every test green.
+- **What it does not reach.** The tier-3 refusing arm is one planted format,
+  and it reaches only the scenario the contract's hook stages: one edit,
+  pinned to a file that exists, with a key inside the surface. The three
+  write-path defects on record
+  ([*The measurement, and what it was measured against*](#the-measurement-and-what-it-was-measured-against))
+  each pass all five tests of the shipped `EditableProjectContract`, measured
+  on 2026-11-14 at `f5eeb99`
+  ([#191](https://github.com/catincloud-labs/dagster-dex/issues/191)), so none
+  is planted here. `tests/test_write_tier.py` catches each of them, and dex-core's write
+  contracts do too. Whether this package's contract should stage those
+  scenarios is
+  [#200](https://github.com/catincloud-labs/dagster-dex/issues/200).
+```
+
+### `docs/design/verification.md`, *Where each guard's red arm lives*, the two rows on the planted formats, again
+
+Read dead on 2026-11-16, for the same reason and in the same change. They
+read:
+
+```markdown
+| `dagster_dex.conformance`, in `tests/test_conformance.py` | The three formats `dagster_dex.planted` ships, each held to the tests it fails; a corrected defect (2026-11-09, 2026-11-14) | standing, and recorded, here |
+| The shipped contract from the wheel | The same three formats, read per test; each defect corrected, a wheel missing either module, a dropped test, an editable install (2026-11-09, 2026-11-14) | standing, and recorded, here |
+```
+
+### `src/dagster_dex/planted.py`, its module docstring and `ConfirmBlindProject`'s, the passages naming three formats and what the tier-3 one fails
+
+Read dead on 2026-11-16, for the same reason and in the same change. The
+module docstring's first line, its sentence on the tier-3 format, and its
+sentence on the class names, then the sentence in `ConfirmBlindProject`'s
+docstring on what it fails, read, in order:
+
+```text
+Three formats built wrong on purpose, to watch the contract refuse.
+
+the tier-1 and tier-2 contracts. :class:`ConfirmBlindProject` wraps
+:class:`~dagster_dex.project.EditableDagsterProject`, so it is tier 3, and is
+wired to ``EditableProjectContract`` through that contract's hook, which
+stages a target a human edited after the edit was proposed and so builds the
+directory the format writes into.
+
+Like the contract's builders, the three class names are public surface.
+
+    ``EditableProjectContract`` it fails exactly
+    ``test_an_unconfirmed_write_refuses_a_target_that_moved`` and
+    ``test_the_outcome_reports_what_happened``, each with an
+    ``AssertionError``. The second is the same defect read from the outcome:
+    the overwritten target is reported in ``written``, so a caller marks the
+    proposal applied. A confirmed write still lands, so the override assertion
+    passes.
+```
+
+### `docs/design/implementing-a-format.md`, three passages on the tier-3 hook and the planted formats
+
+Read dead on 2026-11-16, for the same reason and in the same change. In
+*The contracts and their hooks*, the sentence on the hook's fresh scenario;
+in *What is promised to stay put*, the sentence on the planted formats; and
+in *Watching it refuse*, the lead sentence's count, the `ConfirmBlindProject`
+row, and the sentence after the table on where each format goes, read, in
+order:
+
+```markdown
+human editing the target after the edit was proposed, and must stage a fresh
+scenario on every call, because one of the assertions writes.
+
+So are the three formats `dagster_dex.planted` ships, and the tests each one
+fails (the `src/dagster_dex/planted.py` module docstring).
+
+the package ships three formats built wrong on purpose beside it, in
+
+| `dagster_dex.planted.ConfirmBlindProject` | `EditableDagsterProject`, tier 3 | writes every edit as though confirmed, so a human's edit is overwritten | `test_an_unconfirmed_write_refuses_a_target_that_moved`, `test_the_outcome_reports_what_happened` |
+
+passes. The two tier-2 formats go to
+`dagster_dex.conformance.FingerprintedProjectContract` through `make_project`;
+`ConfirmBlindProject` goes to `dagster_dex.conformance.EditableProjectContract`
+through `an_edit_against_a_changed_target`, which builds the directory it
+writes into.
+```
+
+### `README.md`, *Using the contract on another format*, the paragraph on the planted formats, again
+
+Read dead on 2026-11-16, for the same reason and in the same change. Its
+first sentences read:
+
+```markdown
+To watch the contract refuse before trusting its green, wire one of the three
+formats in `dagster_dex.planted` to its contract. Each is one of this
+package's formats with one defect, and fails exactly the tests its docstring
+names: two are `DagsterProject` and go to the tier-2 contract, and one is
+`EditableDagsterProject` and goes to the tier-3 one.
 ```
 
 ## Why this file names no engine version

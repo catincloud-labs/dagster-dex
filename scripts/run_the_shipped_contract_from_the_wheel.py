@@ -49,7 +49,13 @@ MODULE = REPO / "scripts" / "a_format_outside_the_tree.py"
 
 #: The classes wired to the tier-2 contract, and those wired to tier 3.
 TIER_TWO = ("TestDagsterProject", "TestSourceBlindProject", "TestRaisingProject")
-TIER_THREE = ("TestEditableDagsterProject", "TestConfirmBlindProject")
+TIER_THREE = (
+    "TestEditableDagsterProject",
+    "TestConfirmBlindProject",
+    "TestHalfRefusingProject",
+    "TestCreateBlindProject",
+    "TestPrefixMatchingProject",
+)
 PASSING = ("TestDagsterProject", "TestEditableDagsterProject")
 
 #: What each planted defect fails, and how the failure's message begins, which
@@ -69,6 +75,14 @@ REFUSING = {
     "TestConfirmBlindProject": {
         "test_an_unconfirmed_write_refuses_a_target_that_moved": "AssertionError",
         "test_the_outcome_reports_what_happened": "AssertionError",
+        "test_one_conflict_refuses_the_clean_edit_beside_it": "AssertionError",
+        "test_a_create_whose_target_now_exists_is_a_conflict": "AssertionError",
+    },
+    # The three write-path defects on record (#200), one test each.
+    "TestHalfRefusingProject": {"test_one_conflict_refuses_the_clean_edit_beside_it": "AssertionError"},
+    "TestCreateBlindProject": {"test_a_create_whose_target_now_exists_is_a_conflict": "AssertionError"},
+    "TestPrefixMatchingProject": {
+        "test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused": "AssertionError",
     },
 }
 
