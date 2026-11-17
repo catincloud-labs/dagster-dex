@@ -1903,7 +1903,10 @@ def _normalised(document):
     (`_test_names`), so `{not_null: {config: ...}}` reads as `not_null`. dex
     renders a test it writes with a `config:` since exmergo/dex@48634545
     (exmergo/dex pull request 1348), and as a bare name before it; the name is
-    what a declaration says, and both sides compare alike (#212).
+    what a declaration says, and both sides compare alike (#212). The payload
+    is not compared, so a written test whose `config:` switches it off
+    (`enabled: false`) reads the same as one that runs; that is accepted here
+    as upstream's spelling, which upstream re-parses after its own splice.
     """
 
     from dagster_dex.declarations import _test_names
