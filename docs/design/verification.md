@@ -495,11 +495,12 @@ those.
 - **What it does not reach.** The tier-3 contract stages one scenario through
   its hook and derives three more from it
   ([#200](https://github.com/catincloud-labs/dagster-dex/issues/200)): a clean
-  create beside the staged edit, the same create proposed again over the file
-  it made, and a key in a sibling of the first declared prefix. So it reaches
-  what those four scenarios exercise, and the derivation assumes a format
-  accepts a create at a sibling of the key its hook stages, which the
-  `EditableProjectContract` docstring states. It does not run `dex.py`, so
+  create beside the staged edit, the staged edit re-pinned to absence, and a
+  key in a sibling of a declared prefix. So it reaches what those four
+  scenarios exercise, under the assumptions the `EditableProjectContract`
+  docstring states: a format accepts a create at a sibling of the key its hook
+  stages, the staged target exists after the human's change, and some
+  declared prefix has a sibling no declared prefix admits. It does not run `dex.py`, so
   the write-path driver's four `dex.py` defects are outside it, and it is
   behavioural rather than exhaustive, as dex-core's are.
 - **Its red arms.** Measured on 2026-11-09, each against a wheel built from a

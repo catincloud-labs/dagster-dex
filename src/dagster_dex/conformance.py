@@ -636,12 +636,26 @@ class EditableProjectContract:
     lands, a create pinned to absence that overwrites a file which appeared,
     and a key admitted because it starts with a prefix's characters. Each is
     derived from what the one hook returns, so none needs anything more from
-    a format. What the derivation assumes: the format accepts a create
-    (``pinned_hash=None``) at a sibling of the key its hook stages, carrying
-    that edit's content, and the first prefix ``editing_surface()`` declares
-    has a sibling no declared prefix admits. A format for which either is
-    false fails with a message naming it, rather than skipping, because a
-    skipped assertion is not a passing one.
+    a format. What each derivation assumes:
+
+    - the mixed set: the format accepts a create (``pinned_hash=None``) at a
+      sibling of the key its hook stages, carrying that edit's content, so the
+      staged key's directory is inside the surface;
+    - the create: the target the hook stages still exists after the human's
+      change, which an edit rather than a deletion gives;
+    - the prefix: some prefix ``editing_surface()`` declares has a sibling no
+      declared prefix admits. A whole-project surface, ``"."``, has none, so
+      a format declaring one cannot pass this test.
+
+    A format for which one is false fails that test rather than skipping it,
+    because a skipped assertion is not a passing one. Where the format answers
+    with an outcome, the message names the assumption; where it raises, the
+    failure is the format's own exception.
+
+    **The derived tests leave files where the hook staged.** The mixed-set
+    test writes ``<stem>_dagster_dex_contract_probe<suffix>`` beside the
+    staged target, and a format admitting the prefix probe writes one in a
+    sibling of its surface. Stage in a scratch directory, never a real one.
 
     Supply one hook::
 
@@ -666,9 +680,9 @@ class EditableProjectContract:
           holds right now. Any value comparing equal to itself will do; these
           assertions only ask whether it moved.
 
-        **Return a freshly staged scenario on every call.** Both write
-        assertions use it and one of them writes, so a shared fixture would let
-        the second see what the first left behind.
+        **Return a freshly staged scenario on every call.** Every assertion
+        here uses it and several of them write, so a shared fixture would let
+        one see what another left behind.
 
         This hook is mandatory, unlike ``make_unreadable_project`` on dex-core's
         ``ExploreProjectContract``, which a format may leave to skip. A format may
@@ -780,9 +794,9 @@ class EditableProjectContract:
     # rule out one that writes too much, because every one of them reads the
     # single edit the hook stages. The three below build the rest from what the
     # hook already returns (#200): a sibling of the staged key, which is inside
-    # the surface because the staged key is, and a sibling of a declared prefix,
-    # which is outside it. They need nothing from a format's content, and no
-    # hook beyond the one above.
+    # the surface because the staged key is; the staged key itself, pinned to
+    # absence; and a sibling of a declared prefix, which is outside it. They
+    # need nothing from a format's content, and no hook beyond the one above.
 
     def test_one_conflict_refuses_the_clean_edit_beside_it(self) -> None:
         """All-or-nothing is a separate claim from detecting the conflict.
@@ -816,12 +830,20 @@ class EditableProjectContract:
             "set, so the clean edit beside it does not land either"
         )
         alone = project.propose_edits([clean])
-        assert list(alone.written) == [clean.key], (
+        found = [c.found for c in alone.conflicts if c.key == clean.key]
+        assert not any(f is not None for f in found), (
             f"the clean create at '{clean.key}', proposed alone after the mixed "
-            f"set was refused, did not land (written {list(alone.written)}, "
-            f"conflicts {[c.key for c in alone.conflicts]}). Something is there "
-            "now, so the refused set wrote it: the project holds the clean half "
-            "of a proposal the outcome reported as refused"
+            f"set was refused, conflicts with content found there. Something is "
+            "there now, so the refused set wrote it: the project holds the clean "
+            "half of a proposal the outcome reported as refused"
+        )
+        assert list(alone.written) == [clean.key], (
+            f"propose_edits() did not write a create at '{clean.key}', a sibling "
+            "of the target the hook staged, where nothing was (written "
+            f"{list(alone.written)}, conflicts {[c.key for c in alone.conflicts]}). "
+            "This assertion needs that create to land: it is how the contract "
+            "reads whether the refused set wrote it. A format that accepts no "
+            "create beside its staged target cannot be measured here"
         )
 
     def test_a_create_whose_target_now_exists_is_a_conflict(self) -> None:
@@ -833,35 +855,37 @@ class EditableProjectContract:
         whole file. A check that reads ``None`` as "no expectation" passes every
         assertion above, because the staged edit is pinned to a real hash.
 
-        The file is made to appear through the format's own write, at a sibling
-        of the staged target, so nothing here assumes what the hook's human did
-        to the target itself.
+        The file that appeared is the staged target: the hook's human edited
+        it, so it exists. So the create is the staged edit re-pinned to
+        absence, and nothing here needs the format to accept a create.
         """
 
-        project, edits, _read_target = self.an_edit_against_a_changed_target()
-        create = _a_create_beside(_the_staged_edits(edits)[0])
-
-        first = project.propose_edits([create])
-        assert list(first.written) == [create.key], (
-            f"propose_edits() did not write a create at '{create.key}', a "
-            "sibling of the target the hook staged, into a place where nothing "
-            "was. This assertion needs that create to land before it can ask "
-            f"about a second one (written {list(first.written)}, conflicts "
-            f"{[c.key for c in first.conflicts]})"
+        project, edits, read_target = self.an_edit_against_a_changed_target()
+        staged = _the_staged_edits(edits)[0]
+        create = ProposedEdit(
+            key=staged.key, new_content=_content_of(staged), pinned_hash=None
         )
+        before = read_target()
 
-        second = project.propose_edits([create])
+        outcome = project.propose_edits([create])
 
-        assert not second.written, (
-            f"propose_edits() wrote a create pinned to absence over "
-            f"'{create.key}', which exists. A pin of None says the file was "
-            "absent when the edit was proposed; a file being there now is a "
-            "conflict, not a create"
+        assert read_target() == before, (
+            f"propose_edits() honoured a create pinned to absence over "
+            f"'{create.key}', which exists, and overwrote it whole. A pin of "
+            "None says the file was absent when the edit was proposed; a file "
+            "being there now is a conflict, not a create. (If the target your "
+            "hook stages no longer exists, the hook is not staging the edit it "
+            "documents.)"
         )
-        assert [c.key for c in second.conflicts] == [create.key], (
+        assert not outcome.written, (
+            f"propose_edits() reported the create over the existing "
+            f"'{create.key}' as written, so a caller marks it applied and nobody "
+            "is asked about the file that was there"
+        )
+        assert [c.key for c in outcome.conflicts] == [create.key], (
             f"propose_edits() refused a create over the existing '{create.key}' "
-            f"and reported conflicts {[c.key for c in second.conflicts]}, so "
-            "the file that appeared never reaches the person it was raised for"
+            f"and reported conflicts {[c.key for c in outcome.conflicts]}, so "
+            "the file that was there never reaches the person it was raised for"
         )
 
     def test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused(self) -> None:
@@ -871,8 +895,9 @@ class EditableProjectContract:
         ``declarations_backup/orders.yml``. A format matching by string prefix
         accepts both and passes every other assertion here, including the
         surface check above, which reads what the format declares rather than
-        what it admits. So this offers it a key: a sibling of the first
-        declared prefix that only starts with the same characters.
+        what it admits. So this offers it a key: a sibling of a declared
+        prefix that only starts with the same characters, the first prefix
+        whose sibling no declared prefix admits.
 
         Refusing by raising and refusing by writing nothing are both refusals.
         """
@@ -934,8 +959,8 @@ def _a_create_beside(edit: ProposedEdit) -> ProposedEdit:
 
 
 def _a_key_beside_the_surface(surface: Sequence[str], staged_key: str) -> str:
-    """A key in a directory that starts with the first declared prefix's
-    characters and is not inside it, nor inside any other declared prefix."""
+    """A key in a directory that starts with a declared prefix's characters and
+    is inside no declared prefix: the first prefix for which one exists."""
 
     assert surface, (
         "editing_surface() declares nothing, so every edit is refused, yet the "
@@ -943,12 +968,17 @@ def _a_key_beside_the_surface(surface: Sequence[str], staged_key: str) -> str:
     )
     suffix = PurePosixPath(staged_key.replace("\\", "/")).suffix
     prefixes = [PurePosixPath(p.replace("\\", "/")) for p in surface]
-    key = PurePosixPath(f"{prefixes[0]}_{_PROBE}") / f"{_PROBE}{suffix}"
-    assert not any(p == key or p in key.parents for p in prefixes), (
-        f"the probe key '{key}' is inside the surface this format declares "
-        f"({', '.join(surface)}), so there is no sibling prefix to offer it"
+    candidates = [PurePosixPath(f"{p}_{_PROBE}") / f"{_PROBE}{suffix}" for p in prefixes]
+    outside = [
+        key for key in candidates
+        if not any(p == key or p in key.parents for p in prefixes)
+    ]
+    assert outside, (
+        f"every probe key is inside the surface this format declares "
+        f"({', '.join(surface)}), so there is no sibling prefix to offer it. A "
+        "whole-project surface, '.', admits every key and cannot pass this test"
     )
-    return str(key)
+    return str(outside[0])
 
 
 @pytest.fixture  # type: ignore[untyped-decorator]  # pytest is an optional extra, deliberately unresolvable to the type checker (pyproject's [tool.mypy.overrides] says why)

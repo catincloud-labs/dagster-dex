@@ -17,8 +17,9 @@ It imports only the installed package. Each class is the subclass
   `TestHalfRefusingProject`, `TestCreateBlindProject` and
   `TestPrefixMatchingProject` are the refusing arm, the formats
   `dagster_dex.planted` ships, the first two through the tier-2 contract and
-  the other four through the tier-3 one, and are meant to go red. The runner asserts which of their tests fail, so a defect
-  that stops failing is red.
+  the other four through the tier-3 one, and are meant to go red. The
+  runner asserts which of their tests fail, so a defect that stops failing
+  is red.
 """
 
 from __future__ import annotations

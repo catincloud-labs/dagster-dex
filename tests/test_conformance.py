@@ -204,7 +204,8 @@ def test_the_calibration_reads_a_contract_that_is_not_empty(planted, tests):
     assert planted
     for expected in planted.values():
         assert set(expected) <= set(tests)
-    assert len(tests) > sum(len(expected) for expected in planted.values())
+    # A union, not a sum: two formats failing one test is one test failed.
+    assert len(tests) > len(set().union(*planted.values()))
 
 
 @pytest.mark.parametrize("planted", list(PLANTED), ids=lambda cls: cls.__name__)

@@ -237,9 +237,9 @@ class PrefixMatchingProject(EditableDagsterProject):
     ) -> EditOutcome:
         declared = self._surface
         # The planted defect: a key that only starts with a prefix is admitted.
+        keys = [edit.key.replace("\\", "/") for edit in edits]
         self._surface = declared + tuple(
-            edit.key for edit in edits
-            if any(edit.key.replace("\\", "/").startswith(p) for p in declared)
+            key for key in keys if any(key.startswith(p) for p in declared)
         )
         try:
             return super().propose_edits(edits, root=root, confirmed=confirmed)

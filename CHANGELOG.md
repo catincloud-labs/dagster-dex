@@ -20,11 +20,14 @@ major if you depend on the contract.
 - **`EditableProjectContract` refuses the three write-path defects on record**
   (`src/dagster_dex/conformance.py`, #200). Three tests, each derived from
   what the contract's one hook, `an_edit_against_a_changed_target`, already
-  returns, so no new hook: `test_one_conflict_refuses_the_clean_edit_beside_it` stages a clean create beside the
-  conflict and checks that the refused set did not write it;
-  `test_a_create_whose_target_now_exists_is_a_conflict` writes a create through the format and proposes it again pinned
-  to absence; and `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused` offers a key in a sibling of the first declared
-  prefix. Before this, a format that wrote the clean targets beside a
+  returns, so no new hook:
+  `test_one_conflict_refuses_the_clean_edit_beside_it` stages a clean
+  create beside the conflict and checks that the refused set did not write
+  it; `test_a_create_whose_target_now_exists_is_a_conflict` proposes the
+  staged edit re-pinned to absence over the target the hook's human edited;
+  and `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused`
+  offers a key in a sibling of a declared prefix. Before this, a format that
+  wrote the clean targets beside a
   conflict, did not check a create pinned to absence, or matched its surface
   by string prefix passed all five tests (measured on #191, comment
   6885835798). Measured on #200 (comment 6933204593): each now fails the one
@@ -34,11 +37,18 @@ major if you depend on the contract.
     existing class that turns a format red because it carries one of the
     three defects is not a breaking change: the contract is refusing a defect
     it was always meant to refuse.
-  - **What the derivation assumes.** The format accepts a create
-    (`pinned_hash=None`) at a sibling of the key its hook stages, carrying
-    that edit's content, and the first prefix `editing_surface()` declares has
-    a sibling no declared prefix admits. Where either is false the test fails
-    with a message naming it; nothing skips.
+  - **What the derivation assumes.** For the mixed set, the format accepts a
+    create (`pinned_hash=None`) at a sibling of the key its hook stages,
+    carrying that edit's content. For the create, the staged target exists
+    after the human's change. For the prefix, some prefix `editing_surface()`
+    declares has a sibling no declared prefix admits, which a whole-project
+    surface, `"."`, does not. Where one is false, the test resting on it
+    fails: with a message naming the assumption where the format answers with
+    an outcome, and with the format's own exception where it raises. Nothing
+    skips.
+  - **The derived tests leave a probe file** beside the staged target,
+    `<stem>_dagster_dex_contract_probe<suffix>`, so a hook stages in a
+    scratch directory, as the hook's fresh-scenario rule already implies.
   - **No new contract class.** The ruling was shape (d), the contract
     deriving the scenarios, and shape (e), a new class with mandatory hooks,
     for whatever (d) could not derive. The measurement found (d) reaches all
@@ -46,8 +56,12 @@ major if you depend on the contract.
 - **Three more planted formats in `dagster_dex.planted`**
   (`src/dagster_dex/planted.py`, #200), each `EditableDagsterProject` with one
   of the three defects, made as a subclass: `HalfRefusingProject` fails
-  exactly `test_one_conflict_refuses_the_clean_edit_beside_it`, `CreateBlindProject` exactly `test_a_create_whose_target_now_exists_is_a_conflict`, and
-  `PrefixMatchingProject` exactly `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused`. `tests/test_conformance.py` and
+  exactly `test_one_conflict_refuses_the_clean_edit_beside_it`,
+  `CreateBlindProject` exactly
+  `test_a_create_whose_target_now_exists_is_a_conflict`, and
+  `PrefixMatchingProject` exactly
+  `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused`.
+  `tests/test_conformance.py` and
   the wheel step in `publish.yml`'s `build` hold each to its one test. The
   three class names are new public surface, so the release that carries them
   is a minor.
@@ -1872,6 +1886,17 @@ Like the contract's builders, the three class names are public surface.
     the overwritten target is reported in ``written``, so a caller marks the
     proposal applied. A confirmed write still lands, so the override assertion
     passes.
+```
+
+### `src/dagster_dex/conformance.py`, `an_edit_against_a_changed_target`, its docstring, the sentence on a fresh scenario
+
+Read dead on 2026-11-16, for the same reason and in the same change: six
+assertions call the hook now, and three of them write. It read:
+
+```text
+**Return a freshly staged scenario on every call.** Both write
+assertions use it and one of them writes, so a shared fixture would let
+the second see what the first left behind.
 ```
 
 ### `docs/design/implementing-a-format.md`, three passages on the tier-3 hook and the planted formats

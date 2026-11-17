@@ -209,10 +209,14 @@ cannot produce one without inventing a place (the
 human editing the target after the edit was proposed, and must stage a fresh
 scenario on every call, because some of the assertions write. Three of them
 derive more from what it returns: a clean create beside the staged edit, the
-same create proposed again once it exists, and a key that only shares a
-prefix with the declared surface. So the format has to accept a create at a
-sibling of the key its hook stages; the contract's docstring states that
-assumption and the tests fail, rather than skip, where it does not hold.
+staged edit re-pinned to absence, and a key that only shares a prefix with
+the declared surface. So the format has to accept a create at a sibling of
+the key its hook stages, the staged target has to exist after the human's
+change, and some declared prefix needs a sibling no declared prefix admits,
+which a whole-project surface, `"."`, does not have. The contract's
+docstring states each assumption, and the test that rests on it fails,
+rather than skips, where it does not hold. The derived tests leave a probe
+file beside the staged target, so stage in a scratch directory.
 `tests/test_conformance.py` wires both contracts to this package's formats and
 is the worked example for tier 3.
 
@@ -335,7 +339,7 @@ through `an_edit_against_a_changed_target`, which builds the directory they
 write into. The last three rows are the write-path defects this package has
 on record
 ([verification.md, *The measurement, and what it was measured against*](verification.md#the-measurement-and-what-it-was-measured-against)).
- The module imports no pytest, so it imports wherever the package
+The module imports no pytest, so it imports wherever the package
 does.
 
 `tests/test_conformance.py` holds each one to exactly its row on every run.
