@@ -13,7 +13,45 @@ changes explicitly, because that is the reason a consumer opens this file.
 Before 1.0.0 a minor could carry one; from 1.0.0 one waits for 2.0. Pin the
 major if you depend on the contract.
 
-## Unreleased
+## 1.3.0 - 2026-11-17
+
+One addition, to the conformance surface. `EditableProjectContract` gains
+three tests that refuse the three write-path defects on record, each derived
+from the hook the contract already had, and `dagster_dex.planted` ships three
+more formats, one per defect, so an implementer can watch each test refuse.
+`ConfirmBlindProject`, which writes as though confirmed, now fails four tests
+of the write contract rather than two.
+
+**What it costs to move.** A pin on the major, `dagster-dex~=1.0`, admits
+1.3.0, and nothing 1.2.0 offered is withdrawn. A consumer that uses the three
+new planted formats pins `dagster-dex~=1.3`, since `~=1.2` also admits 1.2.0,
+which has none of them. Under SECURITY.md's rule that only the latest minor
+receives fixes, 1.2 receives none from this release on. A consumer that
+imports neither `dagster_dex.conformance` nor `dagster_dex.planted` moves by
+changing its pin and nothing else: no module it can reach changed. Two kinds
+of consumer see a difference:
+
+- **A subclass of `EditableProjectContract` runs eight tests, not five.**
+  A format carrying one of the three defects goes red on the test built for
+  it, which is the contract refusing what it was always meant to refuse
+  (ruled on #200, below). The three tests leave a probe file beside the
+  staged target, so a hook that stages outside a scratch directory sees it.
+- **A suite that holds `ConfirmBlindProject` to its failing set** sees four
+  failing tests where 1.2.0 failed two.
+
+**Why this is a minor and not 2.0.** Nothing here breaks the seam.
+`src/dagster_dex/protocol.py` and `src/dagster_dex/model.py` are the blobs
+1.2.0 shipped: `git rev-parse v1.2.0:src/dagster_dex/protocol.py
+v1.3.0:src/dagster_dex/protocol.py` prints one hash twice, and the same holds
+for `model.py`. Every name 1.2.0 exported is still exported, and no public
+signature changed. The two modules that changed are `conformance.py`, which
+gained three tests, four private helpers, a private constant, one import and
+a paragraph in `EditableProjectContract`'s docstring, and rewrote the hook
+docstring's sentence on a fresh scenario; and `planted.py`, which gained
+three classes and the imports they use, and rewrote its docstrings. The engine range and the tested pin are where 1.2.0 left them:
+`git grep -h -o 'core==[0-9][0-9.]*' v1.3.0 | sort -u` prints the one version
+it prints at `v1.2.0`. What moved under `src/` and in `pyproject.toml` is
+listed by `git diff --stat v1.2.0..v1.3.0 -- src/ pyproject.toml`.
 
 ### Added
 
