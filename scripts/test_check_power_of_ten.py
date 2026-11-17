@@ -33,10 +33,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 
 from check_power_of_ten import (
+    _NOQA_CODES,
     MARKER,
     Outcome,
     Refusal,
@@ -411,6 +413,43 @@ case("reader: a missing colon names no rule, as ruff reads it", s is not None an
 s = parse_suppression("f.py", 3, "# type: ignore[attr-defined, misc]  # the driver is untyped")
 case("reader: a type-ignore with codes and a reason", s is not None and s.codes == ("attr-defined", "misc") and s.reason == "the driver is untyped")
 case("reader: an ordinary comment is not a suppression", parse_suppression("f.py", 3, "# nothing to see") is None)
+
+# --- the code-list pattern: the same reading, without exponential backtracking -------------
+
+# Every code-list shape the estate's comments held when the separator was rewritten,
+# plus the whitespace-only separators the pattern has always accepted. Each must
+# read to the same codes and reason as before the rewrite.
+CODE_LISTS = [
+    ("# noqa: C901", ("C901",), ""),
+    ("# noqa: C901 -- one walk, its legs in order", ("C901",), "one walk, its legs in order"),
+    ("# noqa: E402 - the runner is a script", ("E402",), "the runner is a script"),
+    ("# noqa: E402  (engine-only from here)", ("E402",), "(engine-only from here)"),
+    ("# noqa: N802  # the handler's name is the stdlib's", ("N802",), "the handler's name is the stdlib's"),
+    ("# noqa: F401,E402", ("F401", "E402"), ""),
+    ("# noqa: F401,E402  - presence is the point", ("F401", "E402"), "presence is the point"),
+    ("# noqa: ANN001, ANN003", ("ANN001", "ANN003"), ""),
+    ("# noqa: ANN001, ANN002, ANN003, ANN202", ("ANN001", "ANN002", "ANN003", "ANN202"), ""),
+    ("# noqa: C901 , E722 -- spaces both sides", ("C901", "E722"), "spaces both sides"),
+    ("# noqa: C901 E722 -- a space alone", ("C901", "E722"), "a space alone"),
+    ("# noqa: C901\t\tE722\t-- tabs alone", ("C901", "E722"), "tabs alone"),
+    ("# noqa: C901, -- a trailing comma", ("C901",), "a trailing comma"),
+    ("# noqa: C901,,E722 -- two commas end the list", ("C901",), "E722 -- two commas end the list"),
+    ("# noqa: C901 ABC -- a word with no digit ends it", ("C901",), "ABC -- a word with no digit ends it"),
+]
+for comment, codes, reason in CODE_LISTS:
+    s = parse_suppression("f.py", 3, comment)
+    case(f"reader: {comment!r} reads {codes} and its reason", s is not None and s.codes == codes and s.reason == reason)
+
+# The witness a backtracking separator blows up on: a tab-separated code list whose
+# tail cannot satisfy `$`. Python's tokenizer never puts a newline in a comment, so
+# the checker cannot be handed this today; the pattern is held to it all the same.
+# Under the old separator this took seconds (doubling with each code); the bound is
+# generous so the green arm never flakes, and well under what the old one took.
+WITNESS = ":A0" + "\t\tA0" * 24 + "\n!"
+t0 = time.perf_counter()
+witnessed = _NOQA_CODES.match(WITNESS)
+elapsed = time.perf_counter() - t0
+case(f"the code-list pattern fails the newline witness fast ({elapsed:.4f}s, bound 1s)", witnessed is None and elapsed < 1.0)
 
 # --- the ratchet: a marker added to a migrated tree is refused ------------------------------
 

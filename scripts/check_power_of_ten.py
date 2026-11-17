@@ -168,7 +168,10 @@ TEST_EXCLUDE = r"(^|/)(tests|test_[^/]*\.py|conftest\.py)($|/)"
 
 _ISSUE = re.compile(r"#\d+")
 _NOQA = re.compile(r"#\s*noqa\b(?P<tail>.*)$", re.IGNORECASE)
-_NOQA_CODES = re.compile(r"^\s*:\s*(?P<codes>[A-Z]+[0-9]+(?:\s*[,\s]\s*[A-Z]+[0-9]+)*)(?P<rest>.*)$")
+# A separator is a comma with the whitespace around it, or a whitespace run
+# alone: each run splits one way, so a failing match cannot backtrack
+# exponentially. `\s*[,\s]\s*` accepted the same separators in many splits.
+_NOQA_CODES = re.compile(r"^\s*:\s*(?P<codes>[A-Z]+[0-9]+(?:(?:\s*,\s*|\s+)[A-Z]+[0-9]+)*)(?P<rest>.*)$")
 _TYPE_IGNORE = re.compile(r"#\s*type:\s*ignore(?:\[(?P<codes>[^\]]*)\])?(?P<rest>.*)$")
 _REASON_LEAD = re.compile(r"^[\s\-#:;,]+")
 _MYPY_LINE = re.compile(r"^(?P<path>[^:\n]+?):(?P<line>\d+)(?::\d+)?: error: (?P<msg>.*)$")
