@@ -67,14 +67,16 @@ good_text = wf(
     f'      - uses: "docker/build-push-action@{SHA_B}" # v7',
     f"      - uses: {ORG}/shared-actions/.github/actions/markdown@{SHA_A} # the estate's own, prose is fine here",
     "      - uses: ./.github/actions/local",
-    f"      # - uses: actions/checkout@v4 (commented out, not a site)",
+    "      # - uses: actions/checkout@v4",
 )
-good = classify(scan_text("org/one", ".github/workflows/checks.yml", good_text), ORG)
+good_sites = scan_text("org/one", ".github/workflows/checks.yml", good_text)
+good = classify(good_sites, ORG)
 case("a corpus of commit pins with version comments passes", judge(good) == [])
 case("...and every third-party site was collected (4, not fewer)", len(good.third_party) == 4)
 case("...the estate's own ref is set aside for pin-coherence, not judged", len(good.own) == 1)
 case("...a local ./path is not a ref", len(good.local) == 1)
-case("...and a commented-out line is not a site", len(good.unclassified) == 0)
+commented_lineno = good_text.splitlines().index("      # - uses: actions/checkout@v4") + 1
+case("...and a commented-out line is not a site", all(s.lineno != commented_lineno for s in good_sites))
 case(
     "...a quoted value is read without its quotes",
     any(tp.action == "docker/build-push-action" and tp.ref == SHA_B for tp in good.third_party),
@@ -161,9 +163,7 @@ case("a ref-less uses: is refused as unrecognised", kinds(odd) == ["unrecognised
 
 # --- the matcher's edges, each one a way the scan could quietly narrow ----------
 
-in_run = scan_text(
-    "org/one", ".github/workflows/ci.yml", wf('      - run: echo "uses: actions/checkout@v4"')
-)
+in_run = scan_text("org/one", ".github/workflows/ci.yml", wf("      - run: echo uses: actions/checkout@v4"))
 case("a uses: inside a run: script is not a site", in_run == [])
 
 lookalike = classify(
