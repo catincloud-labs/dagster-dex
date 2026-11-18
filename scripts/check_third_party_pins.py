@@ -108,10 +108,13 @@ _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 # A `uses:` line: optional list dash, the key, a value that may be quoted, and
 # an optional trailing `# comment`. Anchored at the start, which does two jobs
 # at once: a `uses:` inside a `run:` script's text is not a site, and neither
-# is a commented-out line, because `#` is not whitespace. (An explicit
-# comment-line skip used to sit beside this; a mutation pass showed the
-# self-test could not tell it from the anchor, because the anchor already
-# did its work.)
+# is a commented-out line, because `#` is not whitespace. Two self-test cases
+# prove the anchor: "a commented-out line is not a site" and "a uses: inside
+# a run: script is not a site". Each fixture ends at its `uses:` value, so
+# the anchor alone refuses it. Each case fails once the matcher can match
+# mid-line, which takes both `^` and `.match` gone: either one alone still
+# anchors at the start. (An explicit comment-line skip used to sit beside
+# this, and was removed as redundant with the anchor.)
 _USES_LINE = re.compile(
     r"""^\s*(?:-\s+)?uses:\s*(?P<q>['"]?)(?P<value>[^'"\s#]+)(?P=q)\s*(?:#\s*(?P<comment>.*?))?\s*$"""
 )
