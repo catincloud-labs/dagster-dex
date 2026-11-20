@@ -62,11 +62,12 @@ _VERBS = r"clos(?:e|es|ed)|fix(?:|es|ed)|resolv(?:e|es|ed)"
 
 # Adjacency is the whole rule: verb, an optional colon, then the reference.
 #
-# WARNING: `[ \t]` rather than `\s` is belt-and-braces, NOT the thing that stops a
-# verb linking to a number on the next line - `find_closes` splits into lines
-# before matching, so a newline never reaches this pattern at all. Swapping
-# this for `\s` changes nothing observable, which a mutation check confirmed.
-# The line split is the real enforcer; do not delete it thinking this covers it.
+# WARNING: two things each stop a verb linking to a number on the next line:
+# `[ \t]` rather than `\s` here, and `find_closes` splitting into lines before
+# matching, so a newline never reaches this pattern. Either alone is enough,
+# so a mutation of one alone changes no verdict. The line split also makes a
+# refusal name the line its close sits on, which the self-test pins; do not
+# delete it thinking this covers it.
 _GAP = r"[ \t]*:?[ \t]*"
 
 # The three reference spellings that link: bare, cross-repo, and a full URL.

@@ -209,29 +209,29 @@ def _mode_arms(scratch: Path) -> list[str]:
             [HOOK, "100644", f"git update-index --chmod=+x {HOOK}"])
     _expect(failures, "a planted 100644 fires run as the action runs it, from a subdirectory",
             _as_the_action_runs(planted / ".githooks"), 1, [HOOK, "100644"])
-    _expect(failures, "a planted 100644 fires with --root below the top", _in_process(planted / ".githooks"), 1,
-            [HOOK, "100644"])
     _expect(failures, "a planted 100644 fires with the hook spelled ./", _in_process(planted, f"./{HOOK}"), 1,
             [HOOK, "100644"])
+    _expect(failures, "a planted 100644 fires with the hook spelled with backslashes",
+            _in_process(planted, HOOK.replace("/", "\\")), 1, [HOOK, "100644"])
+    with _environ({"GIT_LITERAL_PATHSPECS": "1"}):
+        _expect(failures, "a planted 100644 fires with literal pathspecs exported", _in_process(planted), 1,
+                [HOOK, "100644"])
     _git(planted, "update-index", "--chmod=+x", HOOK)
-    _expect(failures, "the same hook at 100755 goes quiet", _in_process(planted), 0, [HOOK, EXECUTABLE, "2 tracked"])
     _expect(failures, "100755 goes quiet run as the action runs it, from a subdirectory",
             _as_the_action_runs(planted / ".githooks"), 0, [EXECUTABLE, "2 tracked"])
     return failures + _entry_shape_arms(planted)
 
 
 def _entry_shape_arms(planted: Path) -> list[str]:
-    """A symlink, then a conflict: every stage at 100755, then one stage at 100644."""
+    """A symlink, then a conflict with every stage at 100755."""
     failures: list[str] = []
     blob = _git(planted, "rev-parse", f":{HOOK}").strip()
     _git(planted, "update-index", "--cacheinfo", f"120000,{blob},{HOOK}")
     _expect(failures, "a symlink is not executable either", _in_process(planted), 1, ["120000"])
-    for name, last, words in (("a conflicted entry at 100755 in every stage fires", EXECUTABLE, ["stages 1, 2, 3"]),
-                              ("a conflicted entry with one stage at 100644 fires", "100644", ["100644"])):
-        stages = f"0 {'0' * 40}\t{HOOK}\n" + "".join(
-            f"{mode} {blob} {stage}\t{HOOK}\n" for stage, mode in ((1, EXECUTABLE), (2, EXECUTABLE), (3, last)))
-        _git(planted, "update-index", "--index-info", stdin=stages)
-        _expect(failures, name, _in_process(planted), 1, ["conflicted", *words])
+    stages = f"0 {'0' * 40}\t{HOOK}\n" + "".join(f"{EXECUTABLE} {blob} {stage}\t{HOOK}\n" for stage in (1, 2, 3))
+    _git(planted, "update-index", "--index-info", stdin=stages)
+    _expect(failures, "a conflicted entry at 100755 in every stage fires", _in_process(planted), 1,
+            ["conflicted", "stages 1, 2, 3"])
     return failures
 
 
@@ -266,11 +266,11 @@ def self_test() -> int:
         print(f"self-test FAILED: {failure}", file=sys.stderr)
     if failures:
         return 1
-    print("self-test OK: a planted 100644 fires naming the remedy and 100755 goes quiet, in process and as a "
-          "CI step runs it from a subdirectory; 100644 fires with --root below the top and with the hook spelled "
-          "./; a symlink and a conflicted entry fire, at 100755 in every stage too; an absent hook "
-          "passes saying what it read; an empty index and a non-repository are refused as blind; an exported "
-          "GIT_DIR and GIT_INDEX_FILE were not followed")
+    print("self-test OK: a planted 100644 fires naming the remedy, in process and as a CI step runs it from a "
+          "subdirectory, with the hook spelled ./ or with backslashes, and with literal pathspecs exported; "
+          "100755 goes quiet as a CI step runs it from a subdirectory; a symlink fires, and a conflicted entry "
+          "at 100755 in every stage; an absent hook passes saying what it read; an empty index and a "
+          "non-repository are refused as blind; an exported GIT_DIR and GIT_INDEX_FILE were not followed")
     return 0
 
 

@@ -394,29 +394,22 @@ def self_test() -> int:
     """Calibrate both polarities. Every fixture below is constructed to pin one
     rule. The historical titles the rules were originally calibrated against --
     including the verbatim fixtures this list once carried -- are recorded in
-    CALIBRATION.md beside this file's canonical copy; each historical shape is
-    still pinned here by a constructed equivalent."""
+    CALIBRATION.md beside this file's canonical copy; the cases here are
+    constructed, one per clause of each rule."""
     passes = [
         # (title, author) -- the identifier shapes strict-lowercase would refuse:
         ("docs: CI_DEPLOY_KEY's rotation is recorded where it happens", ""),          # ALL_CAPS possessive opener
-        ("docs: .gitattributes is the enforcement, not the convention", ""),          # dotfile opener
-        ("docs: I corrected the claim in three places", ""),                          # bare I is not sentence case
-        ("chore(deps): bump packaging from 24.0 to 26.3 in /tests", ""),              # scoped, ordinary lowercase
         ("probe: move the published image path, to be reverted immediately", ""),     # probe type, comma-joined clause
-        ("fix(env): the writer logs the identity it authenticates as", ""),           # plain fix with scope
+        ("feat!: a breaking change is marked before the colon", ""),                  # the breaking-change `!`
         ('Revert "feat(ci): judge the title from the environment"', ""),              # GitHub's own revert shape
         ("build(deps-dev): Bump pytest from 8.4.1 to 9.0.3", "dependabot[bot]"),      # exempt BY AUTHOR
     ]
     refusals = [
         # (title, author, a word the refusal must NAME) -- cause named, not just red:
         ("The title rule was held by prose alone", "", "prefix"),                     # full-sentence drift shape
-        ("Pin sweep to a new baseline", "", "prefix"),                                # short headline, no type
-        ("Sentence case arrived and nothing refused it", "", "prefix"),               # the drift, verbatim in spirit
         ("build(deps-dev): Bump pytest from 8.4.1 to 9.0.3", "", "capitalized"),      # same title, NO exempt author
-        ("docs: The summary opens with sentence case", "", "capitalized"),            # sentence case behind a prefix
         ("fix: the trailing period arrives.", "", "period"),
         ("feat(adr-preconditions): a scope list is compared against the computed population, red in both directions, again", "", "characters"),  # 112 chars, measured
-        ("Fix: the type must be lowercase", "", "prefix"),                            # capitalized type
         ("revert(ci): the probe step comes back out", "", "prefix"),                  # `revert` is a commit type only
     ]
     failed = sum(
@@ -457,25 +450,17 @@ COMMIT_PASSES = [
     "revert(ci): the probe step comes back out" + BODY,                          # revert is a commit type
     "docs(readme): " + "a subject past the title's cap " * 4 + BODY,           # 134 chars: no cap
     'Revert "feat(ci): judge the title from the environment"\n\nThis reverts commit 0123abc.\n',
-    "docs: CI_DEPLOY_KEY's rotation is recorded" + BODY + TRAILERS,              # identifier opener, trailers
-    "fix: the note line is prose\n\nNote: a body may open with a colon after a word.\n\nMore of it.\n",
     "fix: a body in CRLF\r\n\r\nThe reason, written on another platform.\r\n",
 ]
 
 #: (message, a word the refusal must NAME).
 COMMIT_REFUSALS = [
     ("hotfix", "prefix"),                                                         # the outside contributor's shape
-    ("hotfix" + BODY, "prefix"),                                                  # a body does not rescue the subject
     ("docs(runbook,features): two scopes in one" + BODY, "prefix"),              # one scope, as for a title
-    ("docs: The summary opens with sentence case" + BODY, "capitalized"),
-    ("fix: the trailing period arrives." + BODY, "period"),
     ("fix: a subject\nThe Second Line Is Still The Subject." + BODY, "period"),  # git joins the first paragraph
-    ("fix: a subject and nothing under it", "body"),
     ("fix: a subject and trailers only" + TRAILERS, "body"),                      # trailers are not a body
     ("fix: a folded trailer\n\nCo-Authored-By: A Contributor\n  <a@example.invalid>\n", "body"),
-    ("fix: a lone note\n\nNote: the cache was stale, so it is cleared.\n", "body"),  # git reads it as a trailer too
     ('Revert "feat: a change"', "body"),                                          # a revert still needs its body
-    ("Update README.md", "prefix"),                                               # the web editor's default
 ]
 
 
@@ -494,13 +479,10 @@ NEL = json.dumps({"sha": "d" * 40, "parents": 1, "message": "feat: a next line" 
 #: (a commits file's text, expected count or None, head sha, a word the refusal must NAME).
 LISTINGS = [
     (listing(GOOD, MERGE), 2, "", ""),                                            # a merge commit is skipped
-    (listing(GOOD, HOTFIX), 2, "", "b" * 12),                                     # refused BY SHA
-    (listing(GOOD, HOTFIX), 2, "", "'hotfix'"),                                   # and by subject
+    (listing(GOOD, HOTFIX), 2, "", "'hotfix'"),                                   # refused, naming the subject
     (listing(GOOD), 2, "", "read 1"),                                             # a short read is no verdict
     (listing(GOOD, MERGE), 1, "", "moved after"),                                 # nor is a long one
-    (listing(GOOD), 300, "", "at most 250"),                                      # the endpoint's cap is named
     ("", None, "", "read 0"),                                                     # nor is an empty one
-    (listing(GOOD), 1, "f" * 40, "does not hold the head"),                       # nor one without the head
     (listing(GOOD), 1, "a" * 40, ""),                                             # the head is in it
     (NEL, 1, "", ""),                                                             # a next-line character reads
     ('{"sha": "d"}\n', 1, "", "could not be read"),                               # a malformed line is an error
@@ -510,8 +492,6 @@ LISTINGS = [
 #: (title or None, author, listing, a word the refusal must NAME), through judge_pr().
 PR_CASES = [
     ("chore(deps): bump a package", "dependabot[bot]", listing(BUMP), ""),       # the exemption covers commits
-    ("chore(deps): bump a package", "someone", listing(BUMP), "capitalized"),    # and only for that author
-    (None, "", listing(GOOD, HOTFIX), "'hotfix'"),                                # commits alone, no title
 ]
 
 

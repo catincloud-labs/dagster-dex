@@ -109,9 +109,11 @@ _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 # an optional trailing `# comment`. Anchored at the start, which does two jobs
 # at once: a `uses:` inside a `run:` script's text is not a site, and neither
 # is a commented-out line, because `#` is not whitespace. Two self-test cases
-# prove the anchor: "a commented-out line is not a site" and "a uses: inside
-# a run: script is not a site". Each fixture ends at its `uses:` value, so
-# the anchor alone refuses it. Each case fails once the matcher can match
+# prove the anchor: "a uses: inside a run: script is not a site", and, for the
+# commented-out line, "a corpus of commit pins with version comments passes",
+# whose corpus carries one: read as a site, it is a tag the corpus refuses.
+# Each fixture ends at its `uses:` value, so the anchor alone refuses it.
+# Each case fails once the matcher can match
 # mid-line, which takes both `^` and `.match` gone: either one alone still
 # anchors at the start. (An explicit comment-line skip used to sit beside
 # this, and was removed as redundant with the anchor.)

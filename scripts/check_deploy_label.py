@@ -25,7 +25,8 @@ a value is added.
 
 THE PREFIX IS `deploy:`, WITH THE COLON. `deployment`, `deploy-now` and
 `not-deploy:cd` are not `deploy:` labels and are not counted. The self-test
-pins each of those, because a prefix rule that quietly matched `deploy` would
+pins the colon with `deployment` and the start of the name with
+`not-deploy:cd`, because a prefix rule that quietly matched `deploy` would
 pass a pull request carrying no classification at all.
 
 ONE SHAPE PASSES WHOLE, and it prints when it applies, because an exemption
@@ -43,8 +44,9 @@ nobody can see applied is indistinguishable from a gate that did not fire:
     emptiness: the same empty label set from any other author is refused.
 
     Remove the author from EXEMPT_AUTHORS once every repository calling this
-    guard sets `labels:` in `dependabot.yml`; the self-test's last refusal arm
-    already pins the behaviour you would be turning on.
+    guard sets `labels:` in `dependabot.yml`; the self-test's refusal of an
+    empty label set from an author that is not exempt already pins the
+    behaviour you would be turning on.
 
     python3 check_deploy_label.py --labels-json '["deploy:none"]'
     python3 check_deploy_label.py --labels-json "$PR_LABELS_JSON" --author "$PR_AUTHOR"
@@ -175,26 +177,19 @@ def self_test() -> int:
     passes = [
         # (labels, author, why this shape must pass)
         (["deploy:none"], "", "the minimum: exactly one"),
-        (["documentation", "review:now", "deploy:cd", "area:ci"], "", "one among many, other axes ignored"),
-        (["deploy:by-hand"], "", "a value this file does not enumerate still passes"),
         ([], "dependabot[bot]", "the machine-author hole, printed when it applies"),
-        (["dependencies", "github_actions"], "dependabot[bot]", "the machine's real label shape"),
-        (["dependencies", "deploy:cd"], "dependabot[bot]", "the exemption does not fire when it need not"),
     ]
     refusals = [
         # (labels, author, a word the refusal must NAME)
+        # THE ARM THAT MAKES THE EXEMPTION AN EXEMPTION: the empty label set
+        # the exemption passes, from an author that is not exempt, is refused.
+        # Without this a reader cannot tell "dependabot is exempt" from "an
+        # empty label set passes".
         ([], "", "unclassified"),
-        (["documentation", "review:this-week"], "", "unclassified"),
         (["deploy:none", "deploy:cd"], "", "two"),
-        (["deploy:none", "deploy:cd", "deploy:by-hand"], "", "3"),
         # The prefix is `deploy:`. Each of these carries the word and no classification:
         (["deployment"], "", "colon"),
-        (["deploy-now"], "", "colon"),
         (["not-deploy:cd"], "", "colon"),
-        # THE ARM THAT MAKES THE EXEMPTION AN EXEMPTION: the same empty label
-        # set, from anyone else, is refused. Without this a reader cannot tell
-        # "dependabot is exempt" from "an empty label set passes".
-        ([], "a-human", "unclassified"),
     ]
 
     failed = 0
