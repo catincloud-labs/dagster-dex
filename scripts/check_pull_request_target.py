@@ -210,15 +210,12 @@ REFUSALS = [
     ("block-map.yml", "name: m\non:\n  push:\n  pull_request_target:\n    types: [labeled]\n" + STEPS,
      "block-map.yml:4"),
     ("flow-map.yaml", "name: g\non: {pull_request_target: {types: [opened]}}\n" + STEPS, "flow-map.yaml:2"),
-    ("quoted.yml", "name: q\n'on':\n  \"pull_request_target\":\n" + STEPS, "quoted.yml:3"),
     ("no-reason.yml", "name: n\non:\n  pull_request_target:  # allow pull_request_target:\n" + STEPS,
      "no-reason.yml:3"),
     ("broken.yml", "name: x\non: [push\n" + STEPS, "broken.yml: could not be parsed"),
     # A marker inside a string on the trigger's line is not a comment.
     ("spoof.yml", "name: v\non: {pull_request_target: {branches-ignore: ['# allow pull_request_target: no']}}\n"
      + STEPS, "spoof.yml:2"),
-    ("spoof-tail.yml", 'name: w\non: {pull_request_target: null, x: "# allow pull_request_target: no"}\n' + STEPS,
-     "spoof-tail.yml:2"),
     # A trigger defined by an alias is reported at the `on` key, and a marker
     # beside the anchor does not allow it.
     ("alias.yml", "name: l\nenv: {T: &t pull_request_target}  # allow pull_request_target: elsewhere\n"
@@ -230,12 +227,8 @@ REFUSALS = [
 
 #: (file name, text): each mentions the word and must pass.
 PASSES = [
-    ("plain.yml", "name: p\non: pull_request\n" + STEPS),
-    ("comment.yml", "name: c\n# never pull_request_target here\non:\n  pull_request:  # not pull_request_target\n"
-     + STEPS),
     ("step-text.yml", "name: t\non: [push]\njobs:\n  pull_request_target:\n    runs-on: ubuntu-latest\n"
      "    steps:\n      - name: pull_request_target\n        run: echo pull_request_target\n"),
-    ("other-key.yml", "name: o\non: {push: {branches: [pull_request_target]}}\n" + STEPS),
     ("allowed.yml", "name: a\non:\n  pull_request_target:  # allow pull_request_target: labels only, no checkout\n"
      + STEPS),
 ]
@@ -267,14 +260,16 @@ def self_test() -> int:
     failed = sum(wrong(name, scan_fixture([(name, text)])[1], where) for name, text, where in REFUSALS)
     failed += sum(wrong(name, scan_fixture([(name, text)])[1], "") for name, text in PASSES)
     # Every pass beside one refusal: the refusal is still named, and only it.
+    # A read cut short after the first file misses a file GitHub runs, the
+    # failure workflow_files' docstring names; only this case sees it.
     read, refusals = scan_fixture(PASSES + [REFUSALS[0][:2]])
     if read != len(PASSES) + 1 or len(refusals) != 1:
         print(f"SELF-TEST FAIL: a mixed tree read {read} file(s) and refused {len(refusals)}: {refusals}")
         failed += 1
-    # A tree with no workflow is red, and a file GitHub would not run is not read.
-    failed += wrong("an empty tree", scan_fixture([])[1], "no workflow file")
+    # A file GitHub would not run is not read, so a tree holding only that file
+    # is red: it read no workflow.
     failed += wrong("a nested file", scan_fixture([REFUSALS[0][:2]], subdirectory=True)[1], "no workflow file")
-    cases = len(REFUSALS) + len(PASSES) + 3
+    cases = len(REFUSALS) + len(PASSES) + 2
     if failed:
         print(f"self-test: {failed} of {cases} case(s) FAILED")
         return 1

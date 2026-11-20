@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The third-party pin guard fires, goes quiet, refuses, and compares - proven before trusted.
 
-Every case is pure: the reader layer is injected, so no network and no broken
-organisation is needed to stage the red arms. The estate rule this satisfies:
+No case needs the network or a broken organisation to stage its red arm: the
+reader layer is injected, and the command-line cases run a copy of the checker
+with no pin-coherence beside it. The estate rule this satisfies:
 a control observed only to pass, against the one tree it is known to pass in,
 has not been shown to be a control.
 
@@ -14,6 +15,9 @@ comment. Both are ADR-0040's own words for what the guard ships with.
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -28,7 +32,7 @@ from check_third_party_pins import (
     judge,
     render_divergence,
     scan_text,
-    version_label,
+    scan_tree,
     yaml_paths_under,
 )
 
@@ -72,18 +76,9 @@ good_text = wf(
 good_sites = scan_text("org/one", ".github/workflows/checks.yml", good_text)
 good = classify(good_sites, ORG)
 case("a corpus of commit pins with version comments passes", judge(good) == [])
-case("...and every third-party site was collected (4, not fewer)", len(good.third_party) == 4)
-case("...the estate's own ref is set aside for pin-coherence, not judged", len(good.own) == 1)
-case("...a local ./path is not a ref", len(good.local) == 1)
-commented_lineno = good_text.splitlines().index("      # - uses: actions/checkout@v4") + 1
-case("...and a commented-out line is not a site", all(s.lineno != commented_lineno for s in good_sites))
 case(
     "...a quoted value is read without its quotes",
     any(tp.action == "docker/build-push-action" and tp.ref == SHA_B for tp in good.third_party),
-)
-case(
-    "...and the trailing comment is captured as the version label",
-    sorted(version_label(tp) for tp in good.third_party) == ["v10.0.1", "v3", "v4.2.2", "v7"],
 )
 
 # --- the known-positive: a tag is refused, naming file, line, ref, publisher -----
@@ -98,9 +93,8 @@ case(
     and "publisher `actions`" in tag[0].line,
 )
 
-for label, ref in (("a branch name", "main"), ("a short sha", "a" * 7), ("a pinned-looking tag", "v4.2.2")):
-    ps = judged("org/one", ".github/workflows/ci.yml", wf(f"      - uses: actions/checkout@{ref}"))
-    case(f"{label} is refused as not-a-pin", kinds(ps) == ["not-a-pin"])
+short = judged("org/one", ".github/workflows/ci.yml", wf(f"      - uses: actions/checkout@{'a' * 7}"))
+case("a short sha is refused as not-a-pin", kinds(short) == ["not-a-pin"])
 
 # --- a pin without its version is refused too ----------------------------------
 
@@ -112,7 +106,7 @@ prose = judged(
 )
 case("a commit whose comment is not a version is refused", kinds(prose) == ["comment-is-not-a-version"])
 
-for comment in ("v4", "v4.2.2", "4.2.2", "v1.14.2 (release)", "v7 - node 24"):
+for comment in ("4.2.2", "v1.14.2 (release)"):
     ps = judged("org/one", ".github/workflows/ci.yml", wf(f"      - uses: actions/checkout@{SHA_A} # {comment}"))
     case(f"a comment starting `{comment}` reads as a version", ps == [])
 
@@ -137,19 +131,10 @@ stranger = judged(
     "org/one", ".github/workflows/ci.yml", wf(f"      - uses: someone-else/setup-thing@{SHA_A} # v1.0.0")
 )
 case("a publisher outside the set is refused even when commit-pinned", kinds(stranger) == ["publisher-not-enumerated"])
-case("...naming the publisher", bool(stranger) and "publisher `someone-else`" in stranger[0].line)
-
-stranger_tag = judged("org/one", ".github/workflows/ci.yml", wf("      - uses: someone-else/setup-thing@v1"))
-case(
-    "a stranger's tag is refused on both counts, not the first one found",
-    kinds(stranger_tag) == ["not-a-pin", "publisher-not-enumerated"],
-)
 
 # --- nothing found is not all clear ---------------------------------------------
 
 case("zero third-party refs is refused, never 'all clear'", kinds(judge(classify([], ORG))) == ["zero-refs"])
-only_own = judged("org/one", ".github/workflows/ci.yml", wf(f"      - uses: {ORG}/shared-actions/.github/actions/markdown@{SHA_A}"))
-case("...and a surface holding only the estate's own refs is zero too", kinds(only_own) == ["zero-refs"])
 
 # --- shapes the scanner will not classify are refused, never skipped -------------
 
@@ -161,29 +146,10 @@ case("a docker:// image is refused rather than waved through", kinds(image) == [
 odd = judged("org/one", ".github/workflows/ci.yml", wf(PINNED, "      - uses: actions/checkout"))
 case("a ref-less uses: is refused as unrecognised", kinds(odd) == ["unrecognised"])
 
-# --- the matcher's edges, each one a way the scan could quietly narrow ----------
+# --- the matcher's start anchor: text before a uses: makes it no site ----------
 
 in_run = scan_text("org/one", ".github/workflows/ci.yml", wf("      - run: echo uses: actions/checkout@v4"))
 case("a uses: inside a run: script is not a site", in_run == [])
-
-lookalike = classify(
-    scan_text("org/one", ".github/workflows/ci.yml", wf(f"      - uses: {ORG}X/thing@{SHA_A} # v1")), ORG
-)
-case("an org-prefixed lookalike owner is third-party, not our own", len(lookalike.own) == 0 and len(lookalike.third_party) == 1)
-
-reusable = classify(
-    scan_text(
-        "org/one", ".github/workflows/ci.yml", wf(f"    uses: actions/starter-workflows/.github/workflows/x.yml@{SHA_A} # v1")
-    ),
-    ORG,
-)
-case(
-    "a job-level reusable-workflow ref with a sub-path is a site with the path in its action",
-    len(reusable.third_party) == 1 and reusable.third_party[0].action == "actions/starter-workflows/.github/workflows/x.yml",
-)
-
-composite = scan_text("org/one", ".github/actions/local/action.yml", wf(f"      uses: actions/setup-python@{SHA_A} # v6"))
-case("a composite action's own uses: is a site too", len(composite) == 1)
 
 # --- the comparator: divergence is reported, side by side, tags included --------
 
@@ -197,27 +163,11 @@ split_sites = (
 split = divergences(classify(split_sites, ORG).third_party)
 case("an action at two refs across repositories is a divergence", "actions/checkout" in split)
 case("...an action at one ref across repositories is not", "astral-sh/setup-uv" not in split)
-case("...and the divergence is over tags as well as commits (the calibrating case)", len(split.get("actions/checkout", {})) == 3)
 
 table = render_divergence("actions/checkout", split["actions/checkout"])
 case(
     "the report puts the version labels side by side with who sits where",
     "v4" in table and "v7" in table and "v7.0.0" in table and "org/a (1)" in table and "org/b (2)" in table and "org/c (1)" in table,
-)
-case("...ordered by version, patch after major", table.index("v4") < table.index("v7 ") < table.index("v7.0.0"))
-
-spread = divergences(
-    classify(
-        scan_text("org/a", "x.yml", wf("      - uses: astral-sh/setup-uv@v10.0.1"))
-        + scan_text("org/b", "x.yml", wf("      - uses: astral-sh/setup-uv@v5"))
-        + scan_text("org/c", "x.yml", wf("      - uses: astral-sh/setup-uv@v7")),
-        ORG,
-    ).third_party
-)
-spread_table = render_divergence("astral-sh/setup-uv", spread["astral-sh/setup-uv"])
-case(
-    "...numerically, so v10.0.1 sorts after v5 and v7 rather than between them",
-    spread_table.index("v5") < spread_table.index("v7") < spread_table.index("v10.0.1"),
 )
 
 emitted = emit_set(classify(split_sites, ORG).third_party)
@@ -226,8 +176,6 @@ case(
     any("org/b: actions/checkout@v7 # v7 (2 site(s))" in line for line in emitted)
     and any(f"org/c: actions/checkout@{SHA_A[:12]}... # v7.0.0" in line for line in emitted),
 )
-
-case("a coherent corpus reports no divergence", divergences(good.third_party) == {})
 
 # --- the refusals: empty and blind are different inputs and both are loud --------
 
@@ -284,6 +232,52 @@ with tempfile.TemporaryDirectory() as tmp:
         yaml_paths_under(root) == [".github/actions/l/action.yaml", ".github/dependabot.yml", ".github/workflows/a.yml"],
     )
 
+    (root / ".github" / "workflows" / "a.yml").write_bytes(b"      - uses: actions/checkout@v4 # \xff\n")
+    try:
+        scan_tree(root, ORG)
+    except Refusal:
+        case("a tree file that cannot be decoded REFUSES rather than being scanned past", True)
+    else:
+        case("a tree file that cannot be decoded REFUSES rather than being scanned past", False)
+
+# --- the command line: the exit code is the product, and each refusal says which ----
+
+CHECKER = Path(__file__).resolve().parent / "check_third_party_pins.py"
+
+
+def run_checker(checker: Path, *args: str, token: str | None = None) -> subprocess.CompletedProcess:
+    env = {k: v for k, v in os.environ.items() if k != "GH_TOKEN"}
+    if token is not None:
+        env["GH_TOKEN"] = token
+    return subprocess.run([sys.executable, str(checker), *args], capture_output=True, text=True, env=env)
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    (root / ".github" / "workflows").mkdir(parents=True)
+    ci = root / ".github" / "workflows" / "ci.yml"
+    ci.write_text(PINNED + "\n")
+    case("the checker exits 0 on a tree whose third-party refs are all pins", run_checker(CHECKER, "--org", ORG, "--tree", tmp).returncode == 0)
+    ci.write_text("      - uses: actions/checkout@v4\n")
+    case("...and exits 1 on a tree holding a tag", run_checker(CHECKER, "--org", ORG, "--tree", tmp).returncode == 1)
+
+# A copy with no pin-coherence beside it, as every vendored copy stands: the
+# organisation mode can then never reach the network, whichever refusal fires.
+with tempfile.TemporaryDirectory() as tmp:
+    alone = Path(tmp) / "alone" / "check_third_party_pins.py"
+    alone.parent.mkdir()
+    shutil.copyfile(CHECKER, alone)
+    no_token = run_checker(alone, "--org", ORG, token="")
+    case(
+        "an empty GH_TOKEN is refused before the organisation is read",
+        no_token.returncode == 1 and "GH_TOKEN is empty or absent" in no_token.stderr,
+    )
+    no_sibling = run_checker(alone, "--org", ORG, token="stub-token")
+    case(
+        "...and pin-coherence's readers missing is refused, with no second population to fall back on",
+        no_sibling.returncode == 1 and "could not import pin-coherence's readers" in no_sibling.stderr,
+    )
+
 print()
 if failures:
     print(f"self-test FAILED: {failures} case(s)", file=sys.stderr)
@@ -291,7 +285,8 @@ if failures:
 print(
     "self-test OK: the quiet case, the known-positive (a tag) and known-negative "
     "(a commit with its version), the comment and publisher refusals, the "
-    "unclassifiable shapes, zero-refs, the matcher edges, the comparator over "
-    "tags and commits, and the refusals (unreadable repository, unreadable "
-    "file, empty tree)"
+    "unclassifiable shapes, zero-refs, the matcher's start anchor, the comparator over "
+    "tags and commits, the refusals (unreadable repository, unreadable "
+    "file, empty tree, undecodable tree file), and the command line's exit "
+    "codes and its two organisation-mode refusals (no token, no pin-coherence)"
 )

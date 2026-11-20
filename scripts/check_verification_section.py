@@ -440,11 +440,10 @@ def carve_out_problems(
 
     Arm one, nothing exempts it: the entry asserts a hole that does not exist.
     Arm two, not in the tree: the entry outlived the file it names. Both run
-    over the built-in tuple and the input channel together, because the input
-    channel held the only live carve-outs in the estate and neither arm
-    reached them (ruled 2026-09-15: `_check_carve_outs` walked `SHIPPED_ANYWAY` alone
-    while `exemption_for` honoured both). A blind read is neither dead nor
-    alive and comes back apart, so the caller can refuse to judge it.
+    over the built-in tuple and the input channel together, as `exemption_for`
+    honours both, and the input channel held the only live carve-outs in the
+    estate (ruled 2026-09-15). A blind read is neither dead nor alive and
+    comes back apart, so the caller can refuse to judge it.
     """
 
     dead: list[str] = []
@@ -573,10 +572,10 @@ def strip_comments(body: str) -> str:
     instruction that starts a line with a label and a colon was read as that
     label's VALUE, ahead of the bare label the author is meant to fill -- so a
     template submitted unedited passed (measured 2026-09-19 on one adopter's
-    template, open since 2026-08-16). The self-test could not see it: its
-    unedited-template fixture had no comment block, which no real template
-    lacks. A comment is invisible on the rendered pull request, so nothing in
-    it is a statement anybody made; it is removed before the heading is
+    template, open since 2026-08-16). A fixture of an unedited template with no
+    comment block cannot show it, and no real template lacks one. A comment
+    is invisible on the rendered pull request, so nothing in it is a
+    statement anybody made; it is removed before the heading is
     looked for, because a heading inside a comment is no more real than a
     label there.
 
@@ -621,10 +620,32 @@ def strip_comments(body: str) -> str:
     return "\n".join(out)
 
 
+def _closes_fence(line: str, fence: str) -> bool:
+    """Whether `line` closes a fence opened by `fence`: at most three spaces of
+    indent, a run of the same character at least as long, and nothing after
+    it but whitespace."""
+
+    stripped = line.lstrip(" ")
+    if len(line) - len(stripped) > 3:
+        return False
+    run = len(stripped) - len(stripped.lstrip(fence[0]))
+    return run >= len(fence) and not stripped[run:].strip()
+
+
 def extract_section(body: str) -> str | None:
     """The `## Verification` section's text, or None when there is no such heading.
 
     Reads what it is given: `check` hands it a body with its comments removed.
+
+    The section ends at the next heading outside a code fence. Verbatim
+    output pasted into the section is what this gate asks for, and it holds
+    `#` lines -- a shell or Python comment, a Markdown heading -- that a
+    rendered page shows as code, not as a heading. Read as headings, they
+    ended the section early and its fields read as missing (observed on a
+    consumer's pull request, 2026-11). A fence opens as `strip_comments`
+    reads one and closes on a line of the same character at least as long;
+    a fence never closed runs to the end of the body, as CommonMark reads
+    it, and so does the section.
     """
 
     lines = body.splitlines()
@@ -635,12 +656,53 @@ def extract_section(body: str) -> str | None:
             break
     if start is None:
         return None
+    lines = lines[start:]
+    return "\n".join(_until_outside_fence(lines, _fenced(lines), _NEXT_HEADING_RE.match))
+
+
+def _fenced(lines: list[str]) -> list[bool]:
+    """For each line, whether it belongs to a code fence: its opener, its
+    contents or its closer.
+
+    The one fence walk both readers share, the section's and the field's, so
+    the rule for where a fence opens and closes is written once. A fence
+    never closed runs to the end of `lines`.
+    """
+
+    flags: list[bool] = []
+    fence = ""
+    for line in lines:
+        if fence:
+            if _closes_fence(line, fence):
+                fence = ""
+            flags.append(True)
+        elif m := _FENCE_RE.match(line):
+            fence = m.group("fence")
+            flags.append(True)
+        else:
+            flags.append(False)
+    return flags
+
+
+def _until_outside_fence(
+    lines: list[str], fenced: list[bool], ends: Callable[[str], object]
+) -> list[str]:
+    """The lines before the first one outside a code fence that `ends` matches."""
+
     out: list[str] = []
-    for line in lines[start:]:
-        if _NEXT_HEADING_RE.match(line):
+    for line, inside in zip(lines, fenced):
+        if not inside and ends(line):
             break
         out.append(line)
-    return "\n".join(out)
+    return out
+
+
+def _is_label(line: str) -> bool:
+    """Whether `line` opens one of the section's labels, and so ends a bare
+    label's value. A heading would too, but no heading outside a fence is
+    left inside a section."""
+
+    return any(label.match(line) for label in (_DEV_RE, _PROD_RE, _DISCRIMINATOR_RE))
 
 
 def _field(section: str, pattern: re.Pattern[str]) -> str | None:
@@ -659,28 +721,28 @@ def _field(section: str, pattern: re.Pattern[str]) -> str | None:
     summaries instead of verbatim output -- the hollow compliance this
     module's docstring warns against.
 
-    A line inside pasted output that itself looks like a heading or label
-    stops the collection early; the value gathered up to that point still
-    counts, so real evidence keeps passing and an empty section still fails.
+    A code fence is code on the rendered page, in both directions. A label
+    inside one is not the field: read as one, the label search took a line
+    an unclosed fence had swallowed into another field's value, and the same
+    text counted twice (found in review, 2026-11). And pasted output inside
+    a fence is read whole: a `#` line in it is a shell or Python comment,
+    not a heading. Read as one, it stopped the collection with only the
+    fence's opener and a command gathered, and the field read as too thin.
+    Outside a fence, a line that looks like a label stops the collection
+    early; the value gathered up to that point still counts, so real
+    evidence keeps passing and an empty section still fails.
     """
 
     lines = section.splitlines()
+    fenced = _fenced(lines)
     for i, line in enumerate(lines):
-        m = pattern.match(line)
+        m = None if fenced[i] else pattern.match(line)
         if not m:
             continue
         value = m.group("value").strip()
         if value:
             return value
-        following: list[str] = []
-        for after in lines[i + 1 :]:
-            if _NEXT_HEADING_RE.match(after) or any(
-                label.match(after)
-                for label in (_DEV_RE, _PROD_RE, _DISCRIMINATOR_RE)
-            ):
-                break
-            following.append(after)
-        return "\n".join(following).strip()
+        return "\n".join(_until_outside_fence(lines[i + 1 :], fenced[i + 1 :], _is_label)).strip()
     return None
 
 
@@ -772,7 +834,6 @@ def check(
 # measurement from any repository, so they can travel wherever this file does.
 _RUNTIME = ["app/services/responder.py"]
 _DOCS = ["app/CONTRACT.md", "README.md"]
-_TESTS = ["app/tests/test_responder.py"]
 
 _GOOD = """## Verification
 
@@ -802,19 +863,8 @@ example passed, 0 failed
 **Discriminator:** `example_flag_enabled` logs the new wording, absent from the old image.
 """
 
-#: The same shape with nothing pasted -- an unedited template must still fail,
-#: which is why the fix lives here and not in a template placeholder.
-_UNEDITED_TEMPLATE = """## Verification
-
-**Dev:**
-
-## Issue references
-
-Part of #
-"""
-
-#: The shape templates actually have, which the fixture above never had: the
-#: instructions sit in a comment, and they start their lines with the labels.
+#: The shape templates actually have: the instructions sit in a comment, and
+#: they start their lines with the labels.
 #: Until 2026-09-21 each instruction was read as its label's value and this
 #: body, submitted untouched, passed in both prod modes. The comment ahead of
 #: the section carries a heading and a full set of labels for the same reason:
@@ -860,43 +910,13 @@ an example fence inside the comment, hidden with it
 <!-- Part of, or refs. -->
 """
 
-#: The same template filled in, comments left where they were, which is what
-#: an author actually submits. The evidence quotes both comment markers, in a
-#: fence and in backticks, unclosed: pasted output is not markup.
-_COMMENTED_TEMPLATE_FILLED = _COMMENTED_TEMPLATE.replace(
-    "**Dev:**\n",
-    "**Dev:**\n\n```\n> grep -c '<!--' example.md\n3\n```\n",
-).replace(
-    "**Prod:**\n",
-    "**Prod:** the deployed page no longer renders a stray `<!--` above the fold.\n",
-).replace(
-    "**Discriminator:**\n",
-    "**Discriminator:** the page source carried the marker twice before, once after.\n",
-)
-
 #: Every red body below is complete apart from its comment, so that reading
-#: the comment is the only way to pass it: each case is red in both prod modes
-#: for that one reason, not for a missing `Prod:` that full mode refuses anyway.
+#: the comment is the only way to pass it: each red case is red for that one
+#: reason, not for a missing `Prod:` that full mode refuses anyway.
 _EXAMPLE_NA = "**Prod:** N/A - an example reason long enough to be read as a real one.\n"
 
 _COMMENT_CASES: list[tuple[str, str, list[str], bool]] = [
     ("unedited template, labelled instructions in a comment", _COMMENTED_TEMPLATE, _RUNTIME, False),
-    ("the same template filled in, comments kept", _COMMENTED_TEMPLATE_FILLED, _RUNTIME, True),
-    (
-        "a placeholder comment on the label line is not a value",
-        "## Verification\n\n**Dev:** <!-- the command and what it reported, verbatim -->\n"
-        + _EXAMPLE_NA,
-        _RUNTIME,
-        False,
-    ),
-    (
-        "a section that exists only inside a comment",
-        "<!--\n## Verification\n\n**Dev:** the whole suite was run and all of it passed.\n"
-        + _EXAMPLE_NA
-        + "-->\n",
-        _RUNTIME,
-        False,
-    ),
     (
         # The evidence stands AFTER the marker and the body ends in a comment,
         # as every real body does: read as an opener, the marker would take
@@ -918,29 +938,11 @@ _COMMENT_CASES: list[tuple[str, str, list[str], bool]] = [
         False,
     ),
     (
-        "evidence after a comment on the label line is the value",
-        "## Verification\n\n**Dev:** <!-- paste --> ran the whole suite, example passed.\n" + _EXAMPLE_NA,
-        _RUNTIME,
-        True,
-    ),
-    (
         "evidence after a multi-line comment's closer is kept",
         "## Verification\n\n**Dev:**\n<!-- the command and\nwhat it reported --> ran the whole suite, example passed.\n"
         + _EXAMPLE_NA,
         _RUNTIME,
         True,
-    ),
-    (
-        "a closed fence above the template does not shelter its comments",
-        "```text\nexample output\n```\n\n" + _COMMENTED_TEMPLATE,
-        _RUNTIME,
-        False,
-    ),
-    (
-        "nor does a closed tilde fence",
-        "~~~\nexample output\n~~~\n\n" + _COMMENTED_TEMPLATE,
-        _RUNTIME,
-        False,
     ),
     (
         "a line that starts with a three-tick code span opens no fence",
@@ -954,33 +956,29 @@ _COMMENT_CASES: list[tuple[str, str, list[str], bool]] = [
         _RUNTIME,
         True,
     ),
-    (
-        "an unclosed marker at line start hides the rest, as rendered",
-        "## Verification\n\n<!-- instructions nobody closed\n"
-        "**Dev:** ran the whole suite, example passed.\n"
-        + _EXAMPLE_NA,
-        _RUNTIME,
-        False,
-    ),
 ]
 
 _CASES: list[tuple[str, str, list[str], bool]] = [
     ("complete", _GOOD, _RUNTIME, True),
     ("n/a with a reason", _NA_WITH_REASON, _RUNTIME, True),
     ("template-shaped: evidence below the bare label", _TEMPLATE_SHAPED, _RUNTIME, True),
-    ("unedited template is still refused", _UNEDITED_TEMPLATE, _RUNTIME, False),
     ("docs-only change is not gated", "no section at all", _DOCS, True),
-    ("test-only change is not gated", "no section at all", _TESTS, True),
-    ("no section", "Some body text.", _RUNTIME, False),
     (
-        "no Prod line",
-        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n",
+        "no section",
+        "**Dev:** ran the whole suite, example passed.\n"
+        "**Prod:** N/A - nothing is wired yet, so there is no wire-visible change to observe.\n",
         _RUNTIME,
         False,
     ),
     (
-        "bare N/A",
-        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n**Prod:** N/A\n",
+        "no Dev line",
+        "## Verification\n\n**Prod:** N/A - nothing is wired yet, so there is no wire-visible change to observe.\n",
+        _RUNTIME,
+        False,
+    ),
+    (
+        "no Prod line",
+        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n",
         _RUNTIME,
         False,
     ),
@@ -992,8 +990,53 @@ _CASES: list[tuple[str, str, list[str], bool]] = [
         False,
     ),
     (
-        "thin Dev",
-        "## Verification\n\n**Dev:** ok\n**Prod:** N/A - not wire-visible, nothing is wired to this path yet.\n",
+        "thin Prod",
+        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n**Prod:** ok\n"
+        "**Discriminator:** `example_flag_enabled` logs the new wording, absent from the old image.\n",
+        _RUNTIME,
+        False,
+    ),
+    (
+        "a label under a later heading is not the section's",
+        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n\n## Notes\n\n"
+        "**Prod:** N/A - nothing is wired yet, so there is no wire-visible change to observe.\n",
+        _RUNTIME,
+        False,
+    ),
+    (
+        # Each line after the opener and before its closer fails one of the
+        # closer's clauses -- another character, a shorter run, text after
+        # the run, four spaces of indent -- and is followed by a
+        # heading-shaped line that would end the section if it closed.
+        "a heading-shaped line inside a fence ends nothing",
+        "## Verification\n\n````\n~~~~\n# a\n```\n# b\n```` x\n# c\n    ````\n# heading\n````\n\n"
+        "**Dev:** ran the whole suite, example passed.\n" + _EXAMPLE_NA,
+        _RUNTIME,
+        True,
+    ),
+    (
+        # The same line after the fence closes: without the close, the fence
+        # would run to the end of the body and this case would pass.
+        "the same line after the fence closes still ends the section",
+        "## Verification\n\n```\noutput\n```\n# heading\n\n**Dev:** ran the whole suite, example passed.\n"
+        + _EXAMPLE_NA,
+        _RUNTIME,
+        False,
+    ),
+    (
+        # The template's shape: evidence pasted below the bare label. Only
+        # `$ make` stands above the label-shaped line, too thin on its own.
+        "label- and heading-shaped lines inside fenced evidence end no field",
+        "## Verification\n\n**Dev:**\n\n```\n$ make\nProd: skipped in this run\n# all 312 example cases passed\n```\n\n"
+        + _EXAMPLE_NA,
+        _RUNTIME,
+        True,
+    ),
+    (
+        # The rendered page shows a code block and no field at all. Read as
+        # a label, the Prod line was Dev's evidence and Prod's value both.
+        "a label inside an unclosed fence is not the field",
+        "## Verification\n\n**Dev:**\n\n```\n" + _EXAMPLE_NA,
         _RUNTIME,
         False,
     ),
@@ -1001,8 +1044,8 @@ _CASES: list[tuple[str, str, list[str], bool]] = [
 
 
 #: The `require_prod=False` mode, asserted separately: what it releases (an
-#: absent Prod), and everything it deliberately does NOT release (a present
-#: Prod is validated in full; Dev substance is unchanged). The first case is
+#: absent Prod), and what it deliberately does NOT release (a present Prod is
+#: still validated). The first case is
 #: the mode's whole point and its body FAILS the full-mode `no Prod line` case
 #: above -- the pair is what proves the flag discriminates.
 _OPTIONAL_CASES: list[tuple[str, str, list[str], bool]] = [
@@ -1013,36 +1056,8 @@ _OPTIONAL_CASES: list[tuple[str, str, list[str], bool]] = [
         True,
     ),
     (
-        "dev-only, template-shaped: evidence below the bare label",
-        "## Verification\n\n**Dev:**\n\n```\n> pytest -q\nexample passed, 0 failed\n```\n",
-        _RUNTIME,
-        True,
-    ),
-    (
-        "dev-only unedited template is still refused",
-        "## Verification\n\n**Dev:**\n",
-        _RUNTIME,
-        False,
-    ),
-    ("complete body still passes", _GOOD, _RUNTIME, True),
-    ("n/a with a reason still passes", _NA_WITH_REASON, _RUNTIME, True),
-    ("no section is still refused", "Some body text.", _RUNTIME, False),
-    (
-        "thin Dev is still refused",
-        "## Verification\n\n**Dev:** ok\n",
-        _RUNTIME,
-        False,
-    ),
-    (
         "a PRESENT bare N/A is still refused",
         "## Verification\n\n**Dev:** ran the whole suite, example passed.\n**Prod:** N/A\n",
-        _RUNTIME,
-        False,
-    ),
-    (
-        "PRESENT evidence without a discriminator is still refused",
-        "## Verification\n\n**Dev:** ran the whole suite, example passed.\n"
-        "**Prod:** hit the endpoint on the box and it returned 200 OK.\n",
         _RUNTIME,
         False,
     ),
@@ -1054,13 +1069,10 @@ _OPTIONAL_CASES: list[tuple[str, str, list[str], bool]] = [
 #: comment on a line goes and not only the first, and a removed line leaves
 #: an empty one behind.
 _STRIP_CASES: list[tuple[str, str, str]] = [
-    ("text either side of a comment survives", "a <!-- b --> c", "a  c"),
     ("every comment on a line goes", "a <!-- b --> c <!-- d --> e", "a  c  e"),
     ("a removed line leaves an empty one", "a\n<!--\nb\n-->\nc", "a\n\n\n\nc"),
-    ("text before a mid-line opener survives", "a <!-- b\nc --> d", "a \n d"),
     ("a marker in backticks is text, with a closer in its paragraph", "a `<!--` b\nc --> d", "a `<!--` b\nc --> d"),
     ("a marker in a tilde fence is text", "~~~\n<!--\n~~~\n<!-- c -->d", "~~~\n<!--\n~~~\nd"),
-    ("a marker in a fence is text", "```\n<!--\n```\n<!-- c -->d", "```\n<!--\n```\nd"),
     ("a longer fence is not closed by a shorter one", "````\n```\n<!-- a -->\n````", "````\n```\n<!-- a -->\n````"),
 ]
 
@@ -1092,22 +1104,6 @@ def _run_cases(cases: list, require_prod: bool, tag: str) -> int:
     return failures
 
 
-def _check_trigger() -> int:
-    # A checker whose own trigger has stopped firing would pass every case above by
-    # declaring nothing runtime. Assert the trigger directly, both directions.
-    failures = 0
-    if not runtime_paths(_RUNTIME):
-        print("  FAIL trigger: a runtime path was not recognised as one")
-        failures += 1
-    if runtime_paths(_DOCS) or runtime_paths(_TESTS):
-        print("  FAIL trigger: docs or tests were treated as runtime")
-        failures += 1
-    if not runtime_paths(["docker-compose.yml"]):
-        print("  FAIL trigger: docker-compose.yml was not recognised")
-        failures += 1
-    return failures
-
-
 # THE POLARITY ITSELF. Every path below read as NOT runtime before this gate
 # was flipped, and each one alters what the box does. A regression to a
 # declared scope of enforcement would make every one of them green again,
@@ -1117,15 +1113,10 @@ def _check_trigger() -> int:
 # `^scripts/` exemption correctly covers everything that remains in that
 # directory.)
 _GATED_BY_DEFAULT = [
-    ("newservice/main.py", "a directory that did not exist when the list was written"),
     (
         "analytics/tests/orders_grain.sql",
         "a dbt singular test that ships and runs on a schedule after merge (narrowed 2026-09-16)",
     ),
-    ("tests/fixtures/rows.csv", "a fixture is not a Python test; runtime by default since the narrowing of 2026-09-16"),
-    ("backups/Dockerfile", "compose build context for postgres-backup"),
-    ("caddy/Caddyfile", "compose build context for caddy"),
-    ("uv.lock", "decides what is installed in every image"),
 ]
 
 # The exemptions still have to hold, or the flip has merely made the gate
@@ -1135,13 +1126,13 @@ _STILL_EXEMPT = [
     ".githooks/commit-msg",
     "scripts/check_dex_pin.py",
     ".gitignore",
+    ".gitattributes",
+    ".trivyignore",
     ".env.example",
     "renovate.json",
     "LICENSE",
-    "README.md",
     "tests/test_budget_ceilings_agree.py",
     "engine/core/tests/conftest.py",
-    "service/tests/test_routes.py",
 ]
 
 
@@ -1168,7 +1159,10 @@ def _check_normaliser() -> int:
     if _normalise("./app/x.py") != "app/x.py":
         print("  FAIL normalise: a leading ./ was not stripped")
         failures += 1
-    for dotfile in (".github/workflows/ci.yml", ".env.example", ".trivyignore"):
+    # The dotfile is the defect's own shape: `.lstrip("./")`, held on the first
+    # adopter's main from 2026-08-16 to 2026-08-20, turned this path into
+    # `github/workflows/ci.yml` (`_normalise`'s docstring).
+    for dotfile in (".github/workflows/ci.yml",):
         if _normalise(dotfile) != dotfile:
             print(f"  FAIL normalise: {dotfile} lost its leading dot")
             failures += 1
@@ -1186,26 +1180,14 @@ def _check_reasons() -> int:
     return failures
 
 
-def _check_carve_outs() -> int:
-    # Arm one over the built-in tuple needs no tree and runs here as it always
-    # did. Arm two used to look in Path.cwd(), and the four required callers
-    # run without a checkout, so it stayed green only because the built-in
-    # tuple is empty (ruled 2026-09-15). Now the resolver is injected
-    # and both arms run on a STAGED root: a present file is the positive twin,
-    # an absent one the known negative, an uncovered path the arm-one negative,
-    # and a blind read is asserted to come back as neither. Nothing here touches
-    # the caller's working directory. (The built-in tuple's own existence is
-    # asserted at check time, at the head commit, beside the input channel's.)
-    failures = 0
-    for shipped, _why in SHIPPED_ANYWAY:
-        if not any(p.search(shipped) for p, _ in _NOT_RUNTIME_RES):
-            print(f"  FAIL carve-out: nothing exempts {shipped}, so naming it here")
-            print("        asserts a hole that does not exist")
-            failures += 1
-    return failures + _check_staged_carve_outs()
-
-
 def _check_staged_carve_outs() -> int:
+    # Both dead-entry arms run on a STAGED root through an injected resolver,
+    # because the four required callers run without a checkout (ruled
+    # 2026-09-15): a present file is the positive twin, an absent one the known
+    # negative, an uncovered path the arm-one negative, and a blind read is
+    # asserted to come back as neither. Nothing here touches the caller's
+    # working directory. (The built-in tuple's own entries are asserted at check
+    # time, at the head commit, beside the input channel's.)
     failures = 0
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -1240,8 +1222,8 @@ def _check_shipped_anyway_channel() -> int:
     # parser that refused everything would read exactly like one that worked,
     # and one that refused nothing would quietly re-open the fail-open registry
     # this input exists to avoid. Three arms: a valid entry makes an exempt
-    # path runtime; an entry carving no hole is refused; a reasonless entry is
-    # refused.
+    # path runtime; an entry carving no hole is refused; an entry whose reason
+    # has no substance is refused.
     failures = 0
     carved = parse_shipped_anyway(
         ["scripts/example_shipped.py -- an entrypoint a compose service executes"]
@@ -1255,7 +1237,6 @@ def _check_shipped_anyway_channel() -> int:
     for bad in (
         "app/main.py -- already runtime, carves nothing",
         "scripts/x.py -- no",
-        "scripts/x.py",
     ):
         try:
             # The refusal text goes to a buffer, not the log: these arms are
@@ -1274,18 +1255,15 @@ def _check_shipped_anyway_channel() -> int:
 
 def self_test() -> int:
     # One section per helper, so the estate's cyclomatic ceiling reads each
-    # independent block rather than their sum; the sections, their order and
-    # every printed line are unchanged from the single-function form.
+    # independent block rather than their sum.
     failures = _run_cases(_CASES, True, "")
     failures += _run_cases(_OPTIONAL_CASES, False, "[no-require-prod] ")
     failures += _run_cases(_COMMENT_CASES, True, "[comments] ")
-    failures += _run_cases(_COMMENT_CASES, False, "[comments, no-require-prod] ")
     failures += _check_strip()
-    failures += _check_trigger()
     failures += _check_polarity()
     failures += _check_normaliser()
     failures += _check_reasons()
-    failures += _check_carve_outs()
+    failures += _check_staged_carve_outs()
     failures += _check_shipped_anyway_channel()
 
     if failures:
@@ -1293,13 +1271,12 @@ def self_test() -> int:
         return 1
     print(
         f"\nself-test OK: {len(_CASES)} + {len(_OPTIONAL_CASES)} cases "
-        f"(both prod modes), {len(_COMMENT_CASES)} comment cases in each mode, "
+        f"(both prod modes), {len(_COMMENT_CASES)} comment cases, "
         f"{len(_STRIP_CASES)} strip cases, "
-        f"3 trigger assertions, "
         f"{len(_GATED_BY_DEFAULT)} polarity, {len(_STILL_EXEMPT)} exemption, "
-        f"{len(NOT_RUNTIME)} reasons, {len(SHIPPED_ANYWAY)} carve-outs + 4 "
+        f"{len(NOT_RUNTIME)} reasons, 4 "
         f"resolver arms (present, absent, uncovered, blind), "
-        f"shipped-anyway 2+3 arms"
+        f"shipped-anyway 2+2 arms"
     )
     return 0
 

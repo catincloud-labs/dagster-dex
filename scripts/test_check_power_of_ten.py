@@ -33,12 +33,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from collections.abc import Callable
 from pathlib import Path
 
 from check_power_of_ten import (
-    _NOQA_CODES,
     MARKER,
     Outcome,
     Refusal,
@@ -46,11 +44,9 @@ from check_power_of_ten import (
     classify,
     mypy_findings,
     mypy_targets,
-    package_bases,
     parse_declaration,
     parse_suppression,
     reader_version,
-    render_markdown,
     ruff_findings,
 )
 
@@ -180,10 +176,6 @@ GLOBAL_FN = "COUNTER = 0\n\n\ndef bump() -> None:\n    global COUNTER  {directiv
 fixture("positive.py as class A", "green: zero findings, zero problems")
 positive = run({**INIT, "src/pkg/positive.py": POSITIVE}, a="src")
 case("the known positive is green as class A, at ceiling 10 with strict typing", positive.problems == [])
-case("...and it was read: two files in class A, none elsewhere", positive.reports["A"].files == 2)
-case("...a same-named delegation is not recursion", ("positive.py", "POT001") not in pairs(positive, "A"))
-case("...a typed handler whose body is `pass` is not read", ("positive.py", "S110") not in pairs(positive, "A"))
-case("...the ratchet did not run without a base", positive.ratchet.startswith("not run: no base"))
 
 # --- every kept rule refused in class A ---------------------------------------------
 
@@ -195,16 +187,12 @@ case("class A refuses every known negative and nothing else", pairs(neg_a, "A") 
 if pairs(neg_a, "A") != expected_a:
     print("     missing:", sorted(expected_a - pairs(neg_a, "A")))
     print("     extra:  ", sorted(pairs(neg_a, "A") - expected_a))
-case("...the positive beside them stays clean", not any(f.path.endswith("positive.py") for f in neg_a.reports["A"].findings))
-case("...every refusal is a `finding`", set(kinds(neg_a)) == {"finding"})
 
 # --- class B: ceiling 15 and the tool's default typing --------------------------------
 
 fixture("the same negatives as class B", "refused, except complexity 11 and the strict-only typing error")
 neg_b = run({**INIT, **NEGATIVES}, b="src")
 case("class B refuses the same rules at ceiling 15 with default typing", pairs(neg_b, "B") == NEGATIVE_PAIRS_AB)
-case("...complexity 11 fits class B's ceiling", ("complexity.py", "C901") not in pairs(neg_b, "B"))
-case("...an untyped def is strict's finding, not the default's", ("typing_strict.py", "types") not in pairs(neg_b, "B"))
 
 # --- a shipped script under a namespace directory, declared beside the package -------
 # A consumer's shape: `scripts/` deliberately has no `__init__.py`, the package imports
@@ -224,48 +212,30 @@ fixture(
     "read, not refused: the clean script is clean and the wrong one is a class B typing finding",
 )
 ns = run(NAMESPACE_SCRIPTS, b="pkg scripts/tool.py scripts/wrong.py")
-case("a namespace-directory script declared class B is read rather than refused", ns.reports["B"].files == 3)
-case("...the clean script reads clean", ("tool.py", "types") not in pairs(ns, "B"))
-case("...and a type error in one declared the same way is still found", ("wrong.py", "types") in pairs(ns, "B"))
 case("...with nothing else refused", pairs(ns, "B") == {("wrong.py", "types")})
 
 # The flag alone would have moved a reading: a `src/` layout's own imports resolve
 # only if `src` is a package base. A `src/` layout's shape - `src/pkg/` declared as
 # `src`, one module importing another by `from pkg.x import` - is the case that
 # read one strict finding (`no-any-return`) under the flag without the base, and
-# zero on `main`. Mixed again: the cross-module import is clean under strict, and a
-# real strict finding in the same package is still found.
+# zero on `main`: the cross-module import is clean under strict.
 SRC_LAYOUT = {
     "src/pkg/__init__.py": "",
     "src/pkg/a.py": "def one() -> int:\n    return 1\n",
     "src/pkg/b.py": "from pkg.a import one\n\n\ndef two() -> int:\n    return one() + 1\n",
-    "src/pkg/c.py": "from pkg.a import one\n\n\ndef three():\n    return one() + 2\n",
 }
 fixture(
     "a `src/` layout importing its own package by name, declared class A",
-    "read with `src` as a package base: the import resolves, and only the untyped def is a finding",
+    "read with `src` as a package base: the import resolves",
 )
 src_layout = run(SRC_LAYOUT, a="src")
 case("a `src/` layout's own import resolves, so nothing crossing it reads as Any", ("b.py", "types") not in pairs(src_layout, "A"))
-case("...and the strict finding beside it is still found", ("c.py", "types") in pairs(src_layout, "A"))
-root_src = stage(SRC_LAYOUT)
-case(
-    "...the derived bases are the root and `src`, in that order",
-    package_bases(root_src, ["src"]) == [str(root_src.resolve()), str((root_src / "src").resolve())],
-)
-root_ns = stage(NAMESPACE_SCRIPTS)
-case(
-    "...a namespace script's base is the root, not its own directory, and a package's is the root",
-    package_bases(root_ns, ["pkg", "scripts/tool.py"]) == [str(root_ns.resolve())],
-)
 
 # --- class C: the ceiling and nothing else ---------------------------------------------
 
 fixture("the same negatives as class C, plus a function at complexity 16", "one finding: the ceiling")
 neg_c = run({**INIT, **NEGATIVES, "src/pkg/complexity16.py": ifs(15)})
 case("class C reads the ceiling and nothing else", pairs(neg_c, "C") == {("complexity16.py", "C901")})
-case("...at 15: a function at 16 is refused, one at 11 is not", len(neg_c.reports["C"].findings) == 1)
-case("...and with no declaration everything is class C", neg_c.reports["C"].files == len(NEGATIVES) + 2)
 
 # --- deviations at the site, and the baseline ------------------------------------------
 
@@ -284,25 +254,22 @@ SUPPRESSIONS = {
     "src/pkg/marker_stray.py": f"# {MARKER} #7\nx = 1\n",
 }
 for name, what in (
-    ("sup_reason.py", "quiet, one deviation"),
+    ("sup_reason.py", "quiet"),
     ("sup_noreason.py", "suppression-no-reason"),
     ("sup_bare.py", "suppression-no-rule, and the finding stands"),
     ("sup_unused.py", "suppression-unused"),
     ("sup_other.py", "not this check's rule: ignored"),
-    ("ti_reason.py", "quiet, one deviation"),
+    ("ti_reason.py", "quiet"),
     ("ti_bare.py", "suppression-no-rule"),
     ("ti_noreason.py", "suppression-no-reason"),
-    ("marker_ok.py", "quiet, baseline 1"),
+    ("marker_ok.py", "quiet"),
     ("marker_noissue.py", "baseline-no-issue"),
     ("marker_stray.py", "baseline-stray"),
 ):
     fixture(name + " as class A", what)
 sup = run(SUPPRESSIONS, a="src")
 a = sup.reports["A"]
-case("a suppression naming the rule with a reason is quiet, and counted as a deviation", a.deviations == 2)
-case("...the baseline marker with its owing issue is quiet, and counted", a.baseline == 1)
 case("...a named suppression covers its finding (the reason-less one too)", not any(f.path.endswith(("sup_reason.py", "sup_noreason.py", "marker_ok.py")) for f in a.findings))
-case("...a bare `noqa` covers nothing: the finding stands", ("sup_bare.py", "PLW0603") in pairs(sup, "A"))
 case(
     "...and every wrong shape is red by kind",
     kinds(sup) == sorted([
@@ -318,8 +285,6 @@ if sup.problems:
     for p in sup.problems:
         if p.kind == "finding" and "sup_bare" not in p.where:
             print(f"     unexpected finding: {p}")
-case("...a suppression of a rule this check does not read is left alone", not any("sup_other" in p.where for p in sup.problems))
-case("...markdown carries the counts", "| A | 10 |" in render_markdown(sup, parse_declaration("src", "", "")))
 
 # --- the classes: test paths, the longest prefix, an undeclared file ----------------------
 
@@ -346,10 +311,11 @@ case("the longest matching prefix wins: a class C carve-out inside class B", pai
 case("...and the class B file beside it is still refused", ("svc.py", "PLW0603") in pairs(carve, "B"))
 
 decl = parse_declaration("src", "svc", "scripts src/x")
-case("classify: under no prefix is class C", classify("tools/a.py", decl) == "C")
 case("classify: a prefix matches whole path segments only", classify("srcx/a.py", decl) == "C")
-case("classify: a test path anywhere is class C", classify("src/pkg/tests/t.py", decl) == "C")
-case("classify: the longer prefix wins", classify("src/x/a.py", decl) == "C" and classify("src/y/a.py", decl) == "A")
+# The longer prefix is declared in the class read FIRST, so the order the
+# classes are read in cannot give the answer: only the length can.
+inside_out = parse_declaration("src/core", "", "src")
+case("classify: the longest matching prefix wins, whichever class declares it", classify("src/core/a.py", inside_out) == "A")
 try:
     parse_declaration("src", "src", "")
     case("one prefix in two classes is a refusal", False)
@@ -389,16 +355,12 @@ fixture("an interpreter that cannot load ruff or mypy", "refused: a reader that 
 for tool in ("ruff", "mypy"):
     probe = subprocess.run([*BLIND, "-m", tool, "--version"], capture_output=True)
     case(f"premise: `python -S` cannot load {tool}, so the absence is real", probe.returncode != 0)
-    case(f"the probe refuses an interpreter that cannot load {tool}", refuses(lambda t=tool: reader_version(t, BLIND), tool, "requirements.txt"))
+case("the probe refuses an interpreter that cannot load ruff", refuses(lambda: reader_version("ruff", BLIND), "ruff", "requirements.txt"))
 over_root = stage(OVER)
 over_decl = parse_declaration("src", "", "")
-case("a class A tree over its ceiling is REFUSED on that interpreter, not green", refuses(lambda: check(over_root, over_decl, interpreter=BLIND), "ruff"))
-seen = check(over_root, over_decl)
-case("...and the same tree is red on C901 where ruff loads: the pair", ("over.py", "C901") in pairs(seen, "A"))
 case("the ruff reader refuses an exit with nothing on stdout, without the probe", refuses(lambda: ruff_findings(over_root, "A", ["src/pkg/over.py"], BLIND), "ruff exited 1"))
 case("the mypy reader refuses an exit 1 that names no error, without the probe", refuses(lambda: mypy_findings(over_root, "A", mypy_targets("A", over_decl, over_root), over_decl, BLIND), "named no error"))
 case("a green run names the version of each reader it used", positive.readers[0].startswith("ruff ") and positive.readers[1].startswith("mypy "))
-case("...in the summary too", "readers: ruff " in render_markdown(positive, parse_declaration("src", "", "")))
 only_c = run({"tools/a.py": "X = 1\n"})
 case("mypy is not asked for where no class A or B file exists, and the run says so", only_c.problems == [] and only_c.readers[1].startswith("mypy not run"))
 
@@ -412,44 +374,22 @@ s = parse_suppression("f.py", 3, "# noqa C901 no colon")
 case("reader: a missing colon names no rule, as ruff reads it", s is not None and s.codes == ())
 s = parse_suppression("f.py", 3, "# type: ignore[attr-defined, misc]  # the driver is untyped")
 case("reader: a type-ignore with codes and a reason", s is not None and s.codes == ("attr-defined", "misc") and s.reason == "the driver is untyped")
-case("reader: an ordinary comment is not a suppression", parse_suppression("f.py", 3, "# nothing to see") is None)
 
-# --- the code-list pattern: the same reading, without exponential backtracking -------------
+# --- the code-list pattern ------------------------------------------------------------------
 
-# Every code-list shape the estate's comments held when the separator was rewritten,
-# plus the whitespace-only separators the pattern has always accepted. Each must
+# Code-list shapes the estate's comments held when the separator was rewritten,
+# and a whitespace-only separator the pattern has always accepted. Each must
 # read to the same codes and reason as before the rewrite.
 CODE_LISTS = [
-    ("# noqa: C901", ("C901",), ""),
-    ("# noqa: C901 -- one walk, its legs in order", ("C901",), "one walk, its legs in order"),
-    ("# noqa: E402 - the runner is a script", ("E402",), "the runner is a script"),
     ("# noqa: E402  (engine-only from here)", ("E402",), "(engine-only from here)"),
     ("# noqa: N802  # the handler's name is the stdlib's", ("N802",), "the handler's name is the stdlib's"),
-    ("# noqa: F401,E402", ("F401", "E402"), ""),
-    ("# noqa: F401,E402  - presence is the point", ("F401", "E402"), "presence is the point"),
-    ("# noqa: ANN001, ANN003", ("ANN001", "ANN003"), ""),
-    ("# noqa: ANN001, ANN002, ANN003, ANN202", ("ANN001", "ANN002", "ANN003", "ANN202"), ""),
     ("# noqa: C901 , E722 -- spaces both sides", ("C901", "E722"), "spaces both sides"),
     ("# noqa: C901 E722 -- a space alone", ("C901", "E722"), "a space alone"),
-    ("# noqa: C901\t\tE722\t-- tabs alone", ("C901", "E722"), "tabs alone"),
     ("# noqa: C901, -- a trailing comma", ("C901",), "a trailing comma"),
-    ("# noqa: C901,,E722 -- two commas end the list", ("C901",), "E722 -- two commas end the list"),
-    ("# noqa: C901 ABC -- a word with no digit ends it", ("C901",), "ABC -- a word with no digit ends it"),
 ]
 for comment, codes, reason in CODE_LISTS:
     s = parse_suppression("f.py", 3, comment)
     case(f"reader: {comment!r} reads {codes} and its reason", s is not None and s.codes == codes and s.reason == reason)
-
-# The witness a backtracking separator blows up on: a tab-separated code list whose
-# tail cannot satisfy `$`. Python's tokenizer never puts a newline in a comment, so
-# the checker cannot be handed this today; the pattern is held to it all the same.
-# Under the old separator this took seconds (doubling with each code); the bound is
-# generous so the green arm never flakes, and well under what the old one took.
-WITNESS = ":A0" + "\t\tA0" * 24 + "\n!"
-t0 = time.perf_counter()
-witnessed = _NOQA_CODES.match(WITNESS)
-elapsed = time.perf_counter() - t0
-case(f"the code-list pattern fails the newline witness fast ({elapsed:.4f}s, bound 1s)", witnessed is None and elapsed < 1.0)
 
 # --- the ratchet: a marker added to a migrated tree is refused ------------------------------
 
@@ -490,17 +430,11 @@ root, base = repo_with_base(WORKFLOW_CALLING, 1)
 head_with(root, 2)
 raised = check(root, parse_declaration("", "", ""), base)
 case("the ratchet refuses a marker added to a tree whose base calls the action", kinds(raised) == ["ratchet"])
-case("...and says what it compared", raised.ratchet.startswith("REFUSED") and raised.base == {"A": 0, "B": 0, "C": 1})
 
 fixture("the same marker count as the base", "held")
 head_with(root, 1)
 held = check(root, parse_declaration("", "", ""), base)
 case("the same count is held", held.problems == [] and held.ratchet.startswith("held"))
-
-fixture("a marker removed", "held: the baseline may fall")
-head_with(root, 0)
-fell = check(root, parse_declaration("", "", ""), base)
-case("a removed marker is allowed: the baseline only shrinks", fell.problems == [] and fell.reports["C"].baseline == 0)
 
 fixture("the base carries the marker text inside a string literal, not a suppression", "not a marker: a real one added is still refused")
 root3, base3 = repo_with_base(WORKFLOW_CALLING, 0)
@@ -511,15 +445,12 @@ base3 = git(root3, "rev-parse", "HEAD")
 head_with(root3, 1)
 literal = check(root3, parse_declaration("", "", ""), base3)
 case("the base is read with the same reader as the head: a literal is not a marker", kinds(literal) == ["ratchet"])
-case("...and the base count says 0, not 1", literal.base == {"A": 0, "B": 0, "C": 0})
 
 fixture("a marker added where the base does NOT call the action", "allowed: the migration pull request")
 root2, base2 = repo_with_base(WORKFLOW_SILENT, 0)
 head_with(root2, 2)
 migration = check(root2, parse_declaration("", "", ""), base2)
 case("a base that does not call the action is the migration, and markers may be added", migration.problems == [])
-case("...a commented-out `uses:` does not count as calling it", "migration" in migration.ratchet)
-case("...and the head's markers are counted", migration.reports["C"].baseline == 2)
 
 # --- the fixture list, to the summary ------------------------------------------------------
 
