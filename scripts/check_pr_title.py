@@ -149,6 +149,7 @@ EXEMPT_AUTHORS = ("dependabot[bot]",)
 
 def judge_form(line: str, commit: bool = False) -> list[str]:
     """Rules 1, 2 and 4 on one headline: a title, or a commit's subject."""
+    types: tuple[str, ...]
     if commit:
         types, prefix, noun = COMMIT_TYPES, COMMIT_PREFIX, "subject"
         why, body = "A commit subject lands on the default branch as written", "the commit body"

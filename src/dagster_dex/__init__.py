@@ -76,3 +76,9 @@ __all__ = [
     "__version__",
     "tier_of",
 ]
+
+# What `__all__` holds by construction, checked when the module loads: every
+# name it exports is defined here. An explicit `raise`, never `assert`, which
+# `python -O` strips; its plant is in `tests/test_load_time_checks.py`.
+if [name for name in __all__ if name not in globals()]:
+    raise RuntimeError("dagster_dex: a name in __all__ is not defined in the module")

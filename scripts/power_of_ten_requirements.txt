@@ -1,15 +1,18 @@
-# ADR-0042, rule 10: the tools that read the standard are
-# pinned by version, ONCE, here - and the pin has a mover. This file is the one
-# place the version is written; this repository's dependabot.yml reads this
-# directory under the `pip` ecosystem, so a bump is a pull request here, read
-# as a diff of a version and a changelog, and reaches a consumer only when its
-# shared-action commit pin moves past it (ADR-0040's mover). A version written into
-# a `run:` step is in no ecosystem and has no mover - the frozen `mypy==1.14.1`
-# the record measured is the shape this file exists to refuse.
+# Rule 10: the tools that read the coding standard are pinned by version, and
+# every pin has a mover. This file is the shared action's manifest, and its
+# repository's Dependabot reads this directory under the `pip` ecosystem, so a
+# bump is a pull request there, read as a diff of a version and a changelog,
+# and reaches a caller of the action only when that caller's commit pin moves
+# past it. A repository that vendors the checker holds a copy of this file as
+# `scripts/power_of_ten_requirements.txt`, which that repository's own `pip`
+# entry moves, so for part of a cycle two copies can pin different versions.
+# A version written into a `run:` step is in no ecosystem and has no mover -
+# the frozen `mypy==1.14.1` the coding standard's record measured is the
+# shape this file exists to refuse.
 #
-# The record names the versions its day-one readings were taken with. The mover
+# That record names the versions its day-one readings were taken with. The mover
 # moves the pins below and leaves those readings as they were, so a count is a
 # reading of the versions pinned in whichever copy of this file its tools were
 # installed from.
-ruff==0.17.4
+ruff==0.17.5
 mypy==2.4.1

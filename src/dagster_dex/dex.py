@@ -86,6 +86,16 @@ _SOURCE_OPTIONS = frozenset({"assets", "artifact"})
 #: table name in an artifact is fixed here without writing the artifact again.
 _ARTIFACT_INAPPLICABLE = frozenset({"semantics", "sources", "name"})
 
+# What the three sets above hold by construction, checked when the module
+# loads. An explicit `raise`, never `assert`, which `python -O` strips. Each
+# check has a planted wrong fact in `tests/test_load_time_checks.py`.
+if not _SOURCE_OPTIONS <= _KNOWN_OPTIONS:
+    raise RuntimeError("dex: a source option is not a known option, so it is refused")
+if not _ARTIFACT_INAPPLICABLE <= _KNOWN_OPTIONS:
+    raise RuntimeError("dex: an option refused beside an artifact is not a known option")
+if _ARTIFACT_INAPPLICABLE & _SOURCE_OPTIONS:
+    raise RuntimeError("dex: an option refused beside an artifact is a source option")
+
 
 @dataclass(frozen=True)
 class ProjectContext:
@@ -1267,7 +1277,7 @@ def project_from_context(context: Any) -> DexProject:
     from importlib import import_module  # noqa: PLC0415 - deferred on purpose
 
     try:
-        module = import_module(module_name)
+        module = import_module(module_name)  # noqa: POT004 - the `assets` option names the user's module by design, loaded in the user's own process
     except ImportError as exc:
         raise ValueError(
             f"project option 'assets' names module {module_name!r}, which could not "
@@ -1410,6 +1420,18 @@ _MISSING_COLUMNS = "names a column the relation does not have"
 _WAREHOUSE_SAYS = re.compile(r"(the warehouse refused [^(:]*)[(:].*", re.DOTALL)
 #: What `_unplaced_notes` says, found again among the definitions' notes.
 _UNPLACED = "absent from model_relations"
+
+# What the floors and the status table above hold by construction, checked
+# when the module loads, the way the option sets are. The executor gates on
+# VERIFY_JUDGES_FROM first and on GRAIN_COVERAGE_FROM after it, so with the
+# second floor at or below the first, every engine past the first gate meets
+# the second and the note path for an engine between them is never reached;
+# and `proven` and `broken` are read as measured, so neither may be described
+# as not judged.
+if not VERIFY_JUDGES_FROM < GRAIN_COVERAGE_FROM:
+    raise RuntimeError("dex: grain coverage is read from an engine whose verify does not judge")
+if {"proven", "broken"} & _NOT_JUDGED.keys():
+    raise RuntimeError("dex: a measured grain status is described as not judged")
 
 
 @dataclass(frozen=True)
@@ -1863,3 +1885,9 @@ def _spares(note: str, key: DeclaredKey) -> bool:
         return False
     named = {column.strip().lower() for column in note.rsplit(":", 1)[-1].split(",")}
     return not named & {column.lower() for column in key.columns}
+
+# What `__all__` holds by construction, checked when the module loads: every
+# name it exports is defined here. An explicit `raise`, never `assert`, which
+# `python -O` strips; its plant is in `tests/test_load_time_checks.py`.
+if [name for name in __all__ if name not in globals()]:
+    raise RuntimeError("dex: a name in __all__ is not defined in the module")

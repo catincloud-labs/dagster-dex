@@ -39,20 +39,6 @@ def test_the_two_version_strings_agree():
     assert dagster_dex.__version__ == md.version("dagster-dex")
 
 
-def test_every_name_in_all_resolves():
-    """`__all__` is a hand-maintained list beside the imports it describes.
-
-    A name in it that resolves to nothing breaks `from dagster_dex import *` and,
-    more to the point, breaks a documented import for a consumer who read the
-    project page - while every ordinary `import dagster_dex` keeps working, so
-    nothing else here would notice. Cheap to state, and the list grew by four
-    names when the write tier became importable from the top level.
-    """
-
-    missing = [name for name in dagster_dex.__all__ if not hasattr(dagster_dex, name)]
-    assert not missing, f"__all__ names nothing importable: {missing}"
-
-
 def test_the_top_level_exports_the_write_tier_vocabulary():
     """The seam and the words to call it with are exported together, or neither.
 
