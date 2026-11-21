@@ -120,6 +120,17 @@ _NOT_NAME_CHARACTERS = re.compile(r"[^A-Za-z0-9_]+")
 #: How much of the claim id a name carries when it needs one. 48 bits.
 _SUFFIX_LENGTH = 12
 
+# What the names above hold by construction, checked when the module loads.
+# An explicit `raise`, never `assert`, which `python -O` strips. Each check
+# has a planted wrong fact in `tests/test_load_time_checks.py`.
+_METADATA_KEYS = (CLAIM_ID, MODEL, COLUMNS, MEASURED, REASON, DUPLICATE_COUNT, ENGINE)
+if len(set(_METADATA_KEYS)) != len(_METADATA_KEYS):
+    raise RuntimeError("checks: two metadata keys are one string, so one value overwrites another")
+if not (_NAME_CHARACTERS.fullmatch(_PREFIX) and _NAME_CHARACTERS.fullmatch(_SEPARATOR)):
+    raise RuntimeError("checks: a check name's prefix or separator is not a Dagster name")
+if not 0 < _SUFFIX_LENGTH <= len(definition_hash("")):
+    raise RuntimeError("checks: the claim id suffix is empty or longer than a claim id")
+
 
 def claim_id(key: DeclaredKey) -> str:
     """The id of the claim ``key`` makes: a hash of its kind, model and columns.

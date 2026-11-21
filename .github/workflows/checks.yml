@@ -761,7 +761,9 @@ jobs:
   # `examples/` - is class C at ceiling 15 without being named. A vendored
   # self-test (`test_*.py`) is class C wherever it sits, so it is not listed.
   # The interpreter is the floor of `requires-python`, the version the
-  # py.typed claim must hold against.
+  # py.typed claim must hold against. `power-of-ten.json` at the root names
+  # the suite checks that read rules 3 and 5 for `src`, and the checker
+  # refuses the tree when a named check does not resolve.
   #
   # Vendored, like the two guards above: this repository is public and cannot
   # resolve the private shared `power-of-ten` action, so

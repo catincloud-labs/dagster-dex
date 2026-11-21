@@ -1,0 +1,13 @@
+{
+  "src": {
+    "rule 3": {"reads": "none"},
+    "rule 5": {
+      "readers": [
+        {
+          "check": "tests/test_load_time_checks.py",
+          "violator": "tests/test_load_time_checks.py::PLANTS"
+        }
+      ]
+    }
+  }
+}

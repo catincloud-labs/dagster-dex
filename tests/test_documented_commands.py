@@ -221,7 +221,9 @@ def test_every_script_a_documented_command_names_exists(name: str, command: str)
         # `--ignore=tests/test_dex_bridge.py` as a missing file, which is the
         # harness being wrong about a file that is right there - a false positive
         # in a guard whose whole subject is claims that do not hold up.
-        candidate = token.split("=", 1)[-1]
+        # A quoted list of paths (`--class-b "a.py b.py"`) puts its quote on
+        # the first and last token, which would hide both from this check.
+        candidate = token.split("=", 1)[-1].strip("\"'")
         if candidate.endswith(".py") and "/" in candidate:
             assert (REPO_ROOT / candidate).is_file(), (
                 f"{name} documents a command running {candidate!r}, which does "

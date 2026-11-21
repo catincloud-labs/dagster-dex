@@ -233,14 +233,19 @@ uv run --no-project --with-editable . \
   --with-requirements scripts/power_of_ten_requirements.txt --with types-PyYAML \
   python -m mypy
 
-# the coding standard, read at class A over `src` -- strict typing, ceiling 10 --
-# by the vendored checker; its self-test first, then the check. Same manifest.
+# the coding standard, read at class A over `src` -- strict typing, ceiling 10,
+# 40 statements -- and at class B over the vendored copies, by the vendored
+# checker; its self-test first, then the check. Same manifest.
 uv run --no-project --python 3.10 \
   --with-requirements scripts/power_of_ten_requirements.txt \
   python scripts/test_check_power_of_ten.py
 uv run --no-project --python 3.10 \
   --with-requirements scripts/power_of_ten_requirements.txt \
-  python scripts/check_power_of_ten.py --tree . --class-a src
+  python scripts/check_power_of_ten.py --tree . --class-a src \
+  --class-b "scripts/check_closing_keywords.py scripts/check_deploy_label.py \
+  scripts/check_hook_mode.py scripts/check_power_of_ten.py scripts/check_pr_title.py \
+  scripts/check_pull_request_target.py scripts/check_third_party_pins.py \
+  scripts/check_verification_section.py"
 
 # the reduction against REAL dagster objects
 uv run --no-project --with-editable . --with 'dagster>=1.13' \
@@ -624,8 +629,14 @@ moves stand behind that rule, each paid for in this organisation:
 - **The estate's coding standard is read here at class A** - ADR-0042 in
   `catincloud-labs/constellation`: `src` is class A because a failure there
   reaches a stranger, the consumer of a published wheel. Cyclomatic ceiling 10,
-  strict typing, no recursion, no `while True`, no `global`, no blind `except`.
-  `tests/`, `scripts/` and `examples/` are class C at ceiling 15. The checker
+  at most 40 statements a function, strict typing, no recursion, no `while
+  True`, no `global` or `nonlocal`, no mutable default argument, no blind
+  `except`, and no call or load by a name computed at run time. The vendored
+  copies under `scripts/` are class B - ceiling 15, 60 statements, the type
+  checker's default - named one by one in the job, since the rest of that
+  directory is this repository's own code; a copy that misses a class B
+  ceiling is fixed at its source. The rest of `tests/`, `scripts/` and
+  `examples/` is class C at ceiling 15. The checker
   is vendored the way the two guards above are (public repository, private
   action): `scripts/check_power_of_ten.py`, `scripts/test_check_power_of_ten.py`
   and `scripts/power_of_ten_requirements.txt` are byte-compared against
@@ -641,6 +652,19 @@ moves stand behind that rule, each paid for in this organisation:
     `main`s (`examples/walk_the_whole_loop.py`, the write-path driver) carry a
     reasoned `C901` deviation: each is one ordered walk of legs, and the order
     is the artefact.
+  - **One class A deviation from the computed-name rule stands, and it is the
+    design:** the `assets` option's loader in `dex.py` imports the module the
+    option names. A registry keyed by a name the user writes cannot be a
+    constant; it runs the user's own code in the user's own process.
+  - **`power-of-ten.json` at the root declares what `src`'s own suite reads.**
+    Rule 3 is `none`: `src` reads only files the user hands it, inside the
+    user's own process, and nothing from another owner of state. The day
+    `src` adds such a read, that declaration is false, and the same change
+    lists the read and names its reader. Rule 5 names
+    `tests/test_load_time_checks.py`, whose `PLANTS` table holds one wrong
+    fact per load-time check in `src`, and which also walks `src` so a check
+    added with no plant reads red. A load-time check is an explicit `raise`
+    at the module's top level, never an `assert`.
 - **An outside contributor's pull request is merged as a squash.** This
   repository's own rule, ruled by the owner on 2026-10-21 (#144). The
   subsection below covers a session's own pull requests, and its bullet *When

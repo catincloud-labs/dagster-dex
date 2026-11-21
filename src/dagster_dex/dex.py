@@ -86,6 +86,16 @@ _SOURCE_OPTIONS = frozenset({"assets", "artifact"})
 #: table name in an artifact is fixed here without writing the artifact again.
 _ARTIFACT_INAPPLICABLE = frozenset({"semantics", "sources", "name"})
 
+# What the three sets above hold by construction, checked when the module
+# loads. An explicit `raise`, never `assert`, which `python -O` strips. Each
+# check has a planted wrong fact in `tests/test_load_time_checks.py`.
+if not _SOURCE_OPTIONS <= _KNOWN_OPTIONS:
+    raise RuntimeError("dex: a source option is not a known option, so it is refused")
+if not _ARTIFACT_INAPPLICABLE <= _KNOWN_OPTIONS:
+    raise RuntimeError("dex: an option refused beside an artifact is not a known option")
+if _ARTIFACT_INAPPLICABLE & _SOURCE_OPTIONS:
+    raise RuntimeError("dex: an option refused beside an artifact is a source option")
+
 
 @dataclass(frozen=True)
 class ProjectContext:
@@ -1267,7 +1277,7 @@ def project_from_context(context: Any) -> DexProject:
     from importlib import import_module  # noqa: PLC0415 - deferred on purpose
 
     try:
-        module = import_module(module_name)
+        module = import_module(module_name)  # noqa: POT004 - the `assets` option names the user's module by design, loaded in the user's own process
     except ImportError as exc:
         raise ValueError(
             f"project option 'assets' names module {module_name!r}, which could not "
@@ -1410,6 +1420,16 @@ _MISSING_COLUMNS = "names a column the relation does not have"
 _WAREHOUSE_SAYS = re.compile(r"(the warehouse refused [^(:]*)[(:].*", re.DOTALL)
 #: What `_unplaced_notes` says, found again among the definitions' notes.
 _UNPLACED = "absent from model_relations"
+
+# What the floors and the status table above hold by construction, checked
+# when the module loads, the way the option sets are. The executor gates on
+# VERIFY_JUDGES_FROM first, so a grain coverage floor at or below it would
+# never be reached; and `proven` and `broken` are read as measured, so neither
+# may be described as not judged.
+if not VERIFY_JUDGES_FROM < GRAIN_COVERAGE_FROM:
+    raise RuntimeError("dex: grain coverage is read from an engine whose verify does not judge")
+if {"proven", "broken"} & _NOT_JUDGED.keys():
+    raise RuntimeError("dex: a measured grain status is described as not judged")
 
 
 @dataclass(frozen=True)
