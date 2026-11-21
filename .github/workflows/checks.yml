@@ -752,9 +752,10 @@ jobs:
   # The estate's coding standard, the Power of 10,
   # read per class against the tree this pull request proposes and refused.
   # `src` is class A - a failure there reaches a stranger, the consumer of a
-  # published wheel - so it is read at ceiling 10 with strict typing: no
-  # recursion, no `while True`, no `global`, no blind `except`, every function
-  # annotated. The vendored copies under `scripts/` are class B, named one by
+  # published wheel - so it is read at ceiling 10 and 40 statements with
+  # strict typing: no recursion, no `while True`, no `global` or `nonlocal`,
+  # no mutable default argument, no blind `except`, no call or load by a name
+  # computed at run time, every function annotated. The vendored copies under `scripts/` are class B, named one by
   # one in `--class-b` below: ceiling 15, 60 statements, the type checker's
   # default. A copy that misses a class B ceiling is fixed at its source,
   # never here. Every other file - `tests/`, the rest of `scripts/` and

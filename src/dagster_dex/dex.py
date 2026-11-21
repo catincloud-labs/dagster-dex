@@ -1423,9 +1423,11 @@ _UNPLACED = "absent from model_relations"
 
 # What the floors and the status table above hold by construction, checked
 # when the module loads, the way the option sets are. The executor gates on
-# VERIFY_JUDGES_FROM first, so a grain coverage floor at or below it would
-# never be reached; and `proven` and `broken` are read as measured, so neither
-# may be described as not judged.
+# VERIFY_JUDGES_FROM first and on GRAIN_COVERAGE_FROM after it, so with the
+# second floor at or below the first, every engine past the first gate meets
+# the second and the note path for an engine between them is never reached;
+# and `proven` and `broken` are read as measured, so neither may be described
+# as not judged.
 if not VERIFY_JUDGES_FROM < GRAIN_COVERAGE_FROM:
     raise RuntimeError("dex: grain coverage is read from an engine whose verify does not judge")
 if {"proven", "broken"} & _NOT_JUDGED.keys():
@@ -1883,3 +1885,9 @@ def _spares(note: str, key: DeclaredKey) -> bool:
         return False
     named = {column.strip().lower() for column in note.rsplit(":", 1)[-1].split(",")}
     return not named & {column.lower() for column in key.columns}
+
+# What `__all__` holds by construction, checked when the module loads: every
+# name it exports is defined here. An explicit `raise`, never `assert`, which
+# `python -O` strips; its plant is in `tests/test_load_time_checks.py`.
+if [name for name in __all__ if name not in globals()]:
+    raise RuntimeError("dex: a name in __all__ is not defined in the module")

@@ -9,9 +9,11 @@ wrong, which must make the import raise with that check's message. The clean
 source runs first, so a check that raises on everything is caught too.
 
 The second case reads the population a different way from the table: it walks
-every module under `src/dagster_dex`, counts the top-level statements other
-than a `def` or a `class` that hold a `raise`, and requires as many distinct
-planted messages for that module. A check added with no plant is red here.
+every module under `src/dagster_dex`, reads the message of every `raise` in a
+top-level statement other than a `def` or a `class`, and requires that set,
+module by module, to equal the messages the table plants. A check added with no
+plant is red here, and so is a new arm of an existing check with its own
+message, or a plant whose check is gone.
 
 This file is the coding standard's rule 5 reader for `src`, declared in
 `power-of-ten.json`:
@@ -50,7 +52,7 @@ PLANTS = (
         "dex",
         '_SOURCE_OPTIONS = frozenset({"assets", "artifact"})',
         '_SOURCE_OPTIONS = frozenset({"assets", "artifact", "manifest"})',
-        "dex: a source option is not a known option",
+        "dex: a source option is not a known option, so it is refused",
     ),
     Plant(
         "dex-an-artifact-refusal-unknown",
@@ -85,13 +87,20 @@ PLANTS = (
         "checks",
         'ENGINE = "dagster_dex/engine"',
         'ENGINE = "dagster_dex/reason"',
-        "checks: two metadata keys are one string",
+        "checks: two metadata keys are one string, so one value overwrites another",
     ),
     Plant(
         "checks-a-prefix-not-a-dagster-name",
         "checks",
         '_PREFIX = "declared_key"',
         '_PREFIX = "declared-key"',
+        "checks: a check name's prefix or separator is not a Dagster name",
+    ),
+    Plant(
+        "checks-a-separator-not-a-dagster-name",
+        "checks",
+        '_SEPARATOR = "__"',
+        '_SEPARATOR = "--"',
         "checks: a check name's prefix or separator is not a Dagster name",
     ),
     Plant(
@@ -107,6 +116,76 @@ PLANTS = (
         "_SUFFIX_LENGTH = 12",
         "_SUFFIX_LENGTH = 65",
         "checks: the claim id suffix is empty or longer than a claim id",
+    ),
+    Plant(
+        "init-an-export-not-defined",
+        "__init__",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "dagster_dex: a name in __all__ is not defined in the module",
+    ),
+    Plant(
+        "artifact-an-export-not-defined",
+        "artifact",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "artifact: a name in __all__ is not defined in the module",
+    ),
+    Plant(
+        "checks-an-export-not-defined",
+        "checks",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "checks: a name in __all__ is not defined in the module",
+    ),
+    Plant(
+        "conformance-an-export-not-defined",
+        "conformance",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "conformance: a name in __all__ is not defined in the module",
+    ),
+    Plant(
+        "declarations-an-export-not-defined",
+        "declarations",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "declarations: a name in __all__ is not defined in the module",
+    ),
+    Plant(
+        "dex-an-export-not-defined",
+        "dex",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "dex: a name in __all__ is not defined in the module",
+    ),
+    Plant(
+        "model-an-export-not-defined",
+        "model",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "model: a name in __all__ is not defined in the module",
+    ),
+    Plant(
+        "planted-an-export-not-defined",
+        "planted",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "planted: a name in __all__ is not defined in the module",
+    ),
+    Plant(
+        "project-an-export-not-defined",
+        "project",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "project: a name in __all__ is not defined in the module",
+    ),
+    Plant(
+        "protocol-an-export-not-defined",
+        "protocol",
+        "__all__ = [",
+        '__all__ = ["_not_defined_anywhere", ',
+        "protocol: a name in __all__ is not defined in the module",
     ),
 )
 
@@ -141,33 +220,51 @@ def test_a_planted_wrong_fact_makes_the_import_raise(plant: Plant) -> None:
     _load(plant.module, source)
     # The fact must be in the source exactly once, or the plant planted nothing.
     assert source.count(plant.fact) == 1, plant.fact
-    with pytest.raises(RuntimeError, match=re.escape(plant.message)):
+    with pytest.raises(RuntimeError, match=f"^{re.escape(plant.message)}$"):
         _load(plant.module, source.replace(plant.fact, plant.wrong))
 
 
-def _load_time_checks(path: Path) -> int:
-    """Top-level statements, other than a ``def`` or ``class``, holding a ``raise``."""
+def _raised_at_load(path: Path) -> set[str]:
+    """The message of every ``raise`` in a top-level statement other than a
+    ``def`` or ``class``, each arm of a compound check read on its own.
+
+    A ``raise`` whose message is not a string constant is read as its line,
+    which no plant can match, so it reads red rather than going uncounted.
+    """
 
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    return sum(
-        1
-        for node in tree.body
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        and any(isinstance(inner, ast.Raise) for inner in ast.walk(node))
-    )
+    found = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Raise):
+                continue
+            exc = inner.exc
+            if (
+                isinstance(exc, ast.Call)
+                and exc.args
+                and isinstance(exc.args[0], ast.Constant)
+                and isinstance(exc.args[0].value, str)
+            ):
+                found.add(exc.args[0].value)
+            else:
+                found.add(f"<a raise with no constant message, line {inner.lineno}>")
+    return found
 
 
 def test_every_load_time_check_in_src_has_a_plant() -> None:
     modules = sorted(PACKAGE.rglob("*.py"))
     # The positive control: a walk that found nothing would pass the loop.
     assert len(modules) > 5, modules
-    counted = {}
+    raised = {}
     for path in modules:
-        found = _load_time_checks(path)
+        found = _raised_at_load(path)
         if found:
-            counted[path.stem] = found
-    planted = {
-        module: len({plant.message for plant in PLANTS if plant.module == module})
-        for module in {plant.module for plant in PLANTS}
-    }
-    assert counted == planted
+            # Keyed by the path under the package, so two modules sharing a
+            # stem in different subpackages stay two.
+            raised[path.relative_to(PACKAGE).with_suffix("").as_posix()] = found
+    planted: dict[str, set[str]] = {}
+    for plant in PLANTS:
+        planted.setdefault(plant.module, set()).add(plant.message)
+    assert raised == planted

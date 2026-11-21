@@ -657,10 +657,13 @@ moves stand behind that rule, each paid for in this organisation:
     option names. A registry keyed by a name the user writes cannot be a
     constant; it runs the user's own code in the user's own process.
   - **`power-of-ten.json` at the root declares what `src`'s own suite reads.**
-    Rule 3 is `none`: `src` reads only files the user hands it, inside the
-    user's own process, and nothing from another owner of state. The day
-    `src` adds such a read, that declaration is false, and the same change
-    lists the read and names its reader. Rule 5 names
+    Rule 3 is `none`. `src` reads files the user hands it, inside the user's
+    own process. It also judges declared keys from `maintain verify`'s
+    result, which dex-core built from a warehouse, but that read is
+    dex-core's: `src` receives a result object in process and opens no
+    connection, so it holds no channel to another node to bound. The day
+    `src` reads from another owner of state itself, that declaration is
+    false, and the same change lists the read and names its reader. Rule 5 names
     `tests/test_load_time_checks.py`, whose `PLANTS` table holds one wrong
     fact per load-time check in `src`, and which also walks `src` so a check
     added with no plant reads red. A load-time check is an explicit `raise`
