@@ -754,9 +754,14 @@ jobs:
   # `src` is class A - a failure there reaches a stranger, the consumer of a
   # published wheel - so it is read at ceiling 10 with strict typing: no
   # recursion, no `while True`, no `global`, no blind `except`, every function
-  # annotated. `tests/`, `scripts/` and `examples/` are class C at ceiling 15
-  # without being named. The interpreter is the floor of `requires-python`,
-  # the version the py.typed claim must hold against.
+  # annotated. The vendored copies under `scripts/` are class B, named one by
+  # one in `--class-b` below: ceiling 15, 60 statements, the type checker's
+  # default. A copy that misses a class B ceiling is fixed at its source,
+  # never here. Every other file - `tests/`, the rest of `scripts/` and
+  # `examples/` - is class C at ceiling 15 without being named. A vendored
+  # self-test (`test_*.py`) is class C wherever it sits, so it is not listed.
+  # The interpreter is the floor of `requires-python`, the version the
+  # py.typed claim must hold against.
   #
   # Vendored, like the two guards above: this repository is public and cannot
   # resolve the private shared `power-of-ten` action, so
@@ -800,4 +805,9 @@ jobs:
         run: |
           uv run --no-project --python 3.10 \
             --with-requirements scripts/power_of_ten_requirements.txt \
-            python scripts/check_power_of_ten.py --tree . --class-a src --base-sha "$BASE_SHA"
+            python scripts/check_power_of_ten.py --tree . --class-a src \
+            --class-b "scripts/check_closing_keywords.py scripts/check_deploy_label.py
+            scripts/check_hook_mode.py scripts/check_power_of_ten.py scripts/check_pr_title.py
+            scripts/check_pull_request_target.py scripts/check_third_party_pins.py
+            scripts/check_verification_section.py" \
+            --base-sha "$BASE_SHA"

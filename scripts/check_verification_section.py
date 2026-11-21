@@ -538,7 +538,9 @@ def _uncomment_line(line: str, closes_in_paragraph: bool) -> tuple[str, bool]:
 
     kept: list[str] = []
     pos = 0
-    while True:
+    # Each pass either returns or moves `pos` past a closer, so the loop
+    # ends within len(line) passes; the test states that bound.
+    while pos <= len(line):
         m = _SPAN_OR_COMMENT_RE.search(line, pos)
         while m and not m.group("open"):
             m = _SPAN_OR_COMMENT_RE.search(line, m.end())
@@ -552,6 +554,7 @@ def _uncomment_line(line: str, closes_in_paragraph: bool) -> tuple[str, bool]:
         if closes_in_paragraph or not "".join(kept).strip():
             return "".join(kept), True
         return "".join(kept) + line[m.start() :], False
+    return "".join(kept), False
 
 
 def _closes_in_paragraph(lines: list[str], i: int) -> bool:

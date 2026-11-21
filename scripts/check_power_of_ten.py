@@ -1,39 +1,81 @@
 #!/usr/bin/env python3
 """The Power of 10 is read per class against a tree: findings, deviations, and a baseline that only shrinks.
 
-WHY THIS EXISTS (ADR-0042, ruled 2026-09-05, built the same day). The
-estate had never stated a coding standard, and seven repositories carrying
-Python held exactly one code-quality gate between them. The record adopts
-JPL's Power of 10, tailored to Python by a recorded disposition of each rule,
+WHY THIS EXISTS. The estate's coding standard is JPL's Power of 10
+(Holzmann, 2006), tailored to Python by a disposition of each rule and
 applied per software ITEM at a class set by what a failure of that item
 reaches - A reaches a guarantee or a stranger, B reaches production, C
-reaches a pipeline run and stops - and rules that a rule of the estate exists
-ONLY where a shared check reads it against the tree and refuses. This is
-that check. A rule this file does not read is not a rule, whatever a prose
-file says.
+reaches a pipeline run and stops. A rule of the estate exists ONLY where a
+check reads it and refuses: this file, against the tree, or an item's own
+suite, whose presence this file reads. A rule neither reads is not a rule,
+whatever a prose file says. This docstring is the public statement of the
+rules, and a suite's `Measures:` line names it by file and rule number.
 
-WHAT IT READS, per class - the record's rule-by-class table, and nothing not
-in it:
+THE RULES, per class - each of Holzmann's rules as the estate keeps it, and
+nothing more:
 
   rule 1   no direct recursion (a function whose body calls its own bare name,
            or `self.<its name>`)                          A, B refused; C not read
   rule 2   a `while` whose test is a constant true       A, B refused; C not read
+  rule 3   an item that reads input another node produced (another owner of
+           mutable state, by any channel) states a maximum, and refuses past
+           it before reading the rest                     A read by the item's
+                                                          own suite; B, C not read
   rule 4   cyclomatic ceiling                             A 10; B 15; C 15
-  rule 6   the `global` statement                         A, B refused; C not read
+  rule 4   statement ceiling                              A 40; B 60; C not read
+  rule 5   a module checks the facts it holds by construction when it loads,
+           with an explicit `raise`, never `assert`, and a case plants a
+           wrong fact and sees the import raise           A read by the item's
+                                                          own suite; B, C not read
+  rule 6   the `global` statement, the `nonlocal` statement, and a mutable
+           default argument                               A, B refused; C not read
   rule 7   a bare `except`, a blind `except Exception`, and a bare or blind
            handler whose body is `pass`                   A, B refused; C not read
-           (a TYPED handler with `pass` is not read: the tool's default, and
-           the record says so)
+           (a TYPED handler with `pass` is not read)
   rule 7   types: strict for A, the tool's default for B  C not read
   rule 8   `eval` / `exec`                                A, B refused; C not read
+  rule 9   a name computed at run time that yields something called or
+           loaded: `import_module` or `__import__`, by bare name or as an
+           attribute, whose first argument is not a constant, and a call on
+           the result of a `getattr` whose name is not a
+           constant                                       A refused; B, C not read
+  rule 10  zero findings is the passing state, and the tools are pinned with
+           a mover                                        A, B, C
 
-Rules 3, 5 and 9 are deviated or not applicable in the record and are read
-by nothing here. The tools are ruff (rules 4, 6, 7, 8) and mypy (types),
-pinned by version in `requirements.txt` beside this file - the one place the
-version is written, moved by Dependabot's `pip` ecosystem (rule 10). Rules 1
-and 2 have no ruff code, so they are read from the AST here and carry the
-code-shaped names POT001 and POT002, which ruff's `noqa` parser tolerates
-silently (measured, ruff 0.16.6).
+The tools are ruff (rules 4, 6, 7, 8) and mypy (types), pinned by version in
+`requirements.txt` beside this file and moved by Dependabot's `pip`
+ecosystem (rule 10). Rules 1, 2, 6's `nonlocal` and 9 have no ruff code, so
+they are read from the AST here and carry the code-shaped names POT001,
+POT002, POT003 and POT004. Ruff's `noqa` parser passes those silently unless
+a run selects RUF102, which names each one an invalid code (measured, ruff
+0.17.4).
+
+THE OWN-SUITE READERS, rules 3 and 5. Each is a property of what an item
+publishes or holds, so the item's own suite reads it, as a control holding a
+violator the rule refuses, and this file reads that the reader is present.
+For every class A prefix the caller declares, `power-of-ten.json` at the
+tree root holds an entry keyed by that prefix:
+
+    {"src": {"rule 3": {"reads": ["the answer frame a peer sends"],
+                        "readers": [{"check": "tests/test_frame.py::test_max",
+                                     "violator": "tests/test_frame.py::OVER"}]},
+             "rule 5": {"readers": [{"check": "tests/test_load.py",
+                                     "violator": "tests/test_load.py::WRONG"}]}}}
+
+  For rule 3 the item lists what it reads from another node, or says
+  `"none"`, and an item that reads none names no reader. Rule 5 always names
+  one. A pointer is a path from the tree root, optionally `::<name>` of a
+  function, class or assignment in that file, as a pytest node id reads:
+  `A::b` is a `b` defined inside `A`. A reader RESOLVES when its check is a
+  file under the tree's root, symlinks and `..` followed, that defines the
+  name; when the check - the named definition, or else the whole file -
+  holds a line reading `Measures: scripts/check_power_of_ten.py, rule <n>`
+  and nothing else but its indent and a leading `#`, with <n> the rule it is
+  declared under; when the check's text names its violator, as a whole word,
+  by the violator's last `::` part or else its file's name; and when the
+  violator is a file under the tree's root that defines the name. The files
+  are read from the working tree, so an untracked file resolves. The suite
+  runs the check. This file reads only that the reader is there.
 
 HOW THE POPULATION AND THE CLASSES ARE DERIVED
 
@@ -96,6 +138,11 @@ WHAT IS RED AND WHAT IS REPORTED
     stale or blind claim is worse than none - it is the green tick this
     estate exists to distrust.
   - The ratchet: RED where any class's count rose against the base.
+  - An own-suite reader: RED where a class A item has no declaration, no
+    entry, no rule, no `reads` for rule 3, or no reader; where a declared
+    reader does not resolve; where the declaration does not parse or is not
+    the shape above; and where it holds an entry for a prefix the caller
+    does not declare class A, a stale claim being worse than none.
   - An empty population, a tool that crashed, a file that does not parse,
     a base that cannot be read, a tool the interpreter cannot load: a
     REFUSAL, exit 1, never an empty success.
@@ -110,13 +157,25 @@ repository's own ruff or mypy configuration is NOT consulted (`--isolated`,
 an empty mypy config), because the rule is the estate's and a per-repository
 setting that widens it is the registry the record refuses; the AST rules
 follow a name, not a call graph - two functions calling each other pass,
-and the record names that hole rather than closing it.
+and the record names that hole rather than closing it. Rule 9 follows a
+name too: a call to any attribute named `import_module` or `__import__` is
+read, whatever object holds it. Read only as those two shapes, it leaves
+unread: a computed `getattr` stored in a variable and called later, an
+attribute or a subscript of a computed `getattr` called (`getattr(m, n).run()`),
+a constant relative import whose `package=` is computed, and a call through
+`globals()[n]` or `__getattribute__(n)`. The own-suite declaration is a file
+in the tree, not an input, so it changes in the same diff as the code it
+describes, and a copy of this file run by a repository's own job reads it
+exactly as the shared action does.
 
 WHAT A GREEN HERE DOES NOT SAY. That the code is correct: a ceiling and a
 type check catch a class of defect measured to be real, and price no
 guarantee and read no falsifier. That the declaration is right: nothing
-here compares the caller's class prefixes to the record's list. That every
-loop is bounded: only the constant-true half is read.
+here compares the caller's class prefixes to the record's list, so an item
+declared below its reach escapes the own-suite reader as it escapes the
+rest. That a suite's reader is right: only that it is declared, carries its
+line and names a violator that exists. That every loop is bounded: only the
+constant-true half is read.
 
 Run bare, never through a pipe - the exit code is the product. Needs ruff
 and mypy importable by the running interpreter (`pip install -r
@@ -141,22 +200,30 @@ import tempfile
 import tokenize
 from collections import defaultdict
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 ACTION_NAME = "power-of-ten"
 MARKER = "predates ADR-0042"
 CLASSES = ("A", "B", "C")
 CEILING = {"A": 10, "B": 15, "C": 15}
+STATEMENT_CEILING = {"A": 40, "B": 60}  # class C reads no statement ceiling
 COMPLEXITY = "C901"
+STATEMENTS = "PLR0915"
 RECURSION = "POT001"
 UNBOUNDED = "POT002"
+NONLOCAL = "POT003"
+COMPUTED = "POT004"
 TYPES = "types"  # the pseudo-code a `type: ignore` names; mypy has no single code
-RUFF_AB = ("PLW0603", "E722", "BLE001", "S110", "S307", "S102")
+RUFF_AB = ("PLW0603", "B006", "E722", "BLE001", "S110", "S307", "S102")
 RULES = {
     COMPLEXITY: "rule 4, the cyclomatic ceiling",
+    STATEMENTS: "rule 4, the statement ceiling",
     RECURSION: "rule 1, no direct recursion",
     UNBOUNDED: "rule 2, a `while` on a constant true states no bound",
+    NONLOCAL: "rule 6, no `nonlocal`",
+    COMPUTED: "rule 9, nothing called or loaded by a name computed at run time",
     "PLW0603": "rule 6, no `global`",
+    "B006": "rule 6, no mutable default argument",
     "E722": "rule 7, no bare `except`",
     "BLE001": "rule 7, no blind `except Exception`",
     "S110": "rule 7, no bare or blind handler whose body is `pass`",
@@ -165,6 +232,9 @@ RULES = {
     TYPES: "rule 7, types (strict for class A, the tool's default for B)",
 }
 TEST_EXCLUDE = r"(^|/)(tests|test_[^/]*\.py|conftest\.py)($|/)"
+READERS_FILE = "power-of-ten.json"  # the own-suite declaration, at the tree root
+SUITE_RULES = {"rule 3": ("reads", "readers"), "rule 5": ("readers",)}  # rule -> the keys its entry takes
+MEASURES = "Measures: scripts/check_power_of_ten.py, rule {n}"
 
 _ISSUE = re.compile(r"#\d+")
 _NOQA = re.compile(r"#\s*noqa\b(?P<tail>.*)$", re.IGNORECASE)
@@ -218,6 +288,7 @@ class Outcome(NamedTuple):
     ratchet: str  # what the ratchet did, in words
     base: dict[str, int] | None  # the base's marker count per class, when compared
     readers: tuple[str, ...] = ()  # each tool's own version line, or why it was not run
+    presence: str = ""  # what the own-suite reader did, in words
 
 
 Declared = dict[str, tuple[str, ...]]
@@ -255,6 +326,29 @@ EXPLANATIONS = {
         "migration a marker may be removed by anyone and added by nobody: new "
         "code cannot be adopted code. Fix the site or record a deviation with "
         "its reason."
+    ),
+    "reader-undeclared": (
+        "A class A item's own suite reads rules 3 and 5, so the item names a "
+        f"reader for each in `{READERS_FILE}`, and for rule 3 lists what it reads "
+        'from another node or says "none". A rule with no declared reader is a '
+        "rule nobody can see being read."
+    ),
+    "reader-unresolved": (
+        "The declared reader does not resolve. Its check is a file in the tree "
+        f"holding `{MEASURES.format(n='<n>')}` on a line of its own - inside the "
+        "named definition, not on a docstring's opening line or in a comment above "
+        "it - and naming its violator; the violator is a file in the tree. A "
+        "`::<name>` names a definition there, `A::b` a `b` inside `A`. A pointer "
+        "at nothing is a stale claim."
+    ),
+    "reader-malformed": (
+        f"`{READERS_FILE}` does not parse, or is not the shape this file's "
+        "docstring gives, so nothing it declares can be read."
+    ),
+    "reader-orphan": (
+        "An entry for a prefix the caller does not declare class A. A "
+        "declaration for an item this run does not read is a stale claim: "
+        "remove it, or declare the prefix."
     ),
 }
 
@@ -351,9 +445,16 @@ def parse_suppression(path: str, line: int, comment: str) -> Suppression | None:
 
 
 def read_rules(cls: str) -> frozenset[str]:
+    """The codes a class reads: C its cyclomatic ceiling; B the table but rule 9; A all of it.
+
+    Per class, because whether a suppression is this check's business turns on
+    it: a `noqa: POT004` in class B names a rule class B does not read, so it
+    is left alone there, as any other rule this check does not read is.
+    """
     if cls == "C":
         return frozenset({COMPLEXITY})
-    return frozenset({COMPLEXITY, RECURSION, UNBOUNDED, TYPES, *RUFF_AB})
+    ab = {COMPLEXITY, STATEMENTS, RECURSION, UNBOUNDED, NONLOCAL, TYPES, *RUFF_AB}
+    return frozenset(ab | {COMPUTED} if cls == "A" else ab)
 
 
 def is_baseline(sup: Suppression) -> bool:
@@ -455,13 +556,16 @@ def reader_versions(need_mypy: bool, interpreter: Interpreter = PYTHON) -> tuple
 
 
 def ruff_findings(tree: Path, cls: str, files: list[str], interpreter: Interpreter = PYTHON) -> list[Finding]:
-    select = [COMPLEXITY] + (list(RUFF_AB) if cls != "C" else [])
+    select = [COMPLEXITY] + ([STATEMENTS, *RUFF_AB] if cls != "C" else [])
+    config = ["--config", f"lint.mccabe.max-complexity={CEILING[cls]}"]
+    if cls in STATEMENT_CEILING:
+        config += ["--config", f"lint.pylint.max-statements={STATEMENT_CEILING[cls]}"]
     out: list[Finding] = []
     root = tree.resolve()
     for i in range(0, len(files), 200):
         cmd = [
             *interpreter, "-m", "ruff", "check", "--isolated", "--no-cache", "--quiet", "--ignore-noqa",
-            "--select", ",".join(select), "--config", f"lint.mccabe.max-complexity={CEILING[cls]}",
+            "--select", ",".join(select), *config,
             "--output-format", "json", "--", *files[i : i + 200],
         ]
         res = subprocess.run(cmd, cwd=tree, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -477,15 +581,62 @@ def ruff_findings(tree: Path, cls: str, files: list[str], interpreter: Interpret
     return out
 
 
-def ast_findings(rel: str, text: str) -> list[Finding]:
-    """Rules 1 and 2, which ruff has no code for. A SyntaxError is the caller's to record."""
+def ast_findings(rel: str, text: str, cls: str) -> list[Finding]:
+    """Rules 1, 2, 6's `nonlocal` and, in class A only, 9: what ruff has no code for.
+
+    The class is a parameter because rule 9 reads class A alone. A SyntaxError
+    is the caller's to record.
+    """
     out: list[Finding] = []
     for node in ast.walk(ast.parse(text)):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _calls_itself(node):
-            out.append(Finding(rel, node.lineno, RECURSION, f"`{node.name}` calls itself", node.lineno))
-        elif isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and bool(node.test.value):
-            out.append(Finding(rel, node.lineno, UNBOUNDED, "`while` on a constant true", node.lineno))
+        found = _ast_finding(node, cls)
+        if found:
+            line = getattr(node, "lineno", 0)  # every node that can break a rule is a statement or a call
+            out.append(Finding(rel, line, found[0], found[1], line))
     return out
+
+
+def _ast_finding(node: ast.AST, cls: str) -> tuple[str, str] | None:
+    """The code and message one node breaks, or None."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _calls_itself(node):
+        return RECURSION, f"`{node.name}` calls itself"
+    if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and bool(node.test.value):
+        return UNBOUNDED, "`while` on a constant true"
+    if isinstance(node, ast.Nonlocal):
+        return NONLOCAL, f"`nonlocal {', '.join(node.names)}`"
+    if cls == "A" and isinstance(node, ast.Call):
+        return _computed_name(node)
+    return None
+
+
+def _callee(func: ast.expr) -> str:
+    """The name a call is made by: a bare name, or the last attribute."""
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _computed_name(call: ast.Call) -> tuple[str, str] | None:
+    """Rule 9's two shapes, read from the call alone.
+
+    An import by `import_module` or `__import__` whose first argument (or
+    `name=`) is not a constant, and a call made directly on the result of a
+    `getattr` whose name is not a constant. A starred argument is not a
+    constant, so it is read as computed. A computed `getattr` stored and called
+    later is a different node from the call, and is not read.
+    """
+    name = _callee(call.func)
+    if name in ("import_module", "__import__"):
+        first = call.args[0] if call.args else next((k.value for k in call.keywords if k.arg == "name"), None)
+        if not isinstance(first, ast.Constant):
+            return COMPUTED, f"`{name}` of a name computed at run time"
+    inner = call.func
+    if isinstance(inner, ast.Call) and _callee(inner.func) == "getattr":
+        if len(inner.args) < 2 or not isinstance(inner.args[1], ast.Constant):
+            return COMPUTED, "a call on the result of `getattr` of a name computed at run time"
+    return None
 
 
 def _calls_itself(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -622,7 +773,7 @@ def read_class(
         try:
             comments = read_comments(text)
             if cls != "C":
-                findings += ast_findings(rel, text)
+                findings += ast_findings(rel, text, cls)
         except (SyntaxError, tokenize.TokenError) as exc:
             # Reported once, here; the file is kept out of the tool runs so
             # the same defect does not come back as a second finding.
@@ -646,6 +797,170 @@ def read_class(
         hint = f"  (a suppression goes on line {f.noqa_row})" if f.noqa_row != f.line else ""
         problems.append(Problem("finding", f"class {cls} {f.path}:{f.line}", f"{f.code}  {f.message}{hint}"))
     return ClassReport(cls, len(files), tuple(kept), suppressed, deviations, baseline), problems
+
+
+# --- the own-suite readers: rules 3 and 5 ----------------------------------------
+
+
+def presence(tree: Path, declared: Declared) -> tuple[str, list[Problem]]:
+    """Each class A item declares a reader for each rule its own suite reads, and each reader resolves.
+
+    Resolved the way the known-negatives action resolves a pointer: the named
+    file exists and holds what the declaration says it holds. Absence of the
+    file is read only where a class A item is declared; a file with no class A
+    item declared is read for orphans.
+    """
+    items = declared.get("A", ())
+    path = tree / READERS_FILE
+    if not path.is_file():
+        if not items:
+            return f"not read: no class A item is declared and there is no {READERS_FILE}", []
+        missing = [Problem("reader-undeclared", f"class A {p}", f"no {READERS_FILE} at the tree root") for p in items]
+        return f"REFUSED: no {READERS_FILE}", missing
+    data, wrong = _load_declaration(path)
+    if wrong:
+        return f"REFUSED: {READERS_FILE} cannot be read", [Problem("reader-malformed", READERS_FILE, wrong)]
+    problems = [
+        Problem("reader-orphan", f"{READERS_FILE} {k!r}", "no class A prefix of that name is declared")
+        for k in data
+        if k not in items
+    ]
+    for prefix in items:
+        problems += _read_item(tree, prefix, data.get(prefix))
+    verdict = "REFUSED" if problems else "resolved"
+    return f"{verdict}: {len(items)} class A item(s) read against {READERS_FILE}", problems
+
+
+def _load_declaration(path: Path) -> tuple[dict[str, Any], str]:
+    """The declaration, or why it cannot be read: it does not parse, or it is not the docstring's shape."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, RecursionError) as exc:  # a JSONDecodeError and a UnicodeDecodeError are ValueErrors; deep nesting recurses
+        return {}, f"does not parse as JSON: {type(exc).__name__}: {str(exc)[:200]}"
+    if not isinstance(data, dict):
+        return {}, "the top level is an object keyed by class A prefix"
+    for prefix, entry in data.items():
+        wrong = _shape(entry)
+        if wrong:
+            return {}, f"{prefix!r}: {wrong}"
+    return data, ""
+
+
+def _shape(entry: Any) -> str:
+    """What is wrong with one item's entry, or ''."""
+    if not isinstance(entry, dict):
+        return "an item's entry is an object keyed by rule"
+    for rule, spec in entry.items():
+        if rule not in SUITE_RULES:
+            return f"{rule!r} is not a rule an item's own suite reads ({', '.join(SUITE_RULES)})"
+        if not isinstance(spec, dict) or set(spec) - set(SUITE_RULES[rule]):
+            return f"{rule!r} is an object holding {' and '.join(SUITE_RULES[rule])} only"
+        reads = spec.get("reads", "none")
+        if reads != "none" and not (isinstance(reads, list) and reads and all(_text(r) for r in reads)):
+            return f'{rule!r}: `reads` is "none", or a list of what the item reads from another node'
+        readers = spec.get("readers", [])
+        if not isinstance(readers, list) or not all(_is_reader(r) for r in readers):
+            return f'{rule!r}: `readers` is a list of {{"check": <pointer>, "violator": <pointer>}}'
+    return ""
+
+
+def _text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_reader(value: Any) -> bool:
+    return isinstance(value, dict) and set(value) == {"check", "violator"} and all(_text(v) for v in value.values())
+
+
+def _read_item(tree: Path, prefix: str, entry: dict[str, Any] | None) -> list[Problem]:
+    where = f"class A {prefix}"
+    if entry is None:
+        return [Problem("reader-undeclared", where, f"no entry in {READERS_FILE}")]
+    return [p for rule in SUITE_RULES for p in _read_rule(tree, where, rule, entry.get(rule))]
+
+
+def _read_rule(tree: Path, where: str, rule: str, spec: dict[str, Any] | None) -> list[Problem]:
+    """One rule of one item: declared, and every reader it names resolves."""
+    here = f"{where} {rule}"
+    if spec is None:
+        return [Problem("reader-undeclared", here, "no entry: the item's own suite reads this rule, so it names the reader")]
+    if rule == "rule 3" and "reads" not in spec:
+        return [Problem("reader-undeclared", here, 'no `reads`: the item lists what it reads from another node, or says "none"')]
+    readers = spec.get("readers", [])
+    if not readers and spec.get("reads") != "none":
+        return [Problem("reader-undeclared", here, "no reader is declared")]
+    n = rule.split()[1]
+    return [p for r in readers for p in _resolve_reader(tree, here, n, r)]
+
+
+def _resolve_reader(tree: Path, here: str, n: str, reader: dict[str, str]) -> list[Problem]:
+    """The check exists, carries its `Measures:` line and names its violator; the violator exists."""
+    problems: list[Problem] = []
+    want = MEASURES.format(n=n)
+    check, violator = reader["check"], reader["violator"]
+    lines, why = _pointer(tree, check)
+    if why:
+        problems.append(Problem("reader-unresolved", here, f"check {why}"))
+    elif not any(line.strip().lstrip("#").strip() == want for line in lines):
+        problems.append(Problem("reader-unresolved", here, f"check `{check}` holds no line of its own reading `{want}`"))
+    _, why = _pointer(tree, violator)
+    if why:
+        problems.append(Problem("reader-unresolved", here, f"violator {why}"))
+    elif lines and not _names(lines, violator):
+        problems.append(Problem("reader-unresolved", here, f"check `{check}` does not name its violator `{violator}`"))
+    return problems
+
+
+def _names(lines: list[str], violator: str) -> bool:
+    """Does the check's text name the violator: its last `::` part, or else its file's name, as a whole word?"""
+    rel, _, name = violator.partition("::")
+    word = name.split("::")[-1] if name else Path(rel).name
+    return re.search(rf"(?<!\w){re.escape(word)}(?!\w)", "\n".join(lines)) is not None
+
+
+def _pointer(tree: Path, pointer: str) -> tuple[list[str], str]:
+    """The lines a pointer names - the whole file, or one definition in it - or why it names nothing.
+
+    The file is read from the working tree, and must resolve, symlinks and
+    `..` followed, to a file under the tree's root.
+    """
+    rel, _, name = pointer.partition("::")
+    file = tree / rel
+    if not rel or not file.is_file() or not file.resolve().is_relative_to(tree.resolve()):
+        return [], f"`{rel}` is not a file in the tree"
+    lines = file.read_text(encoding="utf-8", errors="replace").splitlines()
+    if not name:
+        return lines, ""
+    try:
+        module = ast.parse("\n".join(lines))
+    except SyntaxError:
+        return [], f"`{rel}` does not parse, so `{name}` cannot be found in it"
+    node = _definition(module, name.split("::"))
+    if node is None:
+        return [], f"`{rel}` defines no `{name}`"
+    return lines[getattr(node, "lineno", 1) - 1 : getattr(node, "end_lineno", None)], ""
+
+
+def _definition(module: ast.AST, parts: list[str]) -> ast.AST | None:
+    """The definition a pytest-style `A::b` names: the first part anywhere, each later part inside the one before."""
+    scope = module
+    for part in parts:
+        found = next((d for d in ast.walk(scope) if d is not scope and part in _names_defined(d)), None)
+        if found is None:
+            return None
+        scope = found
+    return scope
+
+
+def _names_defined(node: ast.AST) -> tuple[str, ...]:
+    """The names a function, class or assignment binds at its own node."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return (node.name,)
+    if isinstance(node, ast.Assign):
+        return tuple(t.id for t in node.targets if isinstance(t, ast.Name))
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        return (node.target.id,)
+    return ()
 
 
 # --- the ratchet ---------------------------------------------------------------
@@ -759,8 +1074,9 @@ def check(
     for cls in CLASSES:
         reports[cls], found = read_class(tree, cls, by_class.get(cls, []), declared, interpreter)
         problems += found
+    suite_note, pp = presence(tree, declared)
     note, base, rp = ratchet(tree, base_sha, action_name, declared, {c: reports[c].baseline for c in CLASSES})
-    return Outcome(reports, problems + rp, note, base, readers)
+    return Outcome(reports, problems + pp + rp, note, base, readers, suite_note)
 
 
 def by_code(report: ClassReport) -> str:
@@ -774,7 +1090,7 @@ def render(outcome: Outcome, declared: Declared) -> list[str]:
     lines = [f"readers: {'; '.join(outcome.readers)}", ""]
     lines.append("declaration (a file under no prefix, and every test path, is class C):")
     for cls in CLASSES:
-        lines.append(f"  class {cls} (ceiling {CEILING[cls]}): {' '.join(declared.get(cls, ())) or '-'}")
+        lines.append(f"  class {cls} (ceilings {ceilings(cls)}): {' '.join(declared.get(cls, ())) or '-'}")
     lines.append("")
     lines.append(f"{'class':<7}{'files':>6}{'findings':>10}{'suppressed':>12}{'deviations':>12}{'baseline':>10}  by rule")
     for cls in CLASSES:
@@ -785,22 +1101,29 @@ def render(outcome: Outcome, declared: Declared) -> list[str]:
             f"{r.baseline:>10}{base}  {by_code(r)}"
         )
     lines.append("")
+    lines.append(f"own-suite readers (rules 3 and 5): {outcome.presence}")
     lines.append(f"ratchet: {outcome.ratchet}")
     return lines
 
 
+def ceilings(cls: str) -> str:
+    """The class's two rule 4 numbers: cyclomatic, then statements."""
+    return f"{CEILING[cls]} / {STATEMENT_CEILING.get(cls, 'not read')}"
+
+
 def render_markdown(outcome: Outcome, declared: Declared) -> str:
-    rows = ["| class | ceiling | declared | files | findings | deviations | baseline | by rule |", "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+    rows = ["| class | ceilings (cyclomatic / statements) | declared | files | findings | deviations | baseline | by rule |", "| --- | --- | --- | --- | --- | --- | --- | --- |"]
     for cls in CLASSES:
         r = outcome.reports[cls]
         base = f" (base {outcome.base[cls]})" if outcome.base is not None else ""
         rows.append(
-            f"| {cls} | {CEILING[cls]} | `{' '.join(declared.get(cls, ())) or '-'}` | {r.files} | "
+            f"| {cls} | {ceilings(cls)} | `{' '.join(declared.get(cls, ())) or '-'}` | {r.files} | "
             f"{len(r.findings)} | {r.deviations} | {r.baseline}{base} | {by_code(r)} |"
         )
     verdict = f"**{len(outcome.problems)} refusal(s)**" if outcome.problems else "**green** - zero findings"
     readers = f"readers: {'; '.join(outcome.readers)}"
-    return "\n".join(["### power of ten", "", *rows, "", readers, "", f"ratchet: {outcome.ratchet}", "", verdict, ""])
+    suite = f"own-suite readers (rules 3 and 5): {outcome.presence}"
+    return "\n".join(["### power of ten", "", *rows, "", readers, "", suite, "", f"ratchet: {outcome.ratchet}", "", verdict, ""])
 
 
 def write_summary(text: str) -> None:
