@@ -698,8 +698,11 @@ method, the default against closing, the cold review, when a pull request
 leaves draft and the issue-correction rule; the rest is practice sessions
 learned, most of it after a wrong post had to be corrected. This subsection,
 the title sub-bullet above, *Verification method* and *The owner's workstation*
-are kept byte-identical across the organisation's repositories: change them
-everywhere or nowhere. Nothing checks it.
+are kept byte-identical across the organisation's unarchived repositories:
+change them everywhere or nowhere. Nothing checks it. Every block an
+`AGENTS.md` says is kept byte-identical holds only its shared text and is
+never the last section in its file; a repository's own text goes under a
+heading of its own, after the block.
 
 - **A session opens the pull request and stops.** It does not merge, deploy
   or widen a token's reach without the owner's word in that session. A
