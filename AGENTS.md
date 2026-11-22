@@ -799,28 +799,6 @@ say it better. Use `=>` for an arrow and `...` for an ellipsis.
   source, and this test is the first to see it. An entry in that set could
   never again be the right fix, which is why there is no set.
 
-## Conventions
-
-- Line endings are LF everywhere, enforced by `.gitattributes`.
-- Every source file carries `# Copyright 2026 David Anaya` and
-  `# SPDX-License-Identifier: Apache-2.0`.
-- Markdown is linted in CI with a shared config. Two rules are off deliberately:
-  `MD013` (line length) and `MD041` (first line must be a top-level heading) -
-  `MD041` because the GitHub templates under `.github/` correctly do not start
-  with an H1.
-  - **`MD024` collided with a changelog until 2026-08-27, when the estate
-    default paid it at the source.** `siblings_only` is now set in the shared
-    config and in this vendored copy, so a second release section carrying
-    `### Added` lints clean while the same heading twice under ONE parent
-    still fires. The fix deliberately did not go through a local root
-    `.markdownlint.json`: a local file **outranks** the shared one entirely,
-    so it would have had to restate `MD013` and `MD041` too - two copies of a
-    decision, which is why this sat as a known cost instead. Historical
-    changelog sections keep their bold lead-ins (history does not change);
-    new entries may use real sub-headings again.
-- **Never put a number in a document that something else can change.** A test
-  count, an export count, a timing - cite the command instead.
-
 ## The owner's workstation
 
 This repository is authored on the owner's Windows workstation, with Git Bash
@@ -869,3 +847,25 @@ it.
 - **An agent's permission layer may refuse an act** (a secret read, an `ssh`, a
   merge, a scheduled task). Do not retry it in another form: hand the owner the
   exact command, one per block, and read the result back after it runs.
+
+## Conventions
+
+- Line endings are LF everywhere, enforced by `.gitattributes`.
+- Every source file carries `# Copyright 2026 David Anaya` and
+  `# SPDX-License-Identifier: Apache-2.0`.
+- Markdown is linted in CI with a shared config. Two rules are off deliberately:
+  `MD013` (line length) and `MD041` (first line must be a top-level heading) -
+  `MD041` because the GitHub templates under `.github/` correctly do not start
+  with an H1.
+  - **`MD024` collided with a changelog until 2026-08-27, when the estate
+    default paid it at the source.** `siblings_only` is now set in the shared
+    config and in this vendored copy, so a second release section carrying
+    `### Added` lints clean while the same heading twice under ONE parent
+    still fires. The fix deliberately did not go through a local root
+    `.markdownlint.json`: a local file **outranks** the shared one entirely,
+    so it would have had to restate `MD013` and `MD041` too - two copies of a
+    decision, which is why this sat as a known cost instead. Historical
+    changelog sections keep their bold lead-ins (history does not change);
+    new entries may use real sub-headings again.
+- **Never put a number in a document that something else can change.** A test
+  count, an export count, a timing - cite the command instead.
