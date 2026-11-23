@@ -716,8 +716,8 @@ heading of its own, after the block.
   positive control: a pull request in no stack carries no `stack` field, so a
   bare `--jq .stack` prints an empty line whatever the truth. No stacked pull
   request has been read this way since the estate's one stack was dissolved.
-- **The organisation's merge judge reads those preconditions, and no
-  others.** It reads that the pull request is open and not a draft, that its
+- **The organisation's merge judge reads the preconditions that have a
+  source.** It reads that the pull request is open and not a draft, that its
   `stack` is null beside its number, that the latest run of every required
   check is green at its head, and that the head did not move while it was
   read. It answers ready, refused or could not check, and acts on nothing. On
