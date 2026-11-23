@@ -460,6 +460,7 @@ COMMIT_REFUSALS = [
     ("docs(runbook,features): two scopes in one" + BODY, "prefix"),              # one scope, as for a title
     ("fix: a subject\nThe Second Line Is Still The Subject." + BODY, "period"),  # git joins the first paragraph
     ("fix: a subject and trailers only" + TRAILERS, "body"),                      # trailers are not a body
+    ("fix: a lone note\n\nNote: the cache was stale, so it is cleared.\n", "body"),  # git reads it as a trailer too
     ("fix: a folded trailer\n\nCo-Authored-By: A Contributor\n  <a@example.invalid>\n", "body"),
     ('Revert "feat: a change"', "body"),                                          # a revert still needs its body
 ]
