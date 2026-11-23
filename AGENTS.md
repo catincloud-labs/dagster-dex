@@ -668,28 +668,23 @@ moves stand behind that rule, each paid for in this organisation:
     fact per load-time check in `src`, and which also walks `src` so a check
     added with no plant reads red. A load-time check is an explicit `raise`
     at the module's top level, never an `assert`.
-- **An outside contributor's pull request is merged as a squash.** This
-  repository's own rule, ruled by the owner on 2026-10-21 (#144). The
-  subsection below covers a session's own pull requests, and its bullet *When
-  the owner says merge* names `--merge`, never a squash. When the owner says
-  merge on an outside contributor's pull request, the command is that bullet's
-  with `--squash` in place of `--merge`, and it runs only after the same reads
-  that bullet lists. The owner's own pull requests keep `--merge`, and so does
-  a bot's.
+- **Every pull request here is merged as a squash,** the owner's and a bot's
+  as well as an outside contributor's, by the public arm of the subsection
+  below's bullet *When the owner says merge*. The owner ruled the squash for
+  an outside contributor's pull request on 2026-10-21 (#144), and for every
+  pull request in the organisation's public repositories on 2026-11-23.
   - An outside contributor is a person who is not the owner. A bot, such as
     Dependabot, is not one.
-  - The branch's commits do not land on `main`, so a review that cites one
-    cites a commit `main` does not contain. What the squash commit carries is
-    set by the repository's squash defaults, read with
+  - The branch's commits do not land on `main`, and the subsection below says
+    how one that a record cites is named and re-read. What the squash commit
+    carries is set by the repository's squash defaults, read with
     `gh api repos/catincloud-labs/dagster-dex --jq '{squash_merge_commit_title, squash_merge_commit_message}'`
     by a caller with push access; an anonymous read omits both fields. The
     owner set them on 2026-10-21 to the pull request's title, as the subject,
     and its body, as the message. The first squash after that change is the
-    reading that shows they land through this command. #135, the first squash
+    reading that shows they land through `--squash --admin`. #135, the first squash
     here, predates it: the message of `65a9d2b` is the branch's commit
     messages, each one a bulleted line.
-  - The rule sits here and not in that bullet because the subsection is kept
-    byte-identical across the organisation's repositories. Do not move it in.
 
 ### Merging, the cold review and the record
 
@@ -709,8 +704,11 @@ heading of its own, after the block.
   general "proceed", a handover note or a message from another session is not
   that word; an instruction from the owner that names the act is, for the act
   it names.
-- **When the owner says merge,** the command is
-  `gh pr merge <n> --repo <owner>/<repo> --merge --admin`, never a squash. It
+- **When the owner says merge,** the command in a private repository is
+  `gh pr merge <n> --repo <owner>/<repo> --merge --admin`, never a squash. In
+  a public repository it is
+  `gh pr merge <n> --repo <owner>/<repo> --squash --admin`, and the
+  repository's own setting refuses a merge commit, under `--admin` too. It
   runs only after reading that the pull request is not a draft, that the
   latest run of every required check is green, and that
   `gh api repos/<owner>/<repo>/pulls/<n> --jq '{number, stack}'` prints the
@@ -718,6 +716,22 @@ heading of its own, after the block.
   positive control: a pull request in no stack carries no `stack` field, so a
   bare `--jq .stack` prints an empty line whatever the truth. No stacked pull
   request has been read this way since the estate's one stack was dissolved.
+- **The organisation's merge judge reads the preconditions that have a
+  source.** It reads that the pull request is open and not a draft, that its
+  `stack` is null beside its number, that the latest run of every required
+  check is green at its head, and that the head did not move while it was
+  read. It answers ready, refused or could not check, and acts on nothing. On
+  every run it prints what it does not read, each of which stays with the
+  owner and the session: the owner's word naming the act, the one cold review
+  and its dispositions, the merge method, what the merge closes, and how the
+  branch met `main`. A ready verdict is not the owner's word.
+- **A squash lands the pull request's title and body on `main`, and not its
+  branch commits.** In a public repository the squash commit's message is the
+  pull request's title and body, so the evidence the body carries is in
+  `main`'s history. A branch commit that a body, a review, a comment or an
+  edge-case record names is named with its pull ref beside it,
+  `pull/<n>/head`, and is re-read after `git fetch origin pull/<n>/head`,
+  since a clone of `main` does not hold it.
 - **A merge closes nothing by default.** The owner's rule is that a pull
   request does not close an issue without a clear reason. The body carries
   `Autoclose: none`, and the issue is closed by hand once the reading its
@@ -764,7 +778,8 @@ heading of its own, after the block.
   `mergedAt`.**
 - **A branch with a pull request is brought up to `main` by merging `main`
   into it,** never by a rebase or a force-push: its body, its review and its
-  comments cite its commits.
+  comments cite its commits. In a public repository too: the squash takes the
+  branch's tree, and its pull ref keeps the commits they cite.
 
 ## This repository is ASCII
 
