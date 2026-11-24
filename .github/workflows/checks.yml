@@ -138,7 +138,7 @@ jobs:
           python scripts/check_closing_keywords.py "$RUNNER_TEMP/pr-body.md"
 
       # The title is the one text that reaches `main` unscanned by the steps
-      # around it: a merge commit's message is the pull request's title, and
+      # around it: a squash commit's subject is the pull request's title, and
       # a title holds no `Autoclose:` trailer, so a closing verb before `#N`
       # there is refused outright. The body's trailer does not answer it: the
       # reconcile below reads the body alone.
@@ -266,13 +266,13 @@ jobs:
   #
   # The guard also judges each non-merge commit in the pull request: its
   # subject by the title's form rules, without the 100-character cap, and a
-  # body beyond its trailers. It does so only where those commits land on
-  # `main`. The owner's pull requests, and a bot's, merge with a merge commit,
-  # so every commit on the branch lands as written. An outside contributor's
-  # pull request is merged as a squash (AGENTS.md), so only its title and body
-  # land, and its branch's subjects are not judged; the step prints that it
-  # skipped them. The author is what tells the two apart: the owner is the
-  # account `.github/CODEOWNERS` names on `*`, and a bot's login ends `[bot]`.
+  # body beyond its trailers. It does so only where the repository's merge
+  # settings land those commits on `main`, whoever opened the pull request
+  # (a machine author is exempt inside the script, as before). A merge
+  # commit lands every branch commit as written; a squash titled and
+  # bodied from the pull request, as this repository's settings read on
+  # 2026-11-24, lands none, so there they are not judged and the step prints
+  # that it skipped them.
   pr-title:
     name: pr title
     if: github.event_name == 'pull_request'
@@ -282,6 +282,25 @@ jobs:
 
       - name: Guard fires and goes quiet
         run: python scripts/check_pr_title.py --self-test
+
+      # Whether the commits land on `main` is read from this repository's own
+      # merge settings, never written here. GraphQL, because the REST
+      # repository read leaves the settings out for the run's token. The
+      # script decides from them and prints what it decided and from what: a
+      # squash titled and bodied from the pull request lands no branch commit,
+      # so there the commits are not judged. A setting that reads null is
+      # unread, and the commits are then judged, with a warning.
+      - name: Read how this repository merges
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api graphql -f owner="${GITHUB_REPOSITORY%/*}" -f name="${GITHUB_REPOSITORY#*/}" \
+            -f query='query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
+              mergeCommitAllowed rebaseMergeAllowed squashMergeCommitTitle squashMergeCommitMessage } }' \
+            --jq '.data.repository | {allow_merge_commit: .mergeCommitAllowed, allow_rebase_merge: .rebaseMergeAllowed,
+              squash_merge_commit_title: .squashMergeCommitTitle, squash_merge_commit_message: .squashMergeCommitMessage}' \
+            > "$RUNNER_TEMP/pr-title-merge.json"
+          cat "$RUNNER_TEMP/pr-title-merge.json"
 
       # The title and the author reach the script through the environment,
       # never interpolated into shell -- a title is attacker-adjacent text on
@@ -310,20 +329,13 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          case "$PR_AUTHOR" in
-            catincloudlabs|*'[bot]')
-              gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits?per_page=100" \
-                --jq '.[] | {sha, parents: (.parents | length), message: .commit.message}' \
-                > "$RUNNER_TEMP/pr-title-commits.jsonl"
-              python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR" \
-                --commits "$RUNNER_TEMP/pr-title-commits.jsonl" \
-                --commits-expected "$PR_COMMITS" --head-sha "$PR_HEAD"
-              ;;
-            *)
-              echo "commits not judged: $PR_AUTHOR is an outside contributor, whose pull request is merged as a squash, so its branch's subjects do not reach main"
-              python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR"
-              ;;
-          esac
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits?per_page=100" \
+            --jq '.[] | {sha, parents: (.parents | length), message: .commit.message}' \
+            > "$RUNNER_TEMP/pr-title-commits.jsonl"
+          python scripts/check_pr_title.py --title "$PR_TITLE" --author "$PR_AUTHOR" \
+            --commits "$RUNNER_TEMP/pr-title-commits.jsonl" \
+            --commits-expected "$PR_COMMITS" --head-sha "$PR_HEAD" \
+            --merge-settings "$RUNNER_TEMP/pr-title-merge.json"
 
   # Refuses the `pull_request_target` trigger in this repository's workflows,
   # naming file and line: that trigger runs with the base repository's token
