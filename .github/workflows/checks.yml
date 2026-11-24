@@ -267,8 +267,9 @@ jobs:
   # The guard also judges each non-merge commit in the pull request: its
   # subject by the title's form rules, without the 100-character cap, and a
   # body beyond its trailers. It does so only where the repository's merge
-  # settings land those commits on `main`, whoever opened the pull request. A
-  # merge commit lands every branch commit as written; a squash titled and
+  # settings land those commits on `main`, whoever opened the pull request
+  # (a machine author is exempt inside the script, as before). A merge
+  # commit lands every branch commit as written; a squash titled and
   # bodied from the pull request, as this repository's settings read on
   # 2026-11-24, lands none, so there they are not judged and the step prints
   # that it skipped them.
@@ -282,23 +283,6 @@ jobs:
       - name: Guard fires and goes quiet
         run: python scripts/check_pr_title.py --self-test
 
-      # The title and the author reach the script through the environment,
-      # never interpolated into shell -- a title is attacker-adjacent text on
-      # a public repository.
-      #
-      # The commits are read over REST rather than `gh pr view --json
-      # commits`: the listing carries each commit's parents, which is how a
-      # merge commit is told apart and skipped, and the whole message. It lists
-      # at most 250 commits; the event's count and head are passed beside it,
-      # so a longer pull request, a listing that stopped early, or a branch
-      # that moved after the event is refused as unread rather than judged on
-      # what was seen.
-      #
-      # The listing is read once, with no retry: the shared action wraps the
-      # read in a retry helper this repository does not vendor. So a transient
-      # API error turns this advisory job red, and a re-run reads it again. It
-      # fails closed either way: an error exits non-zero, and a short read is
-      # refused.
       # Whether the commits land on `main` is read from this repository's own
       # merge settings, never written here. GraphQL, because the REST
       # repository read leaves the settings out for the run's token. The
@@ -318,6 +302,23 @@ jobs:
             > "$RUNNER_TEMP/pr-title-merge.json"
           cat "$RUNNER_TEMP/pr-title-merge.json"
 
+      # The title and the author reach the script through the environment,
+      # never interpolated into shell -- a title is attacker-adjacent text on
+      # a public repository.
+      #
+      # The commits are read over REST rather than `gh pr view --json
+      # commits`: the listing carries each commit's parents, which is how a
+      # merge commit is told apart and skipped, and the whole message. It lists
+      # at most 250 commits; the event's count and head are passed beside it,
+      # so a longer pull request, a listing that stopped early, or a branch
+      # that moved after the event is refused as unread rather than judged on
+      # what was seen.
+      #
+      # The listing is read once, with no retry: the shared action wraps the
+      # read in a retry helper this repository does not vendor. So a transient
+      # API error turns this advisory job red, and a re-run reads it again. It
+      # fails closed either way: an error exits non-zero, and a short read is
+      # refused.
       - name: Judge the title, and the commits where they land on main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
