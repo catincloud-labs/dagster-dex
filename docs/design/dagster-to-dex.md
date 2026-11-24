@@ -7,7 +7,8 @@
   `src/dagster_dex/checks.py`
 - **Reviewed:** 2026-10-30 at `c4e8231`; the asset-check section written
   2026-11-10 against `993f479`, and its executor half brought to #194 on
-  2026-11-11 against `57a08e2`
+  2026-11-11 against `57a08e2`; the passages it shared with docstrings
+  re-read and cut to citations 2026-11-24 at `8208278`
 
 This page describes how the translation works today. It decides nothing: each
 decision it touches is linked where it is made, and a change to one is made
@@ -71,7 +72,7 @@ The relation is read by key, the way Dagster's own
 imports the orchestrator; `dagster_dex.project._table_name` gives the rule,
 and `examples/reduce_asset_graph.py` holds it equal to Dagster's against real
 objects. A `relations:` project option then overrides it per model, and a name
-there the project does not build is refused (`dagster_dex.project.DagsterProject`).
+there that matches no built model is refused (`dagster_dex.project.DagsterProject`).
 
 Nothing else on a definition is read: not its code, partitions, checks or IO
 managers. Two consequences:
@@ -94,15 +95,15 @@ hand-written YAML, handed to the project as three mappings of `{key: text}`:
 | `semantic_sources` | `semantics:` | `dagster_dex.declarations.parse_semantics` | `SemanticModel`, `Metric` |
 | `source_declarations` | `sources:` | `dagster_dex.declarations.parse_source_declarations` | `ExternalSource` |
 
-The YAML is written in dbt's schema-test vocabulary (`unique`, `not_null`,
-`relationships`), and that vocabulary is an input format, not the model:
-everything lands in `src/dagster_dex/model.py` types, so changing the input
-format touches `src/dagster_dex/declarations.py` alone (its module docstring).
-No parser raises on bad input. A file that is not readable YAML becomes a
-note and is skipped; one that parses to something other than a mapping is
-skipped with no note.
+The YAML is spelled as dbt's schema tests are (`unique`, `not_null`,
+`relationships`), and everything it yields lands in `src/dagster_dex/model.py`
+types; why that spelling stops at the parser is in the
+`src/dagster_dex/declarations.py` module docstring. No parser raises on bad
+input. A file that does not parse as YAML is skipped, with a note; one that
+parses to something other than a mapping is skipped with no note.
 
-- **Keys.** Read from a directory, a key is `<directory name>/<file name>`.
+- **Keys.** Read from a directory, a key is the directory's name, a slash,
+  and the file's name.
   Two parsers use it only as a label in notes. `parse_source_declarations`
   reads the key's stem as the model doing the reading, and sets
   `ExternalSource.declared_in` only when the key names a file
@@ -115,7 +116,7 @@ skipped with no note.
   ([README, *External sources*](../../README.md#external-sources-the-edge-a-graph-cannot-see)).
 
 `declarations()` then cross-checks. A key on, a join from, or a source read by
-a model the graph does not build is kept, with a note naming the model. A
+a model missing from the graph is kept, with a note naming the model. A
 join's far side is not checked, because it may name a source (the
 `dagster_dex.model.DeclaredJoin` docstring). `freshness` is always
 `NOT_APPLICABLE`, because nothing compiled sits between the graph and the
@@ -178,7 +179,7 @@ on the layer, is in [AGENTS.md, *Sharp edges*](../../AGENTS.md#sharp-edges).
 
 `dagster_dex.dex.DexProject.notes` returns the transform notes and then the
 semantic notes in one call, and `dagster_dex.dex.transform_layer_notes` and
-`dagster_dex.dex.semantic_layer_notes` stay public for a host that wants them
+`dagster_dex.dex.semantic_layer_notes` remain public, so a host can read them
 without building a layer.
 
 ## Write-back: the one edit that can land
@@ -203,7 +204,8 @@ and [README, *The seam, in three tiers*](../../README.md#the-seam-in-three-tiers
   in the view without regard to case, under `.yml` or `.yaml`. One match is
   that file; two or more are `None`; none is `<directory>/<table>.yml` as the
   table spells it. Reconcile reads the model from the placed file's stem, so a
-  file declaring several models gets a warning and no edit.
+  file holding more than one model's declarations is warned about and not
+  edited.
 
 ```mermaid
 sequenceDiagram
@@ -240,9 +242,9 @@ sequenceDiagram
   target from disk. The reasons are in the docstrings of
   `dagster_dex.project.EditableDagsterProject.editable_view` and
   `dagster_dex.project.EditableDagsterProject.propose_edits`.
-- **All-or-nothing means "check every target, then write"**, not a
-  transaction (the `dagster_dex.project.EditableDagsterProject.propose_edits`
-  docstring).
+- **All-or-nothing is a check of every pin before any write**, and what that
+  does not promise is in the
+  `dagster_dex.project.EditableDagsterProject.propose_edits` docstring.
 - **The plan's directory wins.** `write_edits` passes dex's `project_dir` as
   `root`, so a configuration that moved under a stored plan meets a pin that
   does not hold.
@@ -255,10 +257,10 @@ empty one admitted, the parent as root) are in
 
 ## The artifact transport: the same inputs, carried as text
 
-`artifact:` is the second construction route. The side that has the graph runs
+`artifact:` is the second construction route. A process holding the graph runs
 step 1 and writes the result as JSON with `dagster_dex.artifact.dump`, which
 takes the reduced models and the declaration text as keyword arguments. The
-side that answers requests reads it with `dagster_dex.artifact.loads`, which
+process serving dex reads it with `dagster_dex.artifact.loads`, which
 returns a `dagster_dex.artifact.ProjectArtifact`, and runs steps 2 and 3
 itself.
 
@@ -281,14 +283,16 @@ flowchart LR
   docstring).
 - **What the reader checks.** `loads` requires `schema_version` to equal
   `dagster_dex.artifact.SCHEMA_VERSION`, and refuses anything it cannot read.
-  `project_from_context` refuses a missing artifact, and refuses `semantics:`,
+  `project_from_context` refuses an artifact path with no file, and `semantics:`,
   `sources:` and `name:` beside one. It admits `relations:`, which corrects
   the relations the artifact carries without writing it again.
 - **Which tier.** An artifact alone builds `DagsterProject`. A `declarations:`
-  directory beside it builds the editable pair, and the directory supersedes
-  the declaration text the artifact carries, disclosed in
+  directory beside it builds the editable pair, and the directory's
+  declarations replace the artifact's, disclosed in
   `dagster_dex.dex.EditableDexProject.notes`. Why it has to supersede is in
-  [README, *Reaching the write tier over the artifact transport*](../../README.md#reaching-the-write-tier-over-the-artifact-transport).
+  the `dagster_dex.dex._project_from_artifact` docstring, which
+  [README, *Reaching the write tier over the artifact transport*](../../README.md#reaching-the-write-tier-over-the-artifact-transport)
+  points to.
 
 When to use which route is in
 [README, *Two ways to name the project*](../../README.md#two-ways-to-name-the-project-and-the-reason-there-are-two).
@@ -322,9 +326,8 @@ flowchart LR
 
 ### Keys only
 
-Each declared key gets one check. A declared join gets none: dex-core judges
-no declared join for this project format, and a check that could only ever
-report "not measured" was declined. Each join is named instead in
+Each declared key gets one check. A declared join gets none, for the reason
+the `dagster_dex.checks` module docstring gives. Each join is named instead in
 `dagster_dex.checks.DeclarationCheckSpecs` notes (`_join_notes`, `checks.py`
 line 344), which the executor logs as a warning on every run (line 448), so a
 run's log says what goes unchecked. The ruling is
@@ -336,28 +339,23 @@ the dex-core change join checks would wait on is filed as
 
 `dagster_dex.checks.declaration_check_specs` (line 157) takes the
 declarations and the asset keys, and returns one `AssetCheckSpec` per declared
-key plus notes. It imports Dagster when it is called, the way `dex.py` imports
-dex-core, so `import dagster_dex.checks` works with neither installed.
+key plus notes. Dagster is imported only when it is called, as the module
+docstring says.
 
-- **It attaches each spec to the one asset key whose last segment is the
-  declared model**, because step 1 keeps only that segment as the model name.
-  A key on a model that no asset key ends in, or that several do, gets a note
-  and no spec, rather than being dropped or attached to a guess.
-- **The claim id is the declaration's content, hashed.**
-  `dagster_dex.checks.claim_id` (lines 122 to 133) is `sha256` over the
-  key's kind, model and columns, read as the parser reads two declarations as
-  one claim: a single column as written, a composite sorted and lowercased. So
-  two reductions of one project give one id per key, and a changed declared
-  column gives a new one. The asset key, the check name and the file a key
-  was written in are not part of it.
-- **Each spec carries the claim id, the model and the columns** in its
-  metadata, under `dagster_dex.checks.CLAIM_ID`, `dagster_dex.checks.MODEL`
-  and `dagster_dex.checks.COLUMNS`. Its name is `declared_key__` and the
-  columns; the docstring gives the suffix rule for a column a Dagster name
-  cannot hold and for two keys that would share a name.
-- **Every spec is non-blocking unless its claim id is in `blocking`** (line
-  217). A claim id there that names no rendered spec is refused (line 204),
-  since an opt-in that attached to nothing would read like one that took.
+- **Which asset a spec attaches to** is matched on the asset key's last
+  segment, the one step 1 keeps as the model name; the module docstring says
+  what happens to a key that matches no asset, or several.
+- **The claim id** is `dagster_dex.checks.claim_id` (lines 122 to 133),
+  `sha256` over the key's kind, model and columns. What it reads, and what it
+  leaves out, are in the module docstring and in `claim_id`'s own.
+- **Each spec's metadata** holds its claim id, model and columns, under
+  `dagster_dex.checks.CLAIM_ID`, `dagster_dex.checks.MODEL` and
+  `dagster_dex.checks.COLUMNS`. The check is named `declared_key__` followed
+  by the columns; the docstring gives the suffix rule for a column a Dagster
+  name cannot hold and for two keys that would share a name.
+- **`blocking`** (line 217) is the opt-in, and an id there matching none of
+  the rendered specs raises (line 204); both are in the
+  `declaration_check_specs` docstring.
 
 ### The executor
 
@@ -368,44 +366,33 @@ specs (line 459), which a run may subset. Each run:
 1. logs the spec layer's notes as warnings;
 2. opens ONE engine, `dagster_dex.dex.open_verify_engine` (`dex.py` line
    1478) unless the caller passes its own opener. The connection may be the
-   project's own (dex-core's `ConnectionSource`), but the cost ceilings stay
-   dex's, built from its own store;
-3. calls `DexEngine.verify` ONCE, for the models of the selected checks,
-   through `dagster_dex.dex.verify_declared_keys` (line 1531);
+   project's own (dex-core's `ConnectionSource`); who sets the cost ceilings
+   then is in the `open_verify_engine` docstring;
+3. calls `DexEngine.verify` ONCE, over the models the selected checks
+   name, through `dagster_dex.dex.verify_declared_keys` (line 1531);
 4. maps each result back to its claim by model, columns and source, under
    `unique_test` or `unique_test_composite` (`_KEY_SOURCES`, line 1400): a
    `grain_coverage` record (`_record_for`, line 1744) where verify's result
    carries one, and a `grain_broken` finding (`_broken`, line 1802) for a
    broken key's count and words;
-5. yields one result per selected check.
+5. yields a result for each check the run selected.
 
 What crosses back from `dex.py` is a `dagster_dex.dex.KeyVerdict` per claim
 (line 1416): plain values, so the Dagster side never handles an engine type.
 
-**From exmergo-dex-core 1.17.5, a pass is read off a record** (#194, option A
-as ruled in
+**A pass is judged on one of two paths,** chosen by whether verify's result
+carries `VerifyResult.grain_coverage` (engines from 1.17.5 do), one record per
+declared key (asked for
+in [exmergo/dex#1223](https://github.com/exmergo/dex/issues/1223); the record
+path is #194's option A, as ruled in
 [comment 6807768619](https://github.com/catincloud-labs/dagster-dex/issues/194#issuecomment-6807768619)).
-Verify's result then carries `VerifyResult.grain_coverage`, one record per
-declared key (asked for in
-[exmergo/dex#1223](https://github.com/exmergo/dex/issues/1223)), and a key is
-reported passed only on a `proven` record for it (`_judge_by_record`, line
-1709). A `broken` record is a measured failure, and every other state, no
-record, and no `grain_coverage` at all are not measured. Which path runs is
-read off the result, by whether it carries the field (line 1636), not off the
-version; `dagster_dex.dex.GRAIN_COVERAGE_FROM` (line 1379) only refuses the
-note path to an engine at or above 1.17.5 whose result lacks the field, so
-that a field renamed upstream costs every pass rather than reopening the note
-path (line 1641).
-
-**Below 1.17.5, a pass is read out of silence.** Verify then reports a broken
-key and says nothing about one that held, so a key is reported passed only
-once every route to "not judged" is ruled out (`_judge`, line 1680;
-`_skip_reason`, line 1817), one of which is a note of verify's naming the
-model. The `[dex]` range admits these engines, and its floor does not move.
-**The residue, stated plainly: on an engine below 1.17.5 the note path
-remains, and a note reworded in a patch release of such a line would read as
-a pass.** A released engine's notes do not change, so the path opens only on
-such a patch. Both paths, and the routes, are in the
+The record path is `_judge_by_record` (line 1709) and the other is `_judge`
+(line 1680) with `_skip_reason` (line 1817). The choice is read off the result
+(line 1636), not off the version; `dagster_dex.dex.GRAIN_COVERAGE_FROM` (line
+1379) refuses the second path to an engine whose result should carry the
+field and does not (line 1641). The `[dex]` range admits engines on either
+path, and its floor does not move. What each path takes as a pass, and the one
+way the older path fails open, are in the
 `dagster_dex.dex.verify_declared_keys` docstring.
 
 **What CI runs of each path.** `engine-ends` runs the record path against
@@ -421,15 +408,17 @@ add a cell pinned to 1.17.4 is the owner's to decide.
 
 Ruled on #180 in
 [comment 6715768229](https://github.com/catincloud-labs/dagster-dex/issues/180#issuecomment-6715768229),
-and held by `tests/test_executor.py`:
+and held by `tests/test_executor.py`. Each is stated, with its reason, in the
+`dagster_dex.checks` module docstring; this table says where each shows in a
+result and where the code is:
 
 | Default | How it reads in a result | Where |
 | --- | --- | --- |
-| A claim the engine did not measure never reports as passed | `passed` false, severity WARN, `dagster_dex/measured` false, and the reason under `dagster_dex/reason` and as the description | `KeyVerdict` and `_unmeasured`, `dex.py` lines 1416 to 1434 |
-| Nothing confirms a priced probe on a run's behalf | a probe the cost gate refuses or wants confirmed leaves every key in the call not measured, with the reason: dex's message for a refusal, and this package's own text for a probe returned to confirm; spending is the builder's `confirm_spend` opt-in, and dex's ceilings bind either way | `dex.py` lines 1614 to 1631 |
-| WARN by default; blocking is an opt-in per claim | ERROR only for a measured failure of a claim in `blocking`; an unmeasured blocking claim still warns, since a key nobody measured is not evidence it broke | `checks.py` line 515 |
-| Run on a schedule, not on materialization | the checks carry no automation condition; a job selecting them is the caller's to schedule | the `build_declaration_checks` docstring |
-| Metadata carries counts only, never a row value | the claim id, `measured`, the engine's version, a reason when not measured, and a duplicate count on a failure; a reason is cut where dex starts quoting the warehouse | `_result`, `checks.py` lines 498 to 523; `_carried`, `dex.py` line 1437 |
+| Unmeasured claims | `passed` false, severity WARN, `dagster_dex/measured` false, and the reason under `dagster_dex/reason` and as the description | `KeyVerdict` and `_unmeasured`, `dex.py` lines 1416 to 1434 |
+| Priced probes | every key in the call not measured, with the reason the `verify_declared_keys` docstring gives; `confirm_spend` on the builder is the opt-in | `dex.py` lines 1614 to 1631 |
+| Severity | ERROR only where a claim listed in `blocking` was measured and failed, as the `build_declaration_checks` docstring explains | `checks.py` line 515 |
+| When the checks run | no automation condition on the checks | the `build_declaration_checks` docstring |
+| Metadata | the claim id, `measured`, the engine's version, a reason when not measured, and a duplicate count on a failure; a reason is truncated before the warehouse's own text | `_result`, `checks.py` lines 498 to 523; `_carried`, `dex.py` line 1437 |
 
 The routes that leave a key not measured, each reported with its reason:
 
@@ -470,7 +459,8 @@ none of them; the version pins themselves are in
   [AGENTS.md, *Tier 3 is reached by ONE class*](../../AGENTS.md#tier-3-is-reached-by-one-class-and-the-split-is-the-design).
 - **It does not place an edit through a relation.** Placement uses the
   warehouse table's name as the file stem, and does not translate it through
-  `ProjectModel.relation`; doing so would move where a write lands.
+  `ProjectModel.relation`; the `dagster_dex.dex.EditableDexProject` docstring
+  says why.
 - **It reports no file-content drift.** `files` is empty, and the transform
   layer's note says so rather than letting two empty mappings read as no change.
 - **It does not infer sources** from dependencies, for the reason step 2 links.
