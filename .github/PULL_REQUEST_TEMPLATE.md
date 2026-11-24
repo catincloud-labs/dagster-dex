@@ -76,7 +76,7 @@ When you DO mean to close something, list the exact set in `Autoclose:` so the
 effect is stated rather than inferred.
 
 The pull request TITLE is scanned too, and there a closing verb before `#N` is
-refused outright: the title becomes the merge commit's message and holds no
+refused outright: the title becomes the squash commit's subject and holds no
 trailer, so a close you mean goes in this body.
 -->
 
