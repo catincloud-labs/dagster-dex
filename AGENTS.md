@@ -550,10 +550,11 @@ moves stand behind that rule, each paid for in this organisation:
   body explaining *why*.
 - **A title is a git artifact. PR and issue titles take the commit form:**
   `type(scope): summary` - lowercase after the colon, one clause, at most 100
-  characters, no trailing period. A PR title becomes the squash
-  commit's subject, which history cites as `#N`; the full sentence belongs in the body. Issues take the type
-  their fix would take; an issue arguing a fork rather than naming work is
-  `argument:`. Probe PRs say `probe:` - a type, not an exemption.
+  characters, no trailing period. A PR title becomes the squash commit's
+  subject, which history cites as `#N`; the full sentence belongs in the
+  body. Issues take the type their fix would take; an issue arguing a fork
+  rather than naming work is `argument:`. Probe PRs say `probe:` - a type,
+  not an exemption.
   - The estate's `pr-title` guard could not run here as a shared action (a
     public repository cannot resolve an action in a private one), so the rule
     was held by this text alone until 2026-08-27. It is now vendored the same
