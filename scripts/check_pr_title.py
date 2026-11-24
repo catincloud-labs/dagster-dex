@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Refuse a pull-request title that is not a conventional-commit line.
 
-WHY THIS EXISTS. A pull-request title is a git artifact: the estate merges with
-merge commits, so the title is what `git log` and every future `#N` citation
-resolve to. The convention (`type(scope): summary`) held unwritten across almost
+WHY THIS EXISTS. A pull-request title is a git artifact: a merge commit's
+message carries it and a squash commit's subject is it, so either way it is
+what `git log` and every future `#N` citation resolve to. The convention (`type(scope): summary`) held unwritten across almost
 every early pull request, then vanished inside one day once nothing but memory
 carried it. An unwritten convention holds exactly as long as the sessions that
 remember it, and a rule that lives only in prose is not a control; this file is
@@ -42,13 +42,31 @@ can see applied is indistinguishable from a gate that did not fire:
     The exemption is the author, never the word: the same `Bump ...` title
     without that author is refused.
 
-EACH COMMIT IN THE PULL REQUEST, given `--commits`. Where a pull request
-merges with a merge commit, every commit on its branch lands on the default
-branch with its subject as written, so the subject is a git artifact too. The
-convention for commit subjects was written down and never checked: a branch
-carrying a commit called `hotfix` passed every check. Each non-merge commit's
-subject, read as git reads it (the first paragraph, its lines joined), is
-judged by the title's form rules (1, 2 and 4 above), with two differences:
+EACH COMMIT IN THE PULL REQUEST, given `--commits`, where its commits land on
+the default branch. A merge commit lands every commit on the branch with its
+subject as written, and so does a rebase merge, so there the subject is a git
+artifact too. A squash lands one commit of its own, and where that commit's
+title is the pull request's (`PR_TITLE`) and its message is not the branch's
+messages (`COMMIT_MESSAGES`), no branch commit's subject or body reaches the
+default branch. GitHub still gathers the branch's `Co-authored-by:` trailers
+under the squash message, after a `---------` line, and no rule here judges a
+trailer.
+
+`--merge-settings` is a file holding the repository's own settings, under the
+names `GET /repos/{owner}/{repo}` gives them:`allow_merge_commit` and
+`allow_rebase_merge`, each a boolean, and `squash_merge_commit_title` and
+`squash_merge_commit_message`, each a string. The commits are not judged only
+when those settings say no branch commit lands, and the skip prints what it
+was read from. A setting absent or of another type is unread, which is also
+what a token that cannot see the settings returns; the commits are then judged
+as if they land, and that prints too. Without `--merge-settings` they are
+judged.
+
+The convention for commit subjects was written down and never checked: a
+branch carrying a commit called `hotfix` passed every check. Each judged
+non-merge commit's subject, read as git reads it (the first paragraph, its
+lines joined), is judged by the title's form rules (1, 2 and 4 above), with
+two differences:
 
   * No length cap. Rule 3 was calibrated on titles; no rule caps a subject,
     and the default branch's subjects run past it routinely.
@@ -100,6 +118,7 @@ this guard binds the surface CI can reach.
     python3 check_pr_title.py --title "docs: the title under judgement"
     python3 check_pr_title.py --title "..." --author "dependabot[bot]"
     python3 check_pr_title.py --title "..." --commits commits.jsonl --commits-expected 3 --head-sha <sha>
+    python3 check_pr_title.py --title "..." --commits commits.jsonl --merge-settings settings.json
     (the action passes the title through the environment, never interpolated
     into shell -- a title is attacker-adjacent text on a public repo)
 """
@@ -108,6 +127,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -319,15 +339,59 @@ def judge_listing(text: str, expected: int | None, head: str = "") -> list[str]:
         return [f"the commits file could not be read, so no commit was judged: {error}"]
 
 
-def judge_pr(title: str | None, author: str, text: str | None, expected: int | None, head: str) -> list[str]:
-    """What main() runs: the title when given, then the commits when given,
-    the machine-author exemption covering both."""
+#: The settings that decide whether a branch's commits land, each with its type.
+LANDING_SETTINGS = (
+    ("allow_merge_commit", bool),
+    ("allow_rebase_merge", bool),
+    ("squash_merge_commit_title", str),
+    ("squash_merge_commit_message", str),
+)
+
+UNREAD = "the merge method is unread"
+
+
+def commits_land(settings: object) -> tuple[bool, str]:
+    """Whether the pull request's commits land on the default branch, and what
+    that was read from. Unread settings land: judging is the stricter answer."""
+    shown = settings if isinstance(settings, dict) else {}
+    unread = [name for name, kind in LANDING_SETTINGS if type(shown.get(name)) is not kind]
+    if unread:
+        return True, (f"{UNREAD} ({', '.join(unread)} not seen, as a token that cannot see "
+                      "the settings returns), so the commits are judged as if they land.")
+    if shown["allow_merge_commit"]:
+        return True, "this repository allows a merge commit (allow_merge_commit), which lands every branch commit."
+    if shown["allow_rebase_merge"]:
+        return True, "this repository allows a rebase merge (allow_rebase_merge), which lands every branch commit."
+    if shown["squash_merge_commit_title"] != "PR_TITLE":
+        return True, (f"a squash here is titled {shown['squash_merge_commit_title']} (squash_merge_commit_title), "
+                      "which takes a lone commit's subject.")
+    if shown["squash_merge_commit_message"] == "COMMIT_MESSAGES":
+        return True, ("a squash's message here is COMMIT_MESSAGES (squash_merge_commit_message), "
+                      "which carries every branch commit's message.")
+    return False, (f"this repository squashes: merge commits and rebase merges are off, and a squash takes the "
+                   f"pull request's title (PR_TITLE) and {shown['squash_merge_commit_message']} as its message, "
+                   "so no branch commit's subject or body reaches the default branch.")
+
+
+def judge_pr(title: str | None, author: str, text: str | None, expected: int | None, head: str,
+             settings: object = None) -> list[str]:
+    """What main() runs: the title when given, then the commits when given and
+    where they land, the machine-author exemption covering both."""
     problems = [] if title is None else judge(title, author)
     if text is None:
         return problems
     if author in EXEMPT_AUTHORS:
         print(f"exempt: the commits of a pull request by '{author}' are not judged either.")
         return problems
+    if settings is None:
+        print("commits: judged; no --merge-settings was given.")
+        return problems + judge_listing(text, expected, head)
+    lands, reason = commits_land(settings)
+    if not lands:
+        print(f"commits: not judged; {reason}")
+        return problems
+    loud = reason.startswith(UNREAD) and os.environ.get("GITHUB_ACTIONS") == "true"
+    print(f"{'::warning::' if loud else ''}commits: judged; {reason}")
     return problems + judge_listing(text, expected, head)
 
 
@@ -353,6 +417,7 @@ def main() -> int:
     parser.add_argument("--commits", help="a file of the pull request's commits, one JSON object per line")
     parser.add_argument("--commits-expected", type=int, help="how many commits the pull request carries")
     parser.add_argument("--head-sha", default="", help="the head commit the run is for; the listing must hold it")
+    parser.add_argument("--merge-settings", help="a file of the repository's merge settings, under their REST names")
     parser.add_argument("--git-range", help="judge the commits `git log` names instead, e.g. origin/main..HEAD")
     parser.add_argument("--self-test", action="store_true", help="prove the guard fires and goes quiet")
     args = parser.parse_args()
@@ -368,7 +433,11 @@ def main() -> int:
     elif args.commits is not None:
         with open(args.commits, encoding="utf-8") as handle:
             text = handle.read()
-    problems = judge_pr(args.title, args.author, text, args.commits_expected, args.head_sha)
+    settings = None
+    if args.merge_settings is not None:
+        with open(args.merge_settings, encoding="utf-8") as handle:
+            settings = json.loads(handle.read() or "{}")
+    problems = judge_pr(args.title, args.author, text, args.commits_expected, args.head_sha, settings)
     shown = args.title if args.title is not None else args.git_range or args.commits
     sys.stdout.flush()
     if not problems:
@@ -417,13 +486,14 @@ def self_test() -> int:
         verdict_wrong(repr(title), judge(title, author), must_name)
         for title, author, must_name in [(t, a, "") for t, a in passes] + refusals
     )
-    failed += commit_cases() + pr_cases() + cli_cases()
+    failed += commit_cases() + pr_cases() + landing_cases() + cli_cases()
     cases = (len(passes) + len(refusals) + len(COMMIT_PASSES) + len(COMMIT_REFUSALS) + len(LISTINGS)
-             + len(PR_CASES) + len(CLI_CASES) + 1)
+             + len(PR_CASES) + len(LANDINGS) + len(CLI_CASES) + 1)
     if failed:
         print(f"self-test: {failed} of {cases} case(s) FAILED")
         return 1
-    print(f"self-test OK: {cases} cases, titles, commits, listings and the command line, every refusal naming its cause")
+    print(f"self-test OK: {cases} cases, titles, commits, listings, merge methods and the command line, "
+          "every refusal naming its cause")
     return 0
 
 
@@ -507,6 +577,31 @@ def commit_cases() -> int:
     return failed
 
 
+#: A repository that squashes with the pull request's title and body: no branch commit lands.
+SQUASH = {"allow_merge_commit": False, "allow_rebase_merge": False,
+          "squash_merge_commit_title": "PR_TITLE", "squash_merge_commit_message": "PR_BODY"}
+
+#: (settings, whether the commits land, a word the reason must NAME): one per clause of commits_land().
+LANDINGS = [
+    (SQUASH, False, "squashes"),
+    (dict(SQUASH, allow_merge_commit=True), True, "allow_merge_commit"),
+    (dict(SQUASH, allow_rebase_merge=True), True, "allow_rebase_merge"),
+    (dict(SQUASH, squash_merge_commit_title="COMMIT_OR_PR_TITLE"), True, "squash_merge_commit_title"),
+    (dict(SQUASH, squash_merge_commit_message="COMMIT_MESSAGES"), True, "squash_merge_commit_message"),
+    (dict(SQUASH, allow_merge_commit=None), True, "unread"),                   # what a blind token returns
+]
+
+
+def landing_cases() -> int:
+    failed = 0
+    for settings, lands, name in LANDINGS:
+        verdict, reason = commits_land(settings)
+        if verdict != lands or name not in reason:
+            print(f"SELF-TEST FAIL: {settings} landed {verdict}, not {lands}, or named no '{name}': {reason}")
+            failed += 1
+    return failed
+
+
 def pr_cases() -> int:
     return sum(
         verdict_wrong(f"pull request by {author!r}", judge_pr(title, author, text, None, ""), name)
@@ -515,8 +610,9 @@ def pr_cases() -> int:
 
 
 #: (arguments after the commits file, the listing, exit status, a word stderr must NAME):
-#: main()'s own wiring, run as a process.
+#: main()'s own wiring, run as a process. `SETTINGS` stands for a file holding SQUASH.
 CLI_CASES = [
+    (["--title", "feat: x", "--merge-settings", "SETTINGS"], listing(HOTFIX), 0, ""),  # a squash lands no commit
     (["--title", "feat: x", "--commits-expected", "2"], listing(GOOD), 1, "read 1"),
     (["--title", "feat: x", "--head-sha", "f" * 40], listing(GOOD), 1, "does not hold the head"),
     (["--title", "feat: x", "--author", "dependabot[bot]"], listing(HOTFIX), 0, ""),
@@ -529,8 +625,11 @@ def cli_cases() -> int:
     failed = 0
     with tempfile.TemporaryDirectory() as tmp:
         path = pathlib.Path(tmp, "commits.jsonl")
+        settings = pathlib.Path(tmp, "settings.json")
+        settings.write_text(json.dumps(SQUASH), encoding="utf-8", newline="\n")
         for extra, text, status, name in CLI_CASES:
             path.write_text(text, encoding="utf-8", newline="\n")
+            extra = [str(settings) if arg == "SETTINGS" else arg for arg in extra]
             run = subprocess.run([sys.executable, __file__, "--commits", str(path), *extra],
                                  capture_output=True, text=True, encoding="utf-8")
             if run.returncode != status or name not in run.stderr:
