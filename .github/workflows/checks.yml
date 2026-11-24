@@ -138,7 +138,7 @@ jobs:
           python scripts/check_closing_keywords.py "$RUNNER_TEMP/pr-body.md"
 
       # The title is the one text that reaches `main` unscanned by the steps
-      # around it: a merge commit's message is the pull request's title, and
+      # around it: a squash commit's subject is the pull request's title, and
       # a title holds no `Autoclose:` trailer, so a closing verb before `#N`
       # there is refused outright. The body's trailer does not answer it: the
       # reconcile below reads the body alone.

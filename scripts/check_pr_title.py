@@ -3,11 +3,12 @@
 
 WHY THIS EXISTS. A pull-request title is a git artifact: a merge commit's
 message carries it and a squash commit's subject is it, so either way it is
-what `git log` and every future `#N` citation resolve to. The convention (`type(scope): summary`) held unwritten across almost
-every early pull request, then vanished inside one day once nothing but memory
-carried it. An unwritten convention holds exactly as long as the sessions that
-remember it, and a rule that lives only in prose is not a control; this file is
-the control.
+what `git log` and every future `#N` citation resolve to. The convention
+(`type(scope): summary`) held unwritten across almost every early pull
+request, then vanished inside one day once nothing but memory carried it. An
+unwritten convention holds exactly as long as the sessions that remember it,
+and a rule that lives only in prose is not a control; this file is the
+control.
 
 WHAT IT ASSERTS, each rule calibrated against the estate's pre-guard title
 corpus so history's legitimate shapes stay legal. The corpus -- its dates, its
@@ -53,11 +54,13 @@ under the squash message, after a `---------` line, and no rule here judges a
 trailer.
 
 `--merge-settings` is a file holding the repository's own settings, under the
-names `GET /repos/{owner}/{repo}` gives them:`allow_merge_commit` and
+names `GET /repos/{owner}/{repo}` gives them: `allow_merge_commit` and
 `allow_rebase_merge`, each a boolean, and `squash_merge_commit_title` and
-`squash_merge_commit_message`, each a string. The commits are not judged only
+`squash_merge_commit_message`, each a string. The commits are skipped only
 when those settings say no branch commit lands, and the skip prints what it
-was read from. A setting absent or of another type is unread, which is also
+was read from. The settings give a merge's default text: a merge whose message
+is edited by hand lands what was typed, and settings changed after a run leave
+that run's verdict on the old ones. A setting absent or of another type is unread, which is also
 what a token that cannot see the settings returns; the commits are then judged
 as if they land, and that prints too. Without `--merge-settings` they are
 judged.
