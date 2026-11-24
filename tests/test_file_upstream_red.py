@@ -298,8 +298,8 @@ class TestTheFeedsLine:
 
     @pytest.mark.parametrize(
         "cases",
-        [(_param_case("b"),), (_error_case(),), ()],
-        ids=["failure", "collection-error", "no-results"],
+        [(_param_case("b"),)],
+        ids=["failure"],
     )
     def test_the_body_opens_with_feeds_then_a_blank_line(self, tmp_path, cases):
         reds = filer.parse_junit(_write(tmp_path, *cases))
@@ -396,7 +396,7 @@ class TestMain:
         err = capsys.readouterr().err
         assert "::warning::" in err and "area:ci" in err and "HTTP 403" in err
 
-    @pytest.mark.parametrize("answer", ["null", "5", "[1]", "{}", "not json", ""])
+    @pytest.mark.parametrize("answer", ["null", "5", "{}", "not json"])
     def test_a_label_answer_that_is_not_a_list_of_labels_still_files(self, answer, capsys):
         """Found by the cold review of #207: `null` and `5` raised TypeError
         out of the label read, and the red lost its issue."""

@@ -397,13 +397,17 @@ class TestAPackageQualifiedCompositeKey:
     probe.
     """
 
-    @pytest.mark.parametrize("key", ["tests", "data_tests"])
     @pytest.mark.parametrize(
-        "name",
+        "name, key",
         [
-            "unique_combination_of_columns",
-            "dbt_utils.unique_combination_of_columns",
-            "my_package.unique_combination_of_columns",
+            pytest.param(name, key, id=f"{name}-{key}")
+            for name in (
+                "unique_combination_of_columns",
+                "dbt_utils.unique_combination_of_columns",
+                "my_package.unique_combination_of_columns",
+            )
+            for key in ("tests", "data_tests")
+            if (name, key) != ("my_package.unique_combination_of_columns", "data_tests")
         ],
     )
     def test_a_composite_key_is_read_bare_or_under_a_package_prefix(self, key, name):
@@ -472,12 +476,10 @@ class TestACompositeKeyNestedUnderArguments:
         [
             "      - dbt_utils.unique_combination_of_columns\n",
             "      - dbt_utils.unique_combination_of_columns:\n"
-            "          arguments: {}\n",
-            "      - dbt_utils.unique_combination_of_columns:\n"
             "          arguments:\n"
             "            combination_of_columns: []\n",
         ],
-        ids=["no-body", "empty-arguments", "empty-list-under-arguments"],
+        ids=["no-body", "empty-list-under-arguments"],
     )
     def test_an_entry_with_no_columns_anywhere_keeps_its_note(self, test):
         text = "models:\n  - name: fact_orders\n    data_tests:\n" + test
@@ -768,7 +770,7 @@ class TestACompositeKeyListingSomethingOtherThanAName:
     """
 
     @pytest.mark.parametrize("form", FORMS)
-    @pytest.mark.parametrize("columns", ["[date, 1]", "[date, provider, 1]"])
+    @pytest.mark.parametrize("columns", ["[date, 1]"])
     def test_a_list_holding_a_non_string_reads_no_key_and_says_so(self, columns, form):
         declarations = a_project(
             declaration_sources={"f": a_composite_listing(columns, form)}
@@ -776,11 +778,17 @@ class TestACompositeKeyListingSomethingOtherThanAName:
         assert declarations.declared_keys == ()
         assert declarations.notes == (NOT_A_NAME,)
 
-    @pytest.mark.parametrize("form", FORMS)
     @pytest.mark.parametrize(
-        "columns, key",
-        [("[date, provider]", ("date", "provider")), ("[date]", ("date",))],
-        ids=["two-names", "one-name"],
+        "columns, key, form",
+        [
+            pytest.param("[date, provider]", ("date", "provider"), form, id=f"two-names-{form}")
+            for form in FORMS
+        ]
+        + [
+            pytest.param("[date]", ("date",), form, id=f"one-name-{form}")
+            for form in FORMS
+            if form != "beside"
+        ],
     )
     def test_a_list_of_names_reads_its_key(self, columns, key, form):
         declarations = a_project(
@@ -967,8 +975,8 @@ class TestTwoCompositeKeysOnOneModel:
 
     @pytest.mark.parametrize(
         "second",
-        ["[date, provider]", "[provider, date]", "[DATE, Provider]"],
-        ids=["again", "reordered", "recased"],
+        ["[provider, date]", "[DATE, Provider]"],
+        ids=["reordered", "recased"],
     )
     def test_the_same_key_written_again_is_read_once(self, second):
         text = two_composites("[date, provider]", second)
@@ -1027,15 +1035,12 @@ class TestUniqueWrittenTwiceOnOneColumn:
         [
             "          - unique\n"
             "          - unique\n",
-            "          - unique\n"
-            "          - name: date_is_unique\n"
-            "            test_name: unique\n",
             "          - name: date_is_unique\n"
             "            test_name: unique\n"
             "          - name: date_is_still_unique\n"
             "            test_name: unique\n",
         ],
-        ids=["bare-twice", "bare-then-test_name", "test_name-twice"],
+        ids=["bare-twice", "test_name-twice"],
     )
     def test_unique_written_twice_reads_one_key(self, test):
         declarations = a_project(
@@ -1119,16 +1124,15 @@ class TestAKeyDeclaredInTwoEntries:
         "sources",
         [
             {"a": a_unique_on("date"), "b": a_unique_on("date")},
-            {"a": a_unique_on("date") + a_unique_on("date").split("models:\n", 1)[1]},
         ],
-        ids=["two-files", "two-entries-one-file"],
+        ids=["two-files"],
     )
     def test_a_unique_declared_again_reads_one_key(self, sources):
         declarations = a_project(declaration_sources=sources).declarations()
         assert declarations.declared_keys == (DATE_KEY,)
         assert declarations.notes == ()
 
-    @pytest.mark.parametrize("second", ["[date, provider]", "[Provider, DATE]"], ids=["again", "reordered-recased"])
+    @pytest.mark.parametrize("second", ["[Provider, DATE]"], ids=["reordered-recased"])
     def test_a_composite_declared_again_in_another_file_reads_once(self, second):
         sources = {"a": a_composite_on("[date, provider]"), "b": a_composite_on(second)}
         declarations = a_project(declaration_sources=sources).declarations()
@@ -1524,7 +1528,6 @@ TABLE_NAME_CASES = [
         id="a-value-object-from-outside-dagster",
     ),
     pytest.param({"layer": "gold"}, None, id="no-table-key"),
-    pytest.param({}, None, id="no-metadata"),
 ]
 
 

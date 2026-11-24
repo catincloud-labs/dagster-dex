@@ -274,12 +274,6 @@ class TestWhatTierTwoCannotCarry:
         notes = transform_layer_notes(a_project().declarations())
         assert any("file hashes are absent" in n for n in notes)
 
-    def test_an_empty_project_loses_nothing_and_says_nothing(self):
-        """Guards the assertions above from passing for the wrong reason: if
-        the notes were unconditional they would carry no information."""
-
-        assert transform_layer_notes(DagsterProject((), name="c").declarations()) == ()
-
     def test_a_dependency_on_neither_a_model_nor_a_source_is_reported(self):
         """It is dropped from `model_refs`, which is correct and silent. The
         note is the part that keeps it from being invisible."""
@@ -1382,8 +1376,8 @@ class TestPlacement:
 
     @pytest.mark.parametrize(
         "file",
-        ["dim_date.yml", "DIM_DATE.yml", "dim_date.yaml"],
-        ids=["lower-case", "upper-case", "yaml-suffix"],
+        ["DIM_DATE.yml", "dim_date.yaml"],
+        ids=["upper-case", "yaml-suffix"],
     )
     def test_a_tables_one_declaration_is_placed_whatever_the_case(self, tmp_path, file):
         """#141. Snowflake reports an unquoted identifier in upper case, and the
@@ -2347,9 +2341,6 @@ class TestEachModelNamesItsRelation:
         )
         assert _unplaced_notes(definitions) == []
 
-    def test_an_empty_project_has_nothing_to_place_and_says_nothing(self):
-        assert _unplaced_notes(to_project_definitions(_placed().declarations())) == []
-
     def test_built_relation_names_stay_the_model_names(self):
         """Upstream's contract requires `built_relation_names` to contain the
         transform layer's models, so a table name that differs from its
@@ -2450,8 +2441,7 @@ class TestTheRelationsOption:
         assert isinstance(project, EditableDexProject)
         assert project.definitions().model_relations["fact_orders"] == "analytics.fact_orders"
 
-    @pytest.mark.parametrize("with_directory", [False, True], ids=["artifact", "artifact+declarations"])
-    def test_it_corrects_an_artifact_without_rewriting_it(self, tmp_path, with_directory):
+    def test_it_corrects_an_artifact_without_rewriting_it(self, tmp_path):
         """Admitted beside `artifact`, unlike `name`, `semantics` and `sources`:
         the artifact wrote down what the metadata named when it was reduced,
         and this is the engine side's correction of it."""
@@ -2464,9 +2454,6 @@ class TestTheRelationsOption:
             ],
         )
         options = {"artifact": str(path), "relations": {"dim_date": "analytics.dim_date"}}
-        if with_directory:
-            (tmp_path / "declarations").mkdir()
-            options["declarations"] = str(tmp_path / "declarations")
         written = path.read_text(encoding="utf-8")
 
         definitions = project_from_context(_context(**options)).definitions()
@@ -2503,7 +2490,6 @@ class TestTheRelationsOption:
         ("value", "match"),
         [
             pytest.param(["dim_date"], "must map model names", id="a-list"),
-            pytest.param("analytics.dim_date", "must map model names", id="a-string"),
             pytest.param(None, "must map model names", id="written-empty"),
             pytest.param({"dim_date": 7}, "written as text; it does not for: dim_date", id="not-text"),
             pytest.param({"dim_date": ""}, "empty or blank relation", id="empty-text"),

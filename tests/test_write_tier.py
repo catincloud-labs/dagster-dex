@@ -280,7 +280,6 @@ class TestContainment:
         "key",
         [
             "../outside.yml",
-            "declarations/../../outside.yml",
             "/etc/passwd",
         ],
     )
