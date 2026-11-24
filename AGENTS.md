@@ -866,6 +866,135 @@ it.
   merge, a scheduled task). Do not retry it in another form: hand the owner the
   exact command, one per block, and read the result back after it runs.
 
+## Tests merged to main
+
+This section is kept byte-identical in every repository that carries it.
+
+A test case stays merged on `main` only when it is one of four kinds. Every
+other case is an edge case: it is run on its branch and recorded there, and it
+is not merged. Whether a kind applies is read. Whether another kept case
+already covers a case is decided by planted defects, never by reading. A
+control's arms and a contract's stated refusals are counted by clause.
+
+- **The kinds kept.** Every kind that applies is recorded; only the verdict
+  decides keeping.
+  - A **contract**: an interface something else calls, including data
+    contracts and a case asserting that two tracked files agree. *Something
+    else* is another repository, an outside tool or service the tree calls or
+    parses, an operator's command, configuration another repository writes, or
+    a tracked document that relies on it. An interface nothing calls is not a
+    contract.
+  - **Governance**: who may act, spend, approve or provision, and whether an
+    act happens: a dry run, a confirmation or an acknowledgement that withholds
+    a write, a spend or a provision.
+  - **Provenance**: where something came from.
+  - **Calibration**: a control's own arms, shown to fire on a planted defect
+    and to stay quiet on a clean case.
+- **A case that runs no code of the tree,** only a dependency's or an outside
+  tool's own behaviour, is governed by this bullet and not by *something else*
+  above. It is a contract only where one of these, other than the test, names
+  or carries the reliance: the code that branches on the behaviour, the
+  repository's contract document, or the repository's agent rules. One case is
+  kept per relied-on behaviour. A case pinning a known defect stays while a
+  tracked document other than the test states the measured shape.
+- **A check of the test's own helper, fake, fixture or harness** stays only
+  where the kept case it serves would pass vacuously without it, and it follows
+  that case. A test comparing its own constants or fixtures is not a case
+  asserting that two tracked files agree.
+- **Counted by clause.** A clause is cut as the governing text cuts it: one
+  condition the text states is one clause, such as one side of a range, one
+  forbidden character class, one spelling an outside grammar honours. A case
+  fires a clause when its input meets that clause's condition. Keep one firing
+  case per clause, and one quiet case per place the rule is enforced. The
+  place is where the code enforcing the rule lives; a second call site of that
+  code is not a second place.
+  - One case may fill several clauses' slots, or a place's one quiet case,
+    when a planted deletion of each clause's branch turns it red. Where
+    clauses share one branch, each clause still keeps a case that fires it.
+  - A case exactly at a bound stays only when a named dependent relies on the
+    bound being inclusive.
+  - An empty-input case stays only for a control that must fire on an empty
+    set. A case asserting that empty input passes by design is a quiet case.
+  - A further case stays only when it reaches a different code path, a branch
+    whose deletion, or another plant that counts under *Plants decide
+    coverage*, no other kept case would notice, or when it holds a type a
+    contracted schema in the tree declares.
+  - Plants compare a clause's firing cases only within that clause: a clause
+    keeps a case that fires it even when the plant that turns that case red
+    also turns another clause's case red.
+  - An arm recorded once against a planted defect, written down where it ran,
+    needs no case on `main`.
+- **Plants decide coverage.** Whether another kept case notices a case, and
+  which cases for a clause or a place are equal, are decided by running
+  plants, not by reading. This applies only to a case of a kind kept; a case
+  of none is an edge case without plants. A clause's only firing case and a
+  place's only quiet case raise neither question, and are sorted by reading.
+  Where a clause has more than one firing case, or a place more than one
+  quiet case, a reader without plant results marks each of them *plant-owed*
+  and does not sort it. The rest of this bullet is applied only by a sort
+  that holds plant results.
+  - The plants are one deletion per branch of the code that enforces the
+    clause, and a flip of the clause's own value where the clause is a value.
+    A case reached only by a branch no plant covered stays.
+  - A plant counts when it is a deletion, a flip of the clause's own value, or
+    a defect the governing text or a record names: the clause's own named
+    failure, such as an inclusive bound made exclusive, or a defect that
+    reached `main`, cited where it was found. No other plant counts. A case
+    that only a plant that does not count separates is undecidable, and it
+    stays.
+  - A plant that stops at its time cap is not noticed by any case: it cannot
+    move a case, and the cases it touched stay.
+  - A deterministic crash counts as noticed: a run of the kept cases that goes
+    red by a crash has noticed the deletion.
+- **A refusal a contract states** keeps one firing case per stated clause,
+  when removing its enforcement changes what a caller sees. Stating the limit
+  in a document is not enough. A stated status that no reachable path raises
+  is an edge case until a path reaches it.
+- **A caller includes a named reader of the output:** an alert rule, a runbook
+  query, a readout, a sensor, or a document that relies on it. A CI check is
+  a named reader only when it reads the output in the same pipeline, with no
+  person in between; an output a person pastes into a document is read
+  through the document, not by the check that reads the document. Where none
+  is named, a reader is warranted by default only when the output is the only
+  production evidence of a governance refusal, a provenance record or spend.
+  *Spend* is money a call bills: a line reporting API points or quota is not,
+  for that reason, production evidence of spend. The owner can override that
+  default for a kind of output. Where a warranted reader is missing, the case
+  is kept and the reader is owed; in a sweep, it is added in that repository's
+  sweep pull request. Where none is warranted, the case is an edge case.
+  This is judged once per kind of output, by event or field name, not per
+  case.
+- **A regression case** stays only when its defect reached `main`, meaning a
+  commit on `main` held it, and the case protects one of the four kinds. It
+  cites where the defect was found. A case labelled a regression that cites no
+  commit is sorted like any other case. A regression label never removes a
+  case that is a clause's firing case.
+- **The unit** is the case as its runner reports it: a pytest node id with its
+  parameter id, a terraform `run` block, a dbt test, or one `expect(` or
+  `check(` call. The rule binds any file or `--self-test` mode whose job is to
+  run cases against the tree, wherever it sits. *Not merged* means the tree. A
+  check that asks one question for a person is a reading, not a test, and is
+  removed once answered. A fixture follows its cases, and one that no kept
+  case uses is removed in the same change.
+- **Which case represents a group.** Plants decide which cases are equal.
+  Among unequal cases for one clause, the one whose planted deletions cover
+  the most of the clause's branches stays. Among equal ones, the author of the
+  change chooses the one another document cites by name, otherwise the one in
+  the defect's shape, otherwise the first in the file, and review checks the
+  count, not that choice.
+- **Where cases run.** Kept cases run in CI on every pull request. Edge cases
+  run on the branch. A control's arm may instead be run once against a planted
+  defect and recorded where it ran. Nothing is assigned to a continuous place
+  yet.
+- **An edge case is recorded** by committing it on the branch and removing it
+  by a later commit before the merge. The pull request body names the commit
+  that held it, the command, and the outcome at that commit, so anyone can
+  re-run it with `git show <commit>:<path>`.
+- **The words.** A *control* is a check shown to fire on a planted defect and to
+  stay quiet on a clean case. A *guard* is a control that refuses.
+  *Validation* is a check run against the running estate.
+- **What checks this is review,** until ruled otherwise.
+
 ## Conventions
 
 - Line endings are LF everywhere, enforced by `.gitattributes`.
