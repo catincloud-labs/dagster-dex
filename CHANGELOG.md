@@ -2003,6 +2003,54 @@ contract holds: the outcome assertion fails on ``written`` before it reads
 same two tests.
 ```
 
+### `AGENTS.md`, *Change workflow*, the title bullet and the closing-verb bullet
+
+Read dead on 2026-11-24, against `main` at `30bfe92` and this repository's
+merge settings, read with `gh api repos/catincloud-labs/dagster-dex`:
+`allow_merge_commit` is false, `squash_merge_commit_title` is `PR_TITLE` and
+`squash_merge_commit_message` is `PR_BODY`. Every pull request merges as a
+squash, whose subject is the title with `(#N)` appended and whose message
+continues with the pull request body, so no merge commit carries a title.
+That the title holds no trailer, and that a close you mean goes in the body,
+still holds. The title bullet's third sentence entered with `4968322`
+(2026-08-23) and read:
+
+```markdown
+A PR title becomes the merge commit history
+cites as `#N`; the full sentence belongs in the body.
+```
+
+The closing-verb bullet's third sentence entered with `1e2087f` (2026-11-13)
+and read:
+
+```markdown
+**In a PR title, never, even when you mean it:** a
+title becomes the merge commit's message and holds no `Autoclose:` trailer, so
+a close you mean goes in the body with its trailer.
+```
+
+### `CONTRIBUTING.md`, *Opening a pull request*, the sentence on the title scan
+
+Read dead on 2026-11-24, against the same commit and settings, for the same
+reason. It entered with `1e2087f` (2026-11-13) and read:
+
+```markdown
+CI also scans the PR title, which the hook never
+sees, and refuses a closing verb before `#N` there even with a trailer: the
+title becomes the merge commit's message and holds no trailer.
+```
+
+### `.github/PULL_REQUEST_TEMPLATE.md`, *Issue references*, the comment's last paragraph
+
+Read dead on 2026-11-24, against the same commit and settings, for the same
+reason. It entered with `1e2087f` (2026-11-13) and read:
+
+```markdown
+The pull request TITLE is scanned too, and there a closing verb before `#N` is
+refused outright: the title becomes the merge commit's message and holds no
+trailer, so a close you mean goes in this body.
+```
+
 ## Why this file names no engine version
 
 `tests/test_pin_coherence.py` holds every `exmergo-dex-core==` pin in this
