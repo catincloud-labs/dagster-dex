@@ -2441,7 +2441,8 @@ class TestTheRelationsOption:
         assert isinstance(project, EditableDexProject)
         assert project.definitions().model_relations["fact_orders"] == "analytics.fact_orders"
 
-    def test_it_corrects_an_artifact_without_rewriting_it(self, tmp_path):
+    @pytest.mark.parametrize("with_directory", [False, True], ids=["artifact", "artifact+declarations"])
+    def test_it_corrects_an_artifact_without_rewriting_it(self, tmp_path, with_directory):
         """Admitted beside `artifact`, unlike `name`, `semantics` and `sources`:
         the artifact wrote down what the metadata named when it was reduced,
         and this is the engine side's correction of it."""
@@ -2454,6 +2455,9 @@ class TestTheRelationsOption:
             ],
         )
         options = {"artifact": str(path), "relations": {"dim_date": "analytics.dim_date"}}
+        if with_directory:
+            (tmp_path / "declarations").mkdir()
+            options["declarations"] = str(tmp_path / "declarations")
         written = path.read_text(encoding="utf-8")
 
         definitions = project_from_context(_context(**options)).definitions()

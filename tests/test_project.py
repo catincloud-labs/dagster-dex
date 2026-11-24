@@ -759,9 +759,9 @@ class TestACompositeKeyListingSomethingOtherThanAName:
     exmergo-dex-core's schema-YAML reader reads a composite only from a list of
     two or more columns that are all strings (`_declared_from_yaml` in
     `exmergo_dex_core/dbt_project.py`, read in 1.15.2), so it reads no key from
-    either list, in any form. The owner ruled this aligned here, with a note.
+    such a list, in any form. The owner ruled this aligned here, with a note.
 
-    Each list is read in all three forms. The form beside the test's name read
+    `[date, 1]` is read in all three forms. The form beside the test's name read
     the same way in 0.6.4, and the other two are the forms 0.6.5 added, so all
     three go red. The lists of names are the controls, on the same builder:
     `[date, provider]` reads the composite, and `[date]` keeps its key on
@@ -778,17 +778,11 @@ class TestACompositeKeyListingSomethingOtherThanAName:
         assert declarations.declared_keys == ()
         assert declarations.notes == (NOT_A_NAME,)
 
+    @pytest.mark.parametrize("form", FORMS)
     @pytest.mark.parametrize(
-        "columns, key, form",
-        [
-            pytest.param("[date, provider]", ("date", "provider"), form, id=f"two-names-{form}")
-            for form in FORMS
-        ]
-        + [
-            pytest.param("[date]", ("date",), form, id=f"one-name-{form}")
-            for form in FORMS
-            if form != "beside"
-        ],
+        "columns, key",
+        [("[date, provider]", ("date", "provider")), ("[date]", ("date",))],
+        ids=["two-names", "one-name"],
     )
     def test_a_list_of_names_reads_its_key(self, columns, key, form):
         declarations = a_project(
@@ -1115,7 +1109,8 @@ class TestAKeyDeclaredInTwoEntries:
     1.15.2). #131 words (f)'s alignment as one key per model and columns. So a
     key written again in another file, or in a second entry for the model in
     the same file, reads once here too, where it read once per entry (cold
-    review of #138, finding 1).
+    review of #138, finding 1). The rows hold the across-files shape; the
+    one-file shape reaches the same code and keeps no row of its own.
 
     Keys that differ are the control: both are read, across files as in one.
     """
