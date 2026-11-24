@@ -110,7 +110,7 @@ re-vendor is a defect at the source, and that test is the first to see it.
   CI checks the same thing over the PR body and every commit, so forgetting the
   hook is caught, just later. CI also scans the PR title, which the hook never
   sees, and refuses a closing verb before `#N` there even with a trailer: the
-  title becomes the merge commit's message and holds no trailer.
+  title becomes the squash commit's subject and holds no trailer.
 - **From a fork, what happens next depends on whether you hold write access
   here.** Either way, `pr-hygiene`'s step `Exactly one deploy label` refuses a
   pull request carrying no `deploy:` label, and a label change re-runs the step

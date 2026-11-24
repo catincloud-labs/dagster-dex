@@ -550,8 +550,8 @@ moves stand behind that rule, each paid for in this organisation:
   body explaining *why*.
 - **A title is a git artifact. PR and issue titles take the commit form:**
   `type(scope): summary` - lowercase after the colon, one clause, at most 100
-  characters, no trailing period. A PR title becomes the merge commit history
-  cites as `#N`; the full sentence belongs in the body. Issues take the type
+  characters, no trailing period. A PR title becomes the squash
+  commit's subject, which history cites as `#N`; the full sentence belongs in the body. Issues take the type
   their fix would take; an issue arguing a fork rather than naming work is
   `argument:`. Probe PRs say `probe:` - a type, not an exemption.
   - The estate's `pr-title` guard could not run here as a shared action (a
@@ -607,7 +607,7 @@ moves stand behind that rule, each paid for in this organisation:
   commit message or PR body unless you mean it - including inside backticks, and
   including in a sentence warning against it. Only *adjacency* fires, so "part of
   #N" and "refs #N" are safe. **In a PR title, never, even when you mean it:** a
-  title becomes the merge commit's message and holds no `Autoclose:` trailer, so
+  title becomes the squash commit's subject and holds no `Autoclose:` trailer, so
   a close you mean goes in the body with its trailer.
   - Guarded by `scripts/check_closing_keywords.py`, as a `commit-msg` hook and
     again in CI, where the `closing keywords` job scans the PR body, the PR
