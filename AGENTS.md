@@ -695,7 +695,8 @@ leaves draft and the issue-correction rule; the rest is practice sessions
 learned, most of it after a wrong post had to be corrected. This subsection,
 the title sub-bullet above, *Verification method* and *The owner's workstation*
 are kept byte-identical across the organisation's unarchived repositories:
-change them everywhere or nowhere. Nothing checks it. Every block an
+change them everywhere or nowhere. The organisation's shared-section judge
+checks it when it is run, and refuses a copy that differs. Every block an
 `AGENTS.md` says is kept byte-identical holds only its shared text and is
 never the last section in its file; a repository's own text goes under a
 heading of its own, after the block.
@@ -991,6 +992,11 @@ control's arms and a contract's stated refusals are counted by clause.
   by a later commit before the merge. The pull request body names the commit
   that held it, the command, and the outcome at that commit, so anyone can
   re-run it with `git show <commit>:<path>`.
+- **A kept case's plants are recorded** in the body of the pull request
+  that adds or changes it: the commit the plants ran against, the
+  command, and each plant with the kept cases that noticed it. A case
+  that raised no coverage question, a clause's only firing case or a
+  place's only quiet case, is marked so instead.
 - **The words.** A *control* is a check shown to fire on a planted defect and to
   stay quiet on a clean case. A *guard* is a control that refuses.
   *Validation* is a check run against the running estate.
