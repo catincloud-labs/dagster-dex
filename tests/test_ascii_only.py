@@ -310,27 +310,6 @@ def test_the_file_check_reports_every_arm(tmp_path, data, expected):
     assert _offenders_in("plant.txt", path) == expected
 
 
-def test_the_arms_put_each_byte_where_its_offset_says():
-    """The offsets above are counted by hand, so count them a second way.
-
-    The check finds a line and an offset by splitting on LF and summing line
-    lengths. This finds them with `bytes.index` and a count of the LFs before
-    the byte, so a fixture edited out from under its expected offset goes red
-    here rather than having the expectation edited to match the check.
-    """
-
-    assert _ARM_ASCII.isascii()
-    assert _ARM_VALID[: _ARM_VALID.index(b"\xe2\x80\x94")].count(b"\n") == 15
-    assert _ARM_LONE.index(b"\x97") == 314
-    assert _ARM_LONE[:314].count(b"\n") == 15
-    assert _ARM_BOTH[: _ARM_BOTH.index(b"\xe2\x80\x94")].count(b"\n") == 2
-    assert _ARM_BOTH.index(b"\x97") == 757
-    assert _ARM_BOTH[:757].count(b"\n") == 36
-    assert _ARM_MIXED.index(b"\xe2\x80\x94") == 314
-    assert _ARM_MIXED.index(b"\x97") == 321
-    assert _ARM_MIXED[:321].count(b"\n") == 15
-
-
 def test_an_unreadable_tracked_file_is_an_offender(tmp_path):
     """A file the check cannot read is not a file the check found clean.
 

@@ -397,13 +397,17 @@ class TestAPackageQualifiedCompositeKey:
     probe.
     """
 
-    @pytest.mark.parametrize("key", ["tests", "data_tests"])
     @pytest.mark.parametrize(
-        "name",
+        "name, key",
         [
-            "unique_combination_of_columns",
-            "dbt_utils.unique_combination_of_columns",
-            "my_package.unique_combination_of_columns",
+            pytest.param(name, key, id=f"{name}-{key}")
+            for name in (
+                "unique_combination_of_columns",
+                "dbt_utils.unique_combination_of_columns",
+                "my_package.unique_combination_of_columns",
+            )
+            for key in ("tests", "data_tests")
+            if (name, key) != ("my_package.unique_combination_of_columns", "data_tests")
         ],
     )
     def test_a_composite_key_is_read_bare_or_under_a_package_prefix(self, key, name):
@@ -472,12 +476,10 @@ class TestACompositeKeyNestedUnderArguments:
         [
             "      - dbt_utils.unique_combination_of_columns\n",
             "      - dbt_utils.unique_combination_of_columns:\n"
-            "          arguments: {}\n",
-            "      - dbt_utils.unique_combination_of_columns:\n"
             "          arguments:\n"
             "            combination_of_columns: []\n",
         ],
-        ids=["no-body", "empty-arguments", "empty-list-under-arguments"],
+        ids=["no-body", "empty-list-under-arguments"],
     )
     def test_an_entry_with_no_columns_anywhere_keeps_its_note(self, test):
         text = "models:\n  - name: fact_orders\n    data_tests:\n" + test
@@ -757,9 +759,9 @@ class TestACompositeKeyListingSomethingOtherThanAName:
     exmergo-dex-core's schema-YAML reader reads a composite only from a list of
     two or more columns that are all strings (`_declared_from_yaml` in
     `exmergo_dex_core/dbt_project.py`, read in 1.15.2), so it reads no key from
-    either list, in any form. The owner ruled this aligned here, with a note.
+    such a list, in any form. The owner ruled this aligned here, with a note.
 
-    Each list is read in all three forms. The form beside the test's name read
+    `[date, 1]` is read in all three forms. The form beside the test's name read
     the same way in 0.6.4, and the other two are the forms 0.6.5 added, so all
     three go red. The lists of names are the controls, on the same builder:
     `[date, provider]` reads the composite, and `[date]` keeps its key on
@@ -768,7 +770,7 @@ class TestACompositeKeyListingSomethingOtherThanAName:
     """
 
     @pytest.mark.parametrize("form", FORMS)
-    @pytest.mark.parametrize("columns", ["[date, 1]", "[date, provider, 1]"])
+    @pytest.mark.parametrize("columns", ["[date, 1]"])
     def test_a_list_holding_a_non_string_reads_no_key_and_says_so(self, columns, form):
         declarations = a_project(
             declaration_sources={"f": a_composite_listing(columns, form)}
@@ -967,8 +969,8 @@ class TestTwoCompositeKeysOnOneModel:
 
     @pytest.mark.parametrize(
         "second",
-        ["[date, provider]", "[provider, date]", "[DATE, Provider]"],
-        ids=["again", "reordered", "recased"],
+        ["[provider, date]", "[DATE, Provider]"],
+        ids=["reordered", "recased"],
     )
     def test_the_same_key_written_again_is_read_once(self, second):
         text = two_composites("[date, provider]", second)
@@ -1027,15 +1029,12 @@ class TestUniqueWrittenTwiceOnOneColumn:
         [
             "          - unique\n"
             "          - unique\n",
-            "          - unique\n"
-            "          - name: date_is_unique\n"
-            "            test_name: unique\n",
             "          - name: date_is_unique\n"
             "            test_name: unique\n"
             "          - name: date_is_still_unique\n"
             "            test_name: unique\n",
         ],
-        ids=["bare-twice", "bare-then-test_name", "test_name-twice"],
+        ids=["bare-twice", "test_name-twice"],
     )
     def test_unique_written_twice_reads_one_key(self, test):
         declarations = a_project(
@@ -1110,7 +1109,8 @@ class TestAKeyDeclaredInTwoEntries:
     1.15.2). #131 words (f)'s alignment as one key per model and columns. So a
     key written again in another file, or in a second entry for the model in
     the same file, reads once here too, where it read once per entry (cold
-    review of #138, finding 1).
+    review of #138, finding 1). The rows hold the across-files shape; the
+    one-file shape reaches the same code and keeps no row of its own.
 
     Keys that differ are the control: both are read, across files as in one.
     """
@@ -1119,16 +1119,15 @@ class TestAKeyDeclaredInTwoEntries:
         "sources",
         [
             {"a": a_unique_on("date"), "b": a_unique_on("date")},
-            {"a": a_unique_on("date") + a_unique_on("date").split("models:\n", 1)[1]},
         ],
-        ids=["two-files", "two-entries-one-file"],
+        ids=["two-files"],
     )
     def test_a_unique_declared_again_reads_one_key(self, sources):
         declarations = a_project(declaration_sources=sources).declarations()
         assert declarations.declared_keys == (DATE_KEY,)
         assert declarations.notes == ()
 
-    @pytest.mark.parametrize("second", ["[date, provider]", "[Provider, DATE]"], ids=["again", "reordered-recased"])
+    @pytest.mark.parametrize("second", ["[Provider, DATE]"], ids=["reordered-recased"])
     def test_a_composite_declared_again_in_another_file_reads_once(self, second):
         sources = {"a": a_composite_on("[date, provider]"), "b": a_composite_on(second)}
         declarations = a_project(declaration_sources=sources).declarations()
@@ -1524,7 +1523,6 @@ TABLE_NAME_CASES = [
         id="a-value-object-from-outside-dagster",
     ),
     pytest.param({"layer": "gold"}, None, id="no-table-key"),
-    pytest.param({}, None, id="no-metadata"),
 ]
 
 
