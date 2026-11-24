@@ -366,8 +366,8 @@ specs (line 459), which a run may subset. Each run:
 1. logs the spec layer's notes as warnings;
 2. opens ONE engine, `dagster_dex.dex.open_verify_engine` (`dex.py` line
    1478) unless the caller passes its own opener. The connection may be the
-   project's own (dex-core's `ConnectionSource`), but the cost ceilings stay
-   dex's, built from its own store;
+   project's own (dex-core's `ConnectionSource`); who sets the cost ceilings
+   then is in the `open_verify_engine` docstring;
 3. calls `DexEngine.verify` ONCE, over the models the selected checks
    name, through `dagster_dex.dex.verify_declared_keys` (line 1531);
 4. maps each result back to its claim by model, columns and source, under
@@ -398,7 +398,7 @@ way the older path fails open, are in the
 **What CI runs of each path.** `engine-ends` runs the record path against
 a real DuckDB warehouse at the ceiling. At the floor verify does not judge
 this format, so neither path runs there. No CI cell installs an engine
-between 1.12.5 and 1.17.4, so the note path runs in CI only against a result
+from 1.12.5 to 1.17.4, so the note path runs in CI only against a result
 built without `grain_coverage` (`NoteEraResult` in
 `tests/test_executor.py`), and against a real engine only when someone
 runs the boundary suite with one of those engines at a desk. Whether to
@@ -415,7 +415,7 @@ result and where the code is:
 | Default | How it reads in a result | Where |
 | --- | --- | --- |
 | Unmeasured claims | `passed` false, severity WARN, `dagster_dex/measured` false, and the reason under `dagster_dex/reason` and as the description | `KeyVerdict` and `_unmeasured`, `dex.py` lines 1416 to 1434 |
-| Priced probes | every key in the call not measured, with dex's message for a refusal, and this package's own text for a probe returned to confirm; `confirm_spend` on the builder is the opt-in | `dex.py` lines 1614 to 1631 |
+| Priced probes | every key in the call not measured, with the reason the `verify_declared_keys` docstring gives; `confirm_spend` on the builder is the opt-in | `dex.py` lines 1614 to 1631 |
 | Severity | ERROR only where a claim listed in `blocking` was measured and failed, as the `build_declaration_checks` docstring explains | `checks.py` line 515 |
 | When the checks run | no automation condition on the checks | the `build_declaration_checks` docstring |
 | Metadata | the claim id, `measured`, the engine's version, a reason when not measured, and a duplicate count on a failure; a reason is truncated before the warehouse's own text | `_result`, `checks.py` lines 498 to 523; `_carried`, `dex.py` line 1437 |

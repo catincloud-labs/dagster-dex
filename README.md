@@ -248,11 +248,11 @@ in exactly the same place a rewritten branch used to.
 ## Using the contract on another format
 
 `dagster_dex.conformance` ships the contract in the package, as pytest classes
-a test module subclasses: one per tier, each with a hook that builds your
-format from what the test hands it. The assertions are behavioural, and the
-one that matters most is that `declarations()` does not raise on an absent,
-empty or malformed project. The wiring, the reasons, and what of the contract
-is public surface are in its module docstring, `help(dagster_dex.conformance)`.
+a test module subclasses, one per tier. At tiers 1 and 2 a hook builds your
+format from text the test hands it; at tier 3 a hook stages a conflict of its
+own. The wiring, which assertion matters most and why, and what of the
+contract is public surface are in its module docstring,
+`help(dagster_dex.conformance)`.
 
 To watch the contract refuse before trusting its green, wire one of the six
 formats in `dagster_dex.planted` to its contract: two go to the tier-2

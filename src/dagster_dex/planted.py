@@ -155,8 +155,8 @@ class HalfRefusingProject(EditableDagsterProject):
     Breaks the tier-3 statement in ``EditableProject``: with ``confirmed``
     false, a single conflict refuses *every* edit in the set. This one checks
     every pin and reports the conflicts, then writes the edits that did not
-    conflict, which
-    is the shape of a writer that refuses per edit rather than per set. Under
+    conflict, which is the shape of a writer that refuses per edit rather than
+    per set. Under
     ``EditableProjectContract`` it fails exactly
     ``test_one_conflict_refuses_the_clean_edit_beside_it``, with an
     ``AssertionError``: the clean edit is reported in ``written``. A set of one

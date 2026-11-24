@@ -140,8 +140,8 @@ summarizes. What each asks of a format:
   source and its reading reports `NOT_APPLICABLE`, not `FRESH`
   (`dagster_dex.model.Freshness`).
 - **Required fields are not invented.**
-  `dagster_dex.model.ExternalSource` raises without a `system`; with no system
-  to give, a format declares no sources.
+  `dagster_dex.model.ExternalSource` raises without a `system`; what a format
+  that lacks one does instead is in its docstring.
   `dagster_dex.model.ProjectModel.relation` and
   `dagster_dex.model.SemanticField.column` stay `None` when the format cannot
   say, and the class docstrings give the reasons.
@@ -326,8 +326,9 @@ through `an_edit_against_a_changed_target`. The last three rows are the
 write-path defects this package has on record
 ([verification.md, *The measurement, and what it was measured against*](verification.md#the-measurement-and-what-it-was-measured-against)).
 
-`tests/test_conformance.py` holds each one to exactly the tests its docstring
-names, on every run.
+`tests/test_conformance.py` holds each one, on every run, to exactly the
+failures its `PLANTED` and `PLANTED_WRITE` tables list. Those tables and the
+class docstrings name the same tests, and nothing checks that they agree.
 `publish.yml`'s `build` job does the same from the built wheel on every pull
 request, through `scripts/a_format_outside_the_tree.py`, a test module kept
 outside `tests/` that wires the contracts the way this page does. Where that
