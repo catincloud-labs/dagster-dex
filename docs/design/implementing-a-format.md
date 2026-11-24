@@ -7,7 +7,8 @@
   `tests/test_conformance.py`, `scripts/a_format_outside_the_tree.py`
 - **Reviewed:** 2026-11-09 at `bb30439`; *Watching it refuse* and *What is
   promised to stay put* re-read 2026-11-14 at `f5eeb99`, and with *The
-  contracts and their hooks* re-read 2026-11-16 at `4576ea4`
+  contracts and their hooks* re-read 2026-11-16 at `4576ea4`; the passages it
+  shared with docstrings re-read and cut to citations 2026-11-24 at `8208278`
 
 This page is for someone writing a project format of their own: a reader of
 some other source of project truth that wants to be held to the same seam as
@@ -53,8 +54,8 @@ factory, and only the bridge module knows the engine exists.
 ## The seam, in tiers
 
 The three protocols are in `src/dagster_dex/protocol.py`, and the module
-docstring is the argument for tiers over a single method. Each tier is a
-superset of the one above:
+docstring is the argument for tiers over a single method. Each tier adds to
+the one before it:
 
 - `dagster_dex.protocol.ProjectSource` is a `format` string and
   `declarations()`. `format` names the format, not the instance; the contract
@@ -77,7 +78,7 @@ beats a capability flag is in the module docstring and in
 [README, *The seam, in three tiers*](../../README.md#the-seam-in-three-tiers).
 The consequence for an implementer is that a method is a claim: a format
 that has `propose_edits` and refuses every call at runtime still matches tier 3,
-and a caller learns the truth from an empty result that looks like success. So
+and a caller learns the truth only from what a call returns. So
 a format that serves a tier for some instances and not others picks the class
 per instance, and this package does exactly that
 ([AGENTS.md, *Tier 3 is reached by ONE class*](../../AGENTS.md#tier-3-is-reached-by-one-class-and-the-split-is-the-design)).
@@ -85,9 +86,9 @@ per instance, and this package does exactly that
 **Choosing tiers.** Each tier has one question, and the README table states
 them. Answer each about the artifact, not about the format's origin: the
 `dagster_dex.protocol.EditableProject` docstring says the write tier turns on
-whether the thing an edit lands in is a source of truth a human keeps, and a
-format can hold both kinds at once. Declining a tier is a complete answer. A
-format at tier 1 still contributes declared keys and joins; one at tier 2 is a
+whether what an edit lands in is kept by hand, and a format can hold both kinds
+at once. Declining a tier is a complete answer. A tier-1 format still supplies
+its declared keys and joins; one at tier 2 is a
 drift baseline that nothing writes to. Neither is a partial implementation.
 
 **The write tier's vocabulary** is five frozen dataclasses in the same module,
@@ -98,15 +99,15 @@ and each docstring states its contract:
 | `dagster_dex.protocol.ProposedEdit` | a key in the format's own keyspace, new content (`None` deletes), the hash it was planned against (`None` creates) |
 | `dagster_dex.protocol.EditOutcome` | `written` and `conflicts`, and no success flag |
 | `dagster_dex.protocol.EditConflict` | a key, and the expected and found hashes |
-| `dagster_dex.protocol.ProjectFileView` | the editable files keyed as the format keys them, and the `root` they are relative to |
+| `dagster_dex.protocol.ProjectFileView` | the editable files, in the format's own keyspace, and the `root` they are relative to |
 | `dagster_dex.protocol.ProjectFile` | one file's key, content and hash, carried together |
 
 `propose_edits` re-checks every pin before writing anything, refuses the whole
 set on one conflict unless `confirmed`, and writes every target when confirmed
 (the `dagster_dex.protocol.EditableProject.propose_edits` docstring).
 
-**Placement sits beside the tiers, not inside them.** Saying where an edit of a
-given kind lands, which keys an edit may touch, and what the editable files
+**Placement sits beside the tiers, not inside them.** Saying where each kind of
+edit goes, which keys an edit may touch, and what the editable files
 hold now is dex-core's `PlacingProject`, not a protocol in this package. Here
 it lives at the bridge, as `dagster_dex.dex.EditableDexProject.edit_path`,
 `dagster_dex.dex.EditableDexProject.editing_surface` and
@@ -123,24 +124,24 @@ reconcile; that lesson, and the release that closed the gap, are in
 
 `declarations()` returns one `dagster_dex.model.ProjectDeclarations`, and
 `fingerprint()` returns a `dagster_dex.model.Fingerprint`. The four decisions
-that shape the model are argued in
+that shape the model are argued in the `src/dagster_dex/model.py` module
+docstring, which
 [README, *Four model decisions worth arguing about*](../../README.md#four-model-decisions-worth-arguing-about)
-and in the `src/dagster_dex/model.py` module docstring. What each asks of a
-format:
+summarizes. What each asks of a format:
 
 - **A key is a tuple.** `dagster_dex.model.DeclaredKey` and
   `dagster_dex.model.DeclaredJoin` refuse empty columns at construction, and a
   join refuses sides of different lengths, so a format cannot build a key
   that says nothing.
-- **There is no project directory.** A project is its `format` and `name`. A
+- **No directory.** `format` and `name` identify a project. A
   format that has a directory keeps it to itself, or puts it on
   `dagster_dex.protocol.ProjectFileView.root` for the write tier.
-- **Freshness is a tri-state.** A format with no compiled artifact between its
+- **Freshness is a tri-state.** A format that compiles nothing between its
   source and its reading reports `NOT_APPLICABLE`, not `FRESH`
   (`dagster_dex.model.Freshness`).
-- **A required field is a refusal to invent.**
-  `dagster_dex.model.ExternalSource` raises without a `system`; a format that
-  does not know its source systems declares no sources.
+- **Required fields are not invented.**
+  `dagster_dex.model.ExternalSource` raises without a `system`; with no system
+  to give, a format declares no sources.
   `dagster_dex.model.ProjectModel.relation` and
   `dagster_dex.model.SemanticField.column` stay `None` when the format cannot
   say, and the class docstrings give the reasons.
@@ -192,8 +193,8 @@ which the `test` extra installs.
 | `dagster_dex.conformance.EditableProjectContract` | 3, mixed in beside tier 2 | `an_edit_against_a_changed_target()` returning `(project, edits, read_target)` |
 
 `make_project` receives three mappings of `{key: YAML text}`: declarations,
-semantic definitions and source declarations, with `sources` keyed by the model
-that reads the declared tables. The text is built by the module's fixture
+semantic definitions and source declarations, with `sources` keyed by their
+reading model (the `make_project` docstring). The text is built by the module's fixture
 builders (`dagster_dex.conformance.a_single_key_declaration`,
 `dagster_dex.conformance.a_join_declaration`,
 `dagster_dex.conformance.malformed_yaml` and the rest of its `__all__`), and it
@@ -202,28 +203,20 @@ reads that vocabulary, either natively or by translating it inside
 `make_project`; the parsers in `src/dagster_dex/declarations.py` are one way
 to read it.
 
-The tier-3 contract is a separate mixin because a project that can receive an
-edit has somewhere for the edit to land, and a hook shaped for text in memory
-cannot produce one without inventing a place (the
-`dagster_dex.conformance.EditableProjectContract` docstring). Its hook stages a
-human editing the target after the edit was proposed, and must stage a fresh
-scenario on every call, because some of the assertions write. Three of them
-derive more from what it returns: a clean create beside the staged edit, the
-staged edit re-pinned to absence, and a key that only shares a prefix with
-the declared surface. So the format has to accept a create at a sibling of
-the key its hook stages, the staged target has to exist after the human's
-change, and some declared prefix needs a sibling no declared prefix admits,
-which a whole-project surface, `"."`, does not have. The contract's
-docstring states each assumption, and the test that rests on it fails,
-rather than skips, where it does not hold. The derived tests leave a probe
-file beside the staged target, so stage in a scratch directory.
+The tier-3 contract is a separate mixin with a hook of its own,
+`an_edit_against_a_changed_target`, which stages a conflict for the write
+path to refuse. Why it is separate, what its three derived tests assume of
+what the hook returns, why an assumption that does not hold fails rather than
+skips, and where those tests leave files are in the
+`dagster_dex.conformance.EditableProjectContract` docstring; what the hook
+returns, and why it is mandatory, are in that method's own docstring.
 `tests/test_conformance.py` wires both contracts to this package's formats and
 is the worked example for tier 3.
 
 ### What the assertions check
 
-They are behavioural, not structural: a format can satisfy every signature and
-still raise on an absent project. In groups:
+Why they test behaviour rather than shape is in the module docstring. In
+groups:
 
 - **Shape.** The tier's protocol is satisfied, and `format` is stable and
   non-empty.
@@ -265,16 +258,13 @@ still raise on an absent project. In groups:
 
 ### What is promised to stay put
 
-The builder names and the assertions are public surface: a format pins
-against them, and renaming one is a breaking change (the module docstring).
-So are the six formats `dagster_dex.planted` ships, and the tests each one
-fails (the `src/dagster_dex/planted.py` module docstring).
-One builder default is held for the same reason: `a_join_declaration` keeps
-both sides named alike so an outside implementer's suite does not change
-meaning underneath them, and the differently-named case is a separate
-assertion (the
+What of the contract is public surface, and what renaming it costs, is in
+the module docstring; the six formats `dagster_dex.planted` ships, and the
+tests each one fails, are covered in the `src/dagster_dex/planted.py` module
+docstring. One builder default, `a_join_declaration`'s, is held too, and why
+is in the
 `dagster_dex.conformance.ProjectSourceContract.test_a_join_keeps_the_two_sides_apart_when_they_are_named_differently`
-docstring). The seam has followed semantic versioning since 1.0.0
+docstring. The seam has followed semantic versioning since 1.0.0
 ([README, *Status*](../../README.md#status)), so pin the major.
 
 ### A worked example
@@ -314,35 +304,30 @@ uv run --no-project --with-editable . --with pytest==8.4.1 \
 
 ### Watching it refuse
 
-A contract observed only to pass has not been shown to be one
-([AGENTS.md, *Verification method*](../../AGENTS.md#verification-method)), so
-the package ships six formats built wrong on purpose beside it, in
-`src/dagster_dex/planted.py`. Each is one of this package's formats with one
-defect a second format is likely to ship, and takes that format's
-constructor:
+The contract is shown refusing, not only passing
+([AGENTS.md, *Verification method*](../../AGENTS.md#verification-method)):
+`src/dagster_dex/planted.py` ships six deliberately defective formats beside
+it. Why they ship, and how to wire one, is in that module's docstring. Each
+class's docstring names its one defect and the contract tests it fails:
 
-| Format | Wraps, and its contract | Its defect | The contract tests it fails |
-| --- | --- | --- | --- |
-| `dagster_dex.planted.SourceBlindProject` | `DagsterProject`, tier 2 | fingerprints the models alone, so a new warehouse dependency is no drift | `test_gaining_an_external_source_is_visible_as_drift`, `test_repointing_a_source_to_another_schema_is_drift` |
-| `dagster_dex.planted.RaisingProject` | `DagsterProject`, tier 2 | parses its declarations with no guard, so bad YAML is an exception | `test_malformed_input_never_raises`, `test_malformed_input_is_explained_rather_than_silent` |
-| `dagster_dex.planted.ConfirmBlindProject` | `EditableDagsterProject`, tier 3 | writes every edit as though confirmed, so a human's edit is overwritten | `test_an_unconfirmed_write_refuses_a_target_that_moved`, `test_the_outcome_reports_what_happened`, `test_one_conflict_refuses_the_clean_edit_beside_it`, `test_a_create_whose_target_now_exists_is_a_conflict` |
-| `dagster_dex.planted.HalfRefusingProject` | `EditableDagsterProject`, tier 3 | writes the clean targets beside a conflict, so a refused set half lands | `test_one_conflict_refuses_the_clean_edit_beside_it` |
-| `dagster_dex.planted.CreateBlindProject` | `EditableDagsterProject`, tier 3 | does not check a create pinned to absence, so a file that appeared is overwritten | `test_a_create_whose_target_now_exists_is_a_conflict` |
-| `dagster_dex.planted.PrefixMatchingProject` | `EditableDagsterProject`, tier 3 | matches its surface by string prefix, so a sibling directory is written | `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused` |
+| Format | Wraps, and its contract |
+| --- | --- |
+| `dagster_dex.planted.SourceBlindProject` | `DagsterProject`, tier 2 |
+| `dagster_dex.planted.RaisingProject` | `DagsterProject`, tier 2 |
+| `dagster_dex.planted.ConfirmBlindProject` | `EditableDagsterProject`, tier 3 |
+| `dagster_dex.planted.HalfRefusingProject` | `EditableDagsterProject`, tier 3 |
+| `dagster_dex.planted.CreateBlindProject` | `EditableDagsterProject`, tier 3 |
+| `dagster_dex.planted.PrefixMatchingProject` | `EditableDagsterProject`, tier 3 |
 
-Wire one to its contract the way you wire your own format, in the same
-environment, and run it: the tests in its row fail and every other assertion
-passes. The two tier-2 formats go to
+The two tier-2 formats go to
 `dagster_dex.conformance.FingerprintedProjectContract` through `make_project`;
 the four tier-3 ones go to `dagster_dex.conformance.EditableProjectContract`
-through `an_edit_against_a_changed_target`, which builds the directory they
-write into. The last three rows are the write-path defects this package has
-on record
+through `an_edit_against_a_changed_target`. The last three rows are the
+write-path defects this package has on record
 ([verification.md, *The measurement, and what it was measured against*](verification.md#the-measurement-and-what-it-was-measured-against)).
-The module imports no pytest, so it imports wherever the package
-does.
 
-`tests/test_conformance.py` holds each one to exactly its row on every run.
+`tests/test_conformance.py` holds each one to exactly the tests its docstring
+names, on every run.
 `publish.yml`'s `build` job does the same from the built wheel on every pull
 request, through `scripts/a_format_outside_the_tree.py`, a test module kept
 outside `tests/` that wires the contracts the way this page does. Where that
@@ -387,14 +372,12 @@ named in `.dex/config.yml` by its entry-point name; the other ways to name one
 are in [README, *Status*](../../README.md#status). This package registers
 `dagster = "dagster_dex.dex:project_from_context"` in `pyproject.toml`, and
 the comment above that line records what pointing it at a class instead
-cost. The value is a factory: dex calls it with one context and expects a
-project in the engine's names back.
+cost. The value is a factory: dex calls it once per context and takes back a
+project in the engine's names.
 
 - **The context.** `dagster_dex.dex.ProjectContext` states the shape this
-  package proposes for it: `repo_root`, where the engine was pointed or
-  `None`, and `options`, the format's own non-secret coordinates passed
-  through verbatim. Its docstring says why it has two fields rather than a
-  path. `dagster_dex.dex.project_from_context` reads both with `getattr`, so
+  package proposes for it: `repo_root` and `options`. Its docstring says what
+  each holds, and why it has two fields rather than a path. `dagster_dex.dex.project_from_context` reads both with `getattr`, so
   it does not depend on whose class the context is.
 - **The factory refuses what it cannot honor.** An unknown option is refused
   by name, and no secret belongs in `options`, because the configuration that
@@ -409,8 +392,8 @@ module that imports dex-core, which the control step proves by running the
 suite with the engine uninstalled, and it imports public API only, which a
 test walking its syntax tree asserts
 ([AGENTS.md, *The rule that matters most here*](../../AGENTS.md#the-rule-that-matters-most-here)).
-`dagster_dex.dex.DexProject` is the wrapper pattern: the format keeps its own
-vocabulary, and the bridge renames `format` to the engine's `name` and maps
+`dagster_dex.dex.DexProject` is the wrapper pattern: the format's names stay
+its own, and the bridge renames `format` to the engine's `name` and maps
 `declarations()` onto the engine's types. The names in this package's
 protocol differ from the engine's on purpose
 ([AGENTS.md, *The names in `protocol.py` are OURS*](../../AGENTS.md#the-names-in-protocolpy-are-ours-and-must-not-be-fixed-to-match)),

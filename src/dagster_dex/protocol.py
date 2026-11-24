@@ -88,8 +88,8 @@ class EditConflict:
 
     Both hashes are carried because the pair is the diagnosis. ``found`` of
     ``None`` is a target that has since been deleted; ``expected`` of ``None`` is
-    a create whose file now exists, which is the same class of surprise from the
-    other side.
+    a create that finds its file already there, which is the same class of
+    surprise from the other side.
     """
 
     key: str

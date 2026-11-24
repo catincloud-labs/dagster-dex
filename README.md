@@ -82,9 +82,9 @@ project:
 ### Naming each model's table
 
 dex places a model in the warehouse by its relation, and `maintain verify`
-judges a declared key only on a model it can place. The format reads each
-model's relation from its asset's `dagster/table_name` metadata, the key
-Dagster itself keeps a table name under. Where that is missing or wrong,
+judges a declared key only on a model it can place. The format takes each
+model's relation from the `dagster/table_name` key in its asset's metadata,
+where Dagster itself keeps a table name. Where that is missing or wrong,
 `relations:` corrects it per model, and wins:
 
 ```yaml
@@ -96,9 +96,9 @@ project:
       fact_orders: analytics.orders_v2   # plain dotted parts, no quoting
 ```
 
-A model with neither is named in a note on what dex reads, so a run that could
-not judge it does not read as a clean one. A name under `relations:` that the
-graph does not build is refused, like an unknown option. `relations:` is also
+A model with no table from either place is reported in a note, so a run that
+could not judge it does not read as a clean one, and a name under `relations:`
+that matches no built model is an error. `relations:` is also
 admitted beside `artifact:`, where it corrects what the artifact carries
 without writing it again.
 
@@ -127,7 +127,7 @@ and lineage across them is read from the tables, not from either project.
 **Which tier you get depends on how the project was built, and that is the
 point.** `DagsterProject` reaches tier 2. `EditableDagsterProject` reaches tier
 3, and the factory returns one only when the project points at a declarations
-directory on disk - somewhere an edit can land. Read one from an `artifact:`
+directory on disk, which gives an edit a place to go. Read one from an `artifact:`
 alone and you get tier 2, because an artifact is a JSON file with no directory
 behind it.
 
@@ -136,50 +136,31 @@ named beside an `artifact:` reaches tier 3 as well; see
 [Two ways to name the project](#two-ways-to-name-the-project-and-the-reason-there-are-two)
 for what that directory supersedes and why it has to.
 
-The split is a class, not a flag, and it has to be. `EditableProject` is
-`runtime_checkable`, so it matches on the method being present: put
-`propose_edits` on the shared class and every project claims the write tier and
-then refuses at call time. `isinstance(project, EditableProject)` is the truth
-for each instance, so a caller finds out by asking rather than by receiving an
-empty result that looks like success.
-
-What can receive an edit is the **declarations**, never the models. The models
-are a reduction of a running asset graph, whose source of truth is the code that
-built it; the declared keys and joins are hand-written YAML that nothing
-regenerates. Those are different claims about different files.
+The split is a class, not a flag, so `isinstance(project, EditableProject)`
+answers for each instance. What an edit lands in is the **declarations**, never
+the models. Both are argued in
+`help(dagster_dex.project.EditableDagsterProject)`.
 
 ## Four model decisions worth arguing about
 
-**A key is always a tuple of columns.** A single-column grain is the `n == 1`
-case, not a different type. Modelling it the other way is what makes a composite
-grain inexpressible until someone widens the type - and after widening, every
-reader handles two shapes forever.
+The neutral model in `dagster_dex.model` departs from a dbt-shaped one in four
+places, each argued in its module docstring (`help(dagster_dex.model)`):
 
-**There is no project directory.** A path is one format's way of locating
-itself, not a property every project has.
-
-**Freshness is a tri-state.** `FRESH` / `STALE` / `NOT_APPLICABLE`. A boolean
-cannot tell "current" from "there is no such artifact here", so a format with
-nothing to compile reports itself identically to one that just compiled.
-
-**A required field is a refusal to invent.** `ExternalSource` requires a source
-system because the consumer requires one; making it optional would only move the
-moment of invention into the boundary code, where a fabricated value cannot be
-told from a declared one. Where the consumer requires something a project may
-genuinely lack, such as a file path, the field is optional here and the loss is
-reported instead of filled in.
+- **Keys are tuples of columns,** with no separate single-column type.
+- **No directory in the model.** Format and name identify a project.
+- **Freshness has three states,** `FRESH`, `STALE` and `NOT_APPLICABLE`, not
+  two.
+- **Required fields are not filled in.** `ExternalSource` requires its source
+  system. What a project may lack, such as a file path, is optional, and its
+  absence is reported.
 
 ## External sources: the edge a graph cannot see
 
-Everything in `models` is something the project builds. `ExternalSource` is
-where it stops and depends on a warehouse object somebody else keeps honoring.
-
-These **cannot be derived from the asset graph**. A model that reads a table in
-its own SQL, because the source system offers no other interface, draws no
-dependency edge, so the read is invisible to any amount of traversal. It is
-genuinely extra information and has to be declared, keyed by the model that
-reads it. A format that inferred sources from dependencies would find none and
-look like it had checked.
+`ExternalSource` stands for a table the project depends on and someone else
+builds.
+Sources have to be **declared**, each under the model that reads it, because a
+read inside a model's own SQL draws no edge in the asset graph; the argument
+is in `help(dagster_dex.model.ExternalSource)`.
 
 They are not decorative on the consumer side either: they drive a
 `dangling_source` finding and the set of tables a project is understood to
@@ -200,16 +181,16 @@ dex.py           the dex-core boundary      + exmergo-dex-core, lazily
 ```
 
 The engine coupling is one file. Everything else, including the conformance
-suite and the whole write path, runs with dex-core uninstalled, which is what
-keeps the design from being shaped by whatever the engine happens to look like
-today. The one exception is the declared-key executor in `checks.py`, which
+suite and the whole write path, runs with dex-core uninstalled, so the design
+is not shaped by the engine's present form. The one exception is the
+declared-key executor in `checks.py`, which
 reaches the engine through `dex.py`; the module imports without it. `dex.py` imports **public API only**; `tests/test_dex_bridge.py` asserts
 that with an AST walk rather than trusting it.
 
-The write path is in `project.py` rather than at the boundary for that reason.
-The conflict handshake is the one part of this package where getting it wrong
-costs somebody their work rather than an inaccurate report, so it is asserted in
-the step that runs with no engine installed - `tests/test_write_tier.py`.
+The write path is in `project.py` rather than at the boundary for that reason,
+and its conflict handshake is asserted in the step that runs with no engine
+installed - `tests/test_write_tier.py`. Why the write tier is the part most
+worth holding is in `help(dagster_dex.conformance.EditableProjectContract)`.
 
 ## Running it
 
@@ -266,34 +247,19 @@ in exactly the same place a rewritten branch used to.
 
 ## Using the contract on another format
 
-```python
-from dagster_dex.conformance import FingerprintedProjectContract
-
-class TestMyFormat(FingerprintedProjectContract):
-    def make_project(self, declarations, semantics, sources):
-        return MyProject(declaration_sources=declarations,
-                         semantic_sources=semantics,
-                         source_declarations=sources)
-```
-
-The assertions that matter most are behavioural: `declarations()` must not raise
-on an absent, empty, or malformed project. That is the property a second
-implementation is most likely to get wrong, and a suite checking only shapes
-will pass it.
+`dagster_dex.conformance` ships the contract in the package, as pytest classes
+a test module subclasses: one per tier, each with a hook that builds your
+format from what the test hands it. The assertions are behavioural, and the
+one that matters most is that `declarations()` does not raise on an absent,
+empty or malformed project. The wiring, the reasons, and what of the contract
+is public surface are in its module docstring, `help(dagster_dex.conformance)`.
 
 To watch the contract refuse before trusting its green, wire one of the six
-formats in `dagster_dex.planted` to its contract. Each is one of this
-package's formats with one defect, and fails exactly the tests its docstring
-names: two are `DagsterProject` and go to the tier-2 contract, and four are
-`EditableDagsterProject` and go to the tier-3 one. The design guide's
+formats in `dagster_dex.planted` to its contract: two go to the tier-2
+contract and four to the tier-3 one, and each fails exactly the tests its
+docstring names (`help(dagster_dex.planted)`). The design guide's
 [*Watching it refuse*](https://github.com/catincloud-labs/dagster-dex/blob/main/docs/design/implementing-a-format.md#watching-it-refuse)
 lists them.
-
-`make_project` took two arguments before external sources landed. The third
-was a **breaking change to this contract**, taken deliberately before the first
-release, while the suite had no outside implementers, rather than carried
-forever as an optional hook that could be skipped - and a skipped assertion is
-not a passing one.
 
 ## Status
 
@@ -338,18 +304,16 @@ gives the commands, and the workflows under
 
 ### Two ways to name the project, and the reason there are two
 
-`assets:` reduces a live asset graph in the calling process. That is the honest
-form, and its cost is dominated by **importing the code location** rather than by
-the reduction - which is not something laziness or caching can reach, because a
-host that builds a project per command never holds one long enough to amortize
-it. How long that import takes is a property of your project rather than of this
-package, so it is the thing to measure before choosing between the two forms:
-time `dagster definitions list` against your own code location and you have the
+`assets:` reduces a live asset graph in the calling process, and its cost is
+mostly **importing the code location**, not the reduction. How long that
+import takes is a property of your project rather than of this package, so it
+is the thing to measure before choosing between the two forms: time
+`dagster definitions list` against your own code location and you have the
 number, on your machine, where it is true.
 
-`artifact:` is the answer for a host that cannot pay that: the side that already
-has the graph reduces it once and writes the result down, and the side that
-answers requests reads it back.
+`artifact:` reads a project reduced earlier by a process that held the graph,
+and wrote it with `dagster_dex.artifact.dump`. Why the transport exists, and
+why caching cannot stand in for it, is in `help(dagster_dex.artifact)`.
 
 ```yaml
 project:
@@ -358,21 +322,17 @@ project:
     artifact: project/my_project.json   # written by dagster_dex.artifact.dump
 ```
 
-Exactly one of the two is required, and naming both is refused rather than
-resolved: a snapshot and a live graph disagree by design. An artifact carries its
-own semantics, its own sources and its own name, so `semantics:`, `sources:` and
-`name:` are refused beside it rather than silently ignored - each would modify
-nothing while reading as though the files on disk were live, which is the
-ordinary shape of a config quietly a day out of date.
-
-**A missing artifact is refused, not read as an empty project.** An empty
-project is a valid one, so the tolerant reading would report a broken deploy as a
-warehouse with nothing declared, quietly, and for as long as it lasted.
+Name exactly one of the two; a config with both, or with neither, is an error.
+An artifact carries its own semantics, sources and name, so `semantics:`,
+`sources:` and `name:` are errors beside it, and **an artifact path with no
+file behind it is an error too**, never an empty project. The reasons for each
+refusal are in `help(dagster_dex.dex.project_from_context)` and in the
+docstring of `_project_from_artifact` in `src/dagster_dex/dex.py`.
 
 #### Reaching the write tier over the artifact transport
 
-`declarations:` is the one option admitted beside `artifact:`, and it
-**supersedes** the declaration text the artifact carries:
+`declarations:` is the one option admitted beside `artifact:`. Its directory
+**replaces** the declarations the artifact holds, and is where edits land:
 
 ```yaml
 project:
@@ -382,31 +342,12 @@ project:
     declarations: declared            # the live source, and where edits land
 ```
 
-The obvious reading of that option - the artifact still declares, and the
-directory only says where an edit may land - cannot be built, and the reason is
-worth knowing before proposing it again:
-
-- An artifact keys its declarations by a **bare stem**, and must keep doing so.
-  It has no directory to have come from, and inventing one would be fabricated
-  provenance.
-- An editing surface is checked segment-wise, so `declarations` admits
-  `declarations/dim_date.yml` and refuses a bare `dim_date`. A bare stem is
-  inside no surface.
-- So an edit view built from the artifact's text is **empty**. Every edit pins
-  against a file it believes absent, and every apply is then a conflict on a file
-  that plainly exists - refused on every write, forever, which is worse than
-  declining the tier.
-
-The directory has to be read, so it is the declarations. That costs nothing the
-artifact was protecting: `artifact:` exists because reducing a live graph imports
-a code location, and hand-written YAML needs neither an import nor an
-orchestrator. What the artifact still answers for is the graph.
-
-Because the artifact's copy of that text loses, `notes()` says so - a mapping
-that drops something without disclosing it is the failure `notes` exists to
-prevent. A missing directory is refused rather than read as "nothing is
-editable": a declined write tier is indistinguishable from a format that never
-had one, so a typo would be silent.
+Keeping the artifact's declarations and using the directory only as a place
+for edits sounds simpler, and cannot be built; the argument is in the
+`_project_from_artifact` docstring, and worth reading before proposing it
+again. The artifact still supplies the graph. `notes()` says when the
+artifact's own declaration text was set aside, and a `declarations:` path with
+no directory behind it is an error.
 
 **An empty directory is accepted, and the asymmetry is a contract rather than
 an accident.** A consumer's provisioning order can legitimately create the
@@ -471,12 +412,10 @@ Four things in that sketch are not incidental:
 - **The asset import is deferred into the op body.** A module-scope import of
   the graph is a cycle if your `definitions.py` also imports this module, and a
   failure in it takes down the whole code location rather than one job.
-- **`generated_at` is yours to supply.** The library has no clock on purpose: a
-  default would make every artifact look freshly written, including one produced
-  by a replay.
-- **The path's parent must already exist.** `dump` will not create it - a
-  missing parent is a configuration mistake, and creating it writes the artifact
-  somewhere nobody reads.
+- **`generated_at` is yours to supply.** The library has no clock, and why is
+  in `help(dagster_dex.artifact.dumps)`.
+- **The path's parent must already exist.** `dump` will not create it; why is
+  in `help(dagster_dex.artifact.dump)`.
 - **Schedule it.** An artifact that regenerates when someone remembers is a
   stale artifact, and a stale project is a wrong drift report rather than an
   absent one.

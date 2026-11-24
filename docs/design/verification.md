@@ -19,7 +19,9 @@
   formats touch re-read 2026-11-09 at `bb30439`; the sections the declared-key
   checks example touches re-read 2026-11-10 at `993f479`; the sections the
   tier-3 planted format touches re-read 2026-11-14 at `f5eeb99`; the sections
-  the write contract's derived tests touch re-read 2026-11-16 at `4576ea4`
+  the write contract's derived tests touch re-read 2026-11-16 at `4576ea4`; the
+  passages it shared with docstrings re-read and cut to citations 2026-11-24
+  at `8208278`
 
 This page describes how the package's claims are checked today: which job
 holds which claim, what each check can and cannot see, and where each one has
@@ -450,7 +452,7 @@ module docstring gives each leg's reason.
   reaches the artifact half, so it says nothing about that half. Measured
   rather than reasoned, like the next point.
 - **Leg 11's pin assertion is a backstop no mutation reaches.** It was written
-  for an edit view built from the artifact's keyspace; leg 10 catches that
+  for a view over the keys the artifact itself holds; leg 10 catches that
   first, because reconcile merges into the text the view hands it and an empty
   view yields no edit. Two other candidate mutations fired legs 12 and 4. The
   leg says so.
@@ -482,27 +484,22 @@ those.
   to raise, and pass every other test of its tier's contract: the three tier-2
   classes run the tier-2 contract's tests, and the five tier-3 classes the
   tier-3 contract's. `SourceBlindProject` and `RaisingProject` are tier 2. The
-  other four are tier 3. `ConfirmBlindProject` fails
-  `test_an_unconfirmed_write_refuses_a_target_that_moved`,
-  `test_the_outcome_reports_what_happened`, `test_one_conflict_refuses_the_clean_edit_beside_it` and `test_a_create_whose_target_now_exists_is_a_conflict`. The
-  three write-path defects on record
-  ([*The measurement, and what it was measured against*](#the-measurement-and-what-it-was-measured-against))
-  fail one test each: `HalfRefusingProject` fails `test_one_conflict_refuses_the_clean_edit_beside_it`,
-  `CreateBlindProject` fails `test_a_create_whose_target_now_exists_is_a_conflict`, and `PrefixMatchingProject` fails
-  `test_a_key_that_only_shares_a_prefix_with_the_surface_is_refused`. Only then is the passing arm read: `DagsterProject` through the
+  other four are tier 3. Which tests each fails is in its class docstring:
+  four for `ConfirmBlindProject`, and one each for the three write-path
+  defects on record
+  ([*The measurement, and what it was measured against*](#the-measurement-and-what-it-was-measured-against)),
+  `HalfRefusingProject`, `CreateBlindProject` and `PrefixMatchingProject`.
+  Only then is the passing arm read: `DagsterProject` through the
   tier-2 contract and `EditableDagsterProject` through the tier-3 one, every
   test green.
 - **What it does not reach.** The tier-3 contract stages one scenario through
   its hook and derives three more from it
-  ([#200](https://github.com/catincloud-labs/dagster-dex/issues/200)): a clean
-  create beside the staged edit, the staged edit re-pinned to absence, and a
-  key in a sibling of a declared prefix. So it reaches what those four
-  scenarios exercise, under the assumptions the `EditableProjectContract`
-  docstring states: a format accepts a create at a sibling of the key its hook
-  stages, the staged target exists after the human's change, and some
-  declared prefix has a sibling no declared prefix admits. It does not run `dex.py`, so
-  the write-path driver's four `dex.py` defects are outside it, and it is
-  behavioural rather than exhaustive, as dex-core's are.
+  ([#200](https://github.com/catincloud-labs/dagster-dex/issues/200)), one per
+  write-path defect on record. So it reaches what those four scenarios
+  exercise, under the assumptions the `EditableProjectContract` docstring
+  states. It does not run `dex.py`, so the write-path driver's four `dex.py`
+  defects are outside it, and like dex-core's it tests behaviour and is not
+  exhaustive.
 - **Its red arms.** Measured on 2026-11-09, each against a wheel built from a
   mutated copy of the tree unless named otherwise:
   - correcting `SourceBlindProject`'s fingerprint turned the refusing arm red

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Six formats built wrong on purpose, to watch the contract refuse.
 
-A contract observed only to pass has not been shown to be one. These ship
+A contract seen only passing is not yet evidence of anything. These ship
 beside :mod:`dagster_dex.conformance` so that an implementer outside this
 repository can watch it go red in their own environment, on the same install
 that runs it against their format, before trusting its green.
@@ -36,12 +36,12 @@ stages a target a human edited after the edit was proposed and so builds the
 directory the format writes into.
 
 **Three of the tier-3 four are the write-path defects on record** (#200):
-:class:`HalfRefusingProject` writes the clean targets beside a conflict,
-:class:`CreateBlindProject` does not check a create pinned to absence, and
-:class:`PrefixMatchingProject` matches its surface by string prefix. Each is
-the replacement ``docs/design/verification.md`` records planting in
-``project.py``, made as a subclass, and each fails one test of the tier-3
-contract, the one built for it. :class:`ConfirmBlindProject` is the fourth.
+:class:`HalfRefusingProject`, :class:`CreateBlindProject` and
+:class:`PrefixMatchingProject`. Each is the replacement
+``docs/design/verification.md`` records planting in ``project.py``, under the
+name it gives the defect, made here as a subclass, and each fails one test of
+the tier-3 contract, the one built for it. :class:`ConfirmBlindProject` is the
+fourth.
 
 This module does not import pytest, so it imports wherever the package does.
 Like the contract's builders, the six class names are public surface.
@@ -150,11 +150,12 @@ class ConfirmBlindProject(EditableDagsterProject):
 
 
 class HalfRefusingProject(EditableDagsterProject):
-    """Writes the clean targets beside a conflict, so a refused set half lands.
+    """Lets the edits that did not conflict land, so a refused set is half written.
 
     Breaks the tier-3 statement in ``EditableProject``: with ``confirmed``
-    false, one conflict refuses the *whole* set. This one checks every pin and
-    reports the conflicts, then writes the edits that did not conflict, which
+    false, a single conflict refuses *every* edit in the set. This one checks
+    every pin and reports the conflicts, then writes the edits that did not
+    conflict, which
     is the shape of a writer that refuses per edit rather than per set. Under
     ``EditableProjectContract`` it fails exactly
     ``test_one_conflict_refuses_the_clean_edit_beside_it``, with an
