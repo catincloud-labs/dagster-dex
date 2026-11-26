@@ -691,7 +691,7 @@ moves stand behind that rule, each paid for in this organisation:
 
 Rules for a session's own pull requests. The owner ruled the stop, the merge
 method, the default against closing, the cold review, when a pull request
-leaves draft and the issue-correction rule; the rest is practice sessions
+leaves draft, the issue-correction rule and a value's one home; the rest is practice sessions
 learned, most of it after a wrong post had to be corrected. This subsection,
 the title sub-bullet above, *Verification method* and *The owner's workstation*
 are kept byte-identical across the organisation's unarchived repositories:
@@ -766,6 +766,18 @@ heading of its own, after the block.
 - **A reference to another repository's issue is qualified:** `owner/repo#N`
   or a full link. A bare `#N` links this repository's number, in a comment as
   in a body.
+- **A value has one home, and everything else points to it.** A date, a
+  window, a SHA or a count that one issue, record or document owns is written
+  there and nowhere else: not in another issue's or pull request's body, and
+  not in a Trigger on the
+  [estate board](https://github.com/orgs/catincloud-labs/projects/1). A
+  dependent says *see #N for the date*, or states the rule that derives the
+  value (*the day after #N's after window ends*), and keeps only the context
+  that goes beyond who, what, when, where and why. A dated reading (*read
+  2026-11-05 at `abc1234`*) is evidence of its day, not a copy, and stays. A
+  copy is replaced by a pointer, never re-dated. Copies already standing are
+  not swept for: one is replaced when a change touches its sentence, and the
+  rest leave as their items close.
 - **A claim a session posted on an issue, wrong when it was posted, is
   corrected by a follow-up comment** that cites the comment it corrects, not by
   editing it. A draft pull request's body is edited freely, with no note of
