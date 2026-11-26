@@ -691,7 +691,7 @@ moves stand behind that rule, each paid for in this organisation:
 
 Rules for a session's own pull requests. The owner ruled the stop, the merge
 method, the default against closing, the cold review, when a pull request
-leaves draft and the issue-correction rule; the rest is practice sessions
+leaves draft, the issue-correction rule and a value's one home; the rest is practice sessions
 learned, most of it after a wrong post had to be corrected. This subsection,
 the title sub-bullet above, *Verification method* and *The owner's workstation*
 are kept byte-identical across the organisation's unarchived repositories:
@@ -766,6 +766,21 @@ heading of its own, after the block.
 - **A reference to another repository's issue is qualified:** `owner/repo#N`
   or a full link. A bare `#N` links this repository's number, in a comment as
   in a body.
+- **A value has one home, and everything else points to it.** A date, a
+  window, a SHA or a count that one issue, record or document owns is written
+  there. An issue's or pull request's body, and a Trigger on the
+  [estate board](https://github.com/orgs/catincloud-labs/projects/1), point to
+  it instead of copying it: *see #N for the date*, or the rule that derives
+  the value (*the day after the window #N sets ends*), with only the context
+  that goes beyond who, what, when, where and why. A Trigger keeps the time
+  form and the Trigger date the board's README requires; the rest of its text
+  points. A dated reading of the world or of a commit, such as a measurement,
+  a hash, a command's output, or a return's merge commit and its `mergedAt`,
+  is evidence of its day and stays; a dated reading of a value another record
+  owns is a copy. A copy is replaced by a pointer, never re-dated. Copies
+  already standing are not swept for: one is replaced when a change touches
+  its sentence, and the rest stand until their items close and leave the
+  board.
 - **A claim a session posted on an issue, wrong when it was posted, is
   corrected by a follow-up comment** that cites the comment it corrects, not by
   editing it. A draft pull request's body is edited freely, with no note of
