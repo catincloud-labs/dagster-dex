@@ -768,16 +768,19 @@ heading of its own, after the block.
   in a body.
 - **A value has one home, and everything else points to it.** A date, a
   window, a SHA or a count that one issue, record or document owns is written
-  there and nowhere else: not in another issue's or pull request's body, and
-  not in a Trigger on the
-  [estate board](https://github.com/orgs/catincloud-labs/projects/1). A
-  dependent says *see #N for the date*, or states the rule that derives the
-  value (*the day after #N's after window ends*), and keeps only the context
-  that goes beyond who, what, when, where and why. A dated reading (*read
-  2026-11-05 at `abc1234`*) is evidence of its day, not a copy, and stays. A
-  copy is replaced by a pointer, never re-dated. Copies already standing are
-  not swept for: one is replaced when a change touches its sentence, and the
-  rest leave as their items close.
+  there. An issue's or pull request's body, and a Trigger on the
+  [estate board](https://github.com/orgs/catincloud-labs/projects/1), point to
+  it instead of copying it: *see #N for the date*, or the rule that derives
+  the value (*the day after the window #N sets ends*), with only the context
+  that goes beyond who, what, when, where and why. A Trigger keeps the time
+  form and the Trigger date the board's README requires; the rest of its text
+  points. A dated reading of the world or of a commit, such as a measurement,
+  a hash, a command's output, or a return's merge commit and its `mergedAt`,
+  is evidence of its day and stays; a dated reading of a value another record
+  owns is a copy. A copy is replaced by a pointer, never re-dated. Copies
+  already standing are not swept for: one is replaced when a change touches
+  its sentence, and the rest stand until their items close and leave the
+  board.
 - **A claim a session posted on an issue, wrong when it was posted, is
   corrected by a follow-up comment** that cites the comment it corrects, not by
   editing it. A draft pull request's body is edited freely, with no note of
